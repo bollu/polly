@@ -158,14 +158,17 @@ private:
   /// Create an empty dependences struct.
   explicit Dependences(const std::shared_ptr<isl_ctx> &IslCtx,
                        AnalysisLevel Level)
-      : RAW(nullptr), WAR(nullptr), WAW(nullptr), RED(nullptr), TC_RED(nullptr),
-        IslCtx(IslCtx), Level(Level) {}
+      : RAW(nullptr), WAR(nullptr), WAW(nullptr), False(nullptr), RED(nullptr),
+        TC_RED(nullptr), IslCtx(IslCtx), Level(Level) {}
 
   /// Calculate and add at the privatization dependences.
   void addPrivatizationDependences();
 
   /// Calculate the dependences for a certain SCoP @p S.
   void calculateDependences(Scop &S);
+
+  /// Calculate the False dependences for a certain SCoP @p S.
+  void calculateFalse(Scop &S);
 
   /// Set the reduction dependences for @p MA to @p Deps.
   void setReductionDependences(MemoryAccess *MA, __isl_take isl_map *Deps);
@@ -179,6 +182,7 @@ private:
   isl_union_map *RAW;
   isl_union_map *WAR;
   isl_union_map *WAW;
+  isl_union_map *False;
 
   /// The special reduction dependences.
   isl_union_map *RED;
