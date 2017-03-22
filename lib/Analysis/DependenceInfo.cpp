@@ -303,7 +303,7 @@ static __isl_give isl_union_flow *buildFlow(__isl_keep isl_union_map *Snk,
 
 static void assertFalseTransitiveClosureEquality(isl_union_map *False,
                                                  isl_union_map *TC_RED) {
-  // assert(isl_union_map_is_strict_subset(False, TC_RED));
+  assert(isl_union_map_is_subset(TC_RED, False));
   // assert(isl_union_map_is_equal(False, TC_RED));
 }
 
@@ -578,7 +578,7 @@ void Dependences::calculateDependences(Scop &S) {
   RED = isl_union_map_coalesce(RED);
   TC_RED = isl_union_map_coalesce(TC_RED);
 
-  DEBUG(dump()); 
+  DEBUG(dump());
   assertFalseTransitiveClosureEquality(False, TC_RED);
 }
 
