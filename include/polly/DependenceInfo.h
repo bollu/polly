@@ -170,6 +170,10 @@ private:
   /// Calculate the False dependences for a certain SCoP @p S.
   void calculateFalse(Scop &S);
 
+  /// Convert form the False dependences (may-WAR + may-WAW) dependences
+  /// into reduction information.
+  void FalseRestrictToReductions(Scop &S);
+
   /// Set the reduction dependences for @p MA to @p Deps.
   void setReductionDependences(MemoryAccess *MA, __isl_take isl_map *Deps);
 

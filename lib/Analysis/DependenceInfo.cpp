@@ -303,8 +303,8 @@ static __isl_give isl_union_flow *buildFlow(__isl_keep isl_union_map *Snk,
 
 static void assertFalseTransitiveClosureEquality(isl_union_map *False,
                                                  isl_union_map *TC_RED) {
-  assert(isl_union_map_is_subset(TC_RED, False));
-  // assert(isl_union_map_is_equal(False, TC_RED));
+  // assert(isl_union_map_is_subset(TC_RED, False));
+  assert(isl_union_map_is_equal(False, TC_RED));
 }
 
 void Dependences::calculateDependences(Scop &S) {
@@ -683,6 +683,7 @@ void Dependences::calculateFalse(Scop &S) {
 
   // corresponds to :454 ("wrapped dependences:\n")
 
+  FalseRestrictToReductions(S);
   // deleted code corresponding to construction of RED.
 
   // corresponds to :551 ("zipped dependences:\n")
@@ -717,6 +718,23 @@ void Dependences::calculateFalse(Scop &S) {
   });
   */
 }
+
+void Dependences::FalseRestrictToReductions(Scop &S) {
+  isl_union_map *RED = isl_union_map_empty(isl_union_map_get_space(RAW));
+  for (ScopStmt &Stmt : S) {
+    for (MemoryAccess *MA : Stmt) {
+      if (!MA->isReductionLike())
+        continue;
+      isl_set *AccDomW = isl_map_wrap(MA->getAccessRelation());
+      isl_map *Identity =
+          isl_map_from_domain_and_range(isl_set_copy(AccDomW), AccDomW);
+      RED = isl_union_map_add_map(RED, Identity);
+    }
+  }
+
+  // Step 2)
+  False = isl_union_map_intersect(False, RED);
+};
 
 bool Dependences::isValidSchedule(Scop &S,
                                   StatementToIslMapTy *NewSchedule) const {
