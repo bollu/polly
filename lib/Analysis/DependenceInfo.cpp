@@ -289,7 +289,8 @@ static __isl_give isl_union_flow *buildFlow(__isl_keep isl_union_map *Snk,
   isl_union_access_info *AI;
 
   AI = isl_union_access_info_from_sink(isl_union_map_copy(Snk));
-  AI = isl_union_access_info_set_may_source(AI, isl_union_map_copy(MaySrc));
+  if (MaySrc)
+    AI = isl_union_access_info_set_may_source(AI, isl_union_map_copy(MaySrc));
   if (Src)
     AI = isl_union_access_info_set_must_source(AI, isl_union_map_copy(Src));
   AI = isl_union_access_info_set_schedule(AI, isl_schedule_copy(Schedule));
@@ -358,55 +359,84 @@ void Dependences::calculateDependences(Scop &S) {
         dbgs() << "MayWrite: " << MayWrite << "\n";
         dbgs() << "Schedule: " << Schedule << "\n");
 
+  isl_union_map *StrictWAW = nullptr;
   {
     IslMaxOperationsGuard MaxOpGuard(IslCtx.get(), OptComputeOut);
 
     RAW = WAW = WAR = RED = nullptr;
+    isl_union_map *Write = isl_union_map_union(isl_union_map_copy(MustWrite),
+                                               isl_union_map_copy(MayWrite));
+
+    // We need W <- W with no intermediate Reads in between. Intermediate
+    // reads imply side-effects. If there are side-effects, we should not
+    // re-order our statements. Hence, they should *not* be counted as
+    // reductions.
+    //
+    // Example:
+    // void f(int *A, int *B) {
+    //     for(int i = 0; i <= 100; i++) {
+    //            *-WAW (S0[i] -> S0[i + 1])--*
+    //            |                           |
+    //            v                           |
+    //     S0:    *A += i; -------------------*
+    //                                        |
+    //         if (i >= 98) {               WAR (S0 -> S1)
+    //     S1:        *B = *A; <--------------*
+    //         }
+    //     }
+    // }
+    //
+    // Since the writes in S0 happen *between* reads at S1, the entire loop
+    // is not a legal reduction. It is only a reduction in (0 <= i <= 98).
+    //
+    // To detect these sorts of patterns, we need to generate strict WAW that
+    // do not have reads between them.
+    isl_union_flow *Flow = buildFlow(Write, Write, Read, Schedule);
+    StrictWAW = isl_union_flow_get_must_dependence(Flow);
+    isl_union_flow_free(Flow);
 
     if (OptAnalysisType == VALUE_BASED_ANALYSIS) {
-      isl_union_flow *Flow;
-
       Flow = buildFlow(Read, MustWrite, MayWrite, Schedule);
-
       RAW = isl_union_flow_get_may_dependence(Flow);
       isl_union_flow_free(Flow);
 
-      Flow = buildFlow(MustWrite, MustWrite, Read, Schedule);
-
-      WAW = isl_union_flow_get_must_dependence(Flow);
-      WAR = isl_union_flow_get_may_dependence(Flow);
-
-      // This subtraction is needed to obtain the same results as were given by
-      // isl_union_map_compute_flow. For large sets this may add some
-      // compile-time cost. As there does not seem to be a need to distinguish
-      // between WAW and WAR, refactoring Polly to only track general non-flow
-      // dependences may improve performance.
-      WAR = isl_union_map_subtract(WAR, isl_union_map_copy(WAW));
-
+      Flow = buildFlow(Write, MustWrite, MayWrite, Schedule);
+      WAW = isl_union_flow_get_may_dependence(Flow);
       isl_union_flow_free(Flow);
+
+      // We need exact WAR dependences. That is, if there are
+      // dependences of the form:
+      // must-W2 (sink) <- must-W1 (sink) <- R (source)
+      // We wish to generate ONLY
+      // { R -> W1 }, NOT
+      // { R -> W2, R -> W1 }
+      // To achieve this, we use the fact that *must* dependences are not
+      // allowed to flow through the may-source.
+      // Since we set the may-source to Write, we are guaranteed that only
+      // exact WARs are captured.
+      Flow = buildFlow(Write, Read, Write, Schedule);
+      WAR = isl_union_flow_get_must_dependence(Flow);
+      isl_union_flow_free(Flow);
+
+      isl_union_map_free(Write);
       isl_schedule_free(Schedule);
     } else {
       isl_union_flow *Flow;
 
-      isl_union_map *Write = isl_union_map_union(isl_union_map_copy(MustWrite),
-                                                 isl_union_map_copy(MayWrite));
-
       Flow = buildFlow(Read, nullptr, Write, Schedule);
-
       RAW = isl_union_flow_get_may_dependence(Flow);
       isl_union_flow_free(Flow);
 
       Flow = buildFlow(Write, nullptr, Read, Schedule);
-
       WAR = isl_union_flow_get_may_dependence(Flow);
       isl_union_flow_free(Flow);
 
       Flow = buildFlow(Write, nullptr, Write, Schedule);
-
       WAW = isl_union_flow_get_may_dependence(Flow);
       isl_union_flow_free(Flow);
-      isl_schedule_free(Schedule);
+
       isl_union_map_free(Write);
+      isl_schedule_free(Schedule);
     }
 
     isl_union_map_free(MustWrite);
@@ -424,7 +454,8 @@ void Dependences::calculateDependences(Scop &S) {
     isl_union_map_free(RAW);
     isl_union_map_free(WAW);
     isl_union_map_free(WAR);
-    RAW = WAW = WAR = nullptr;
+    isl_union_map_free(StrictWAW);
+    RAW = WAW = WAR = StrictWAW = nullptr;
     isl_ctx_reset_error(IslCtx.get());
   }
 
@@ -435,6 +466,7 @@ void Dependences::calculateDependences(Scop &S) {
     RED = isl_union_map_empty(isl_union_map_get_space(RAW));
     TC_RED = isl_union_map_empty(isl_union_set_get_space(TaggedStmtDomain));
     isl_union_set_free(TaggedStmtDomain);
+    isl_union_map_free(StrictWAW);
     return;
   }
 
@@ -457,9 +489,9 @@ void Dependences::calculateDependences(Scop &S) {
   // 2) Intersect them with the actual RAW & WAW dependences to the get the
   //    actual reduction dependences. This will ensure the load/store memory
   //    addresses were __identical__ in the two iterations of the statement.
-  // 3) Relax the original RAW and WAW dependences by subtracting the actual
-  //    reduction dependences. Binary reductions (sum += A[i]) cause both, and
-  //    the same, RAW and WAW dependences.
+  // 3) Relax the original RAW, WAW and WAR dependences by subtracting the
+  //    actual reduction dependences. Binary reductions (sum += A[i]) cause
+  //    the same, RAW, WAW and WAR dependences.
   // 4) Add the privatization dependences which are widened versions of
   //    already present dependences. They model the effect of manual
   //    privatization at the outermost possible place (namely after the last
@@ -480,13 +512,14 @@ void Dependences::calculateDependences(Scop &S) {
 
   // Step 2)
   RED = isl_union_map_intersect(RED, isl_union_map_copy(RAW));
-  RED = isl_union_map_intersect(RED, isl_union_map_copy(WAW));
+  RED = isl_union_map_intersect(RED, StrictWAW);
 
   if (!isl_union_map_is_empty(RED)) {
 
     // Step 3)
     RAW = isl_union_map_subtract(RAW, isl_union_map_copy(RED));
     WAW = isl_union_map_subtract(WAW, isl_union_map_copy(RED));
+    WAR = isl_union_map_subtract(WAR, isl_union_map_copy(RED));
 
     // Step 4)
     addPrivatizationDependences();
