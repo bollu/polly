@@ -24,8 +24,7 @@
 ;	     C[i][j] += alpha * A[i][k] * B[k][j];
 ;        }
 ;
-; CHECK:    {
-; CHECK-NEXT:      // 1st level tiling - Tiles
+; CHECK:           // 1st level tiling - Tiles
 ; CHECK-NEXT:      for (int c0 = 0; c0 <= 32; c0 += 1)
 ; CHECK-NEXT:        for (int c1 = 0; c1 <= 32; c1 += 1) {
 ; CHECK-NEXT:          // 1st level tiling - Points
@@ -76,8 +75,7 @@
 ; CHECK-NEXT:          }
 ; CHECK-NEXT:    }
 ;
-; EXTRACTION-OF-MACRO-KERNEL:    {
-; EXTRACTION-OF-MACRO-KERNEL-NEXT:      // 1st level tiling - Tiles
+; EXTRACTION-OF-MACRO-KERNEL:           // 1st level tiling - Tiles
 ; EXTRACTION-OF-MACRO-KERNEL-NEXT:      for (int c0 = 0; c0 <= 32; c0 += 1)
 ; EXTRACTION-OF-MACRO-KERNEL-NEXT:        for (int c1 = 0; c1 <= 32; c1 += 1) {
 ; EXTRACTION-OF-MACRO-KERNEL-NEXT:          // 1st level tiling - Points
