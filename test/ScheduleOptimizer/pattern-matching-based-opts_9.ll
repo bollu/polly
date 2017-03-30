@@ -313,9 +313,10 @@
 ; DEPENDENCES-NEXT:  WAW dependences:
 ; DEPENDENCES-NEXT:    {  }
 ; DEPENDENCES-NEXT:  Reduction dependences:
-; DEPENDENCES-NEXT:    { Stmt_for_body6[i0, i1, i2] -> Stmt_for_body6[i0, i1, 1 + i2] : 0 <= i0 <= 1023 and 0 <= i1 <= 1023 and 0 <= i2 <= 1022 }
+; DEPENDENCES-NEXT:    { Stmt_for_body6[i0, i1, i2] -> Stmt_for_body6[i0, i1, o2] : 0 <= i0 <= 1023 and 0 <= i1 <= 1023 and i2 >= 0 and i2 < o2 <= 1023 }
 ; DEPENDENCES-NEXT:  Transitive closure of reduction dependences:
-; DEPENDENCES-NEXT:    { Stmt_for_body6[i0, i1, i2] -> Stmt_for_body6[i0, i1, o2] : 0 <= i0 <= 1023 and 0 <= i1 <= 1023 and ((i2 >= 0 and i2 < o2 <= 1023) or (i2 <= 1023 and 0 <= o2 < i2)) }
+; DEPENDENCES0NEXT:    { Stmt_for_body6[i0, i1, i2] -> Stmt_for_body6[i0, i1, o2] : 0 <= i0 <= 1023 and 0 <= i1 <= 1023 and ((i2 <= 1023 and 0 <= o2 < i2) or (i2 >= 0 and i2 < o2 <= 1023)) }
+
 ;
 target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-unknown"

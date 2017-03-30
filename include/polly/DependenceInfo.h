@@ -162,7 +162,7 @@ private:
         IslCtx(IslCtx), Level(Level) {}
 
   /// Calculate and add at the privatization dependences.
-  void addPrivatizationDependences();
+  // void addPrivatizationDependences();
 
   /// Calculate the dependences for a certain SCoP @p S.
   void calculateDependences(Scop &S);

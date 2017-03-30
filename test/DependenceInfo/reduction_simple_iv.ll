@@ -7,7 +7,7 @@
 ; CHECK-NEXT: WAW dependences:
 ; CHECK-NEXT:     {  }
 ; CHECK-NEXT: Reduction dependences:
-; CHECK-NEXT:     { Stmt_for_cond[i0] -> Stmt_for_cond[1 + i0] : 0 <= i0 <= 99 }
+; CHECK-NEXT:     { Stmt_for_cond[i0] -> Stmt_for_cond[o0] : i0 >= 0 and i0 < o0 <= 100 }
 ;
 ; void f(int* sum) {
 ;   for (int i = 0; i <= 100; i++)

@@ -1,13 +1,14 @@
 ; RUN: opt %loadPolly -polly-dependences -analyze < %s | FileCheck %s
 ;
+
 ; CHECK:      RAW dependences:
-; CHECK-NEXT:     { Stmt_S2[i0] -> Stmt_S0[1 + i0] : 0 <= i0 <= 98; Stmt_S0[i0] -> Stmt_S1[i0, o1] : 0 <= i0 <= 99 and 0 <= o1 <= 99; Stmt_S1[i0, i1] -> Stmt_S2[i0] : 0 <= i0 <= 99 and 0 <= i1 <= 99 }
+; CHECK-NEXT:     { Stmt_S2[i0] -> Stmt_S1[o0, o1] : i0 >= 0 and i0 < o0 <= 99 and 0 <= o1 <= 99; Stmt_S2[i0] -> Stmt_S0[o0] : i0 >= 0 and i0 < o0 <= 99; Stmt_S1[i0, i1] -> Stmt_S0[o0] : i0 >= 0 and 0 <= i1 <= 99 and i0 < o0 <= 99; Stmt_S0[i0] -> Stmt_S2[o0] : i0 >= 0 and i0 <= o0 <= 99; Stmt_S1[i0, i1] -> Stmt_S2[o0] : i0 >= 0 and 0 <= i1 <= 99 and i0 <= o0 <= 99; Stmt_S0[i0] -> Stmt_S1[o0, o1] : i0 >= 0 and i0 <= o0 <= 99 and 0 <= o1 <= 99 }
 ; CHECK-NEXT: WAR dependences:
-; CHECK-NEXT:     { Stmt_S2[i0] -> Stmt_S0[1 + i0] : 0 <= i0 <= 98; Stmt_S0[i0] -> Stmt_S1[i0, o1] : 0 <= i0 <= 99 and 0 <= o1 <= 99; Stmt_S1[i0, i1] -> Stmt_S2[i0] : 0 <= i0 <= 99 and 0 <= i1 <= 99 }
+; CHECK-NEXT:     { Stmt_S2[i0] -> Stmt_S0[1 + i0] : 0 <= i0 <= 98; Stmt_S0[i0] -> Stmt_S1[i0, 0] : 0 <= i0 <= 99; Stmt_S1[i0, 99] -> Stmt_S2[i0] : 0 <= i0 <= 99 }
 ; CHECK-NEXT: WAW dependences:
-; CHECK-NEXT:     { Stmt_S2[i0] -> Stmt_S0[1 + i0] : 0 <= i0 <= 98; Stmt_S0[i0] -> Stmt_S1[i0, o1] : 0 <= i0 <= 99 and 0 <= o1 <= 99; Stmt_S1[i0, i1] -> Stmt_S2[i0] : 0 <= i0 <= 99 and 0 <= i1 <= 99 }
+; CHECK-NEXT:     { Stmt_S2[i0] -> Stmt_S1[o0, o1] : i0 >= 0 and i0 < o0 <= 99 and 0 <= o1 <= 99; Stmt_S2[i0] -> Stmt_S0[o0] : i0 >= 0 and i0 < o0 <= 99; Stmt_S1[i0, i1] -> Stmt_S0[o0] : i0 >= 0 and 0 <= i1 <= 99 and i0 < o0 <= 99; Stmt_S0[i0] -> Stmt_S2[o0] : i0 >= 0 and i0 <= o0 <= 99; Stmt_S1[i0, i1] -> Stmt_S2[o0] : i0 >= 0 and 0 <= i1 <= 99 and i0 <= o0 <= 99; Stmt_S0[i0] -> Stmt_S1[o0, o1] : i0 >= 0 and i0 <= o0 <= 99 and 0 <= o1 <= 99 }
 ; CHECK-NEXT: Reduction dependences:
-; CHECK-NEXT:     { Stmt_S1[i0, i1] -> Stmt_S1[i0, 1 + i1] : 0 <= i0 <= 99 and 0 <= i1 <= 98 }
+; CHECK-NEXT:     { Stmt_S0[i0] -> Stmt_S0[o0] : i0 >= 0 and i0 < o0 <= 99; Stmt_S2[i0] -> Stmt_S2[o0] : i0 >= 0 and i0 < o0 <= 99; Stmt_S1[i0, i1] -> Stmt_S1[o0, o1] : i0 >= 0 and 0 <= i1 <= 99 and i0 < o0 <= 99 and 0 <= o1 <= 99; Stmt_S1[i0, i1] -> Stmt_S1[i0, o1] : 0 <= i0 <= 99 and i1 >= 0 and i1 < o1 <= 99 }
 ;
 ;    void f(int *sum) {
 ;      for (int i = 0; i < 100; i++) {
