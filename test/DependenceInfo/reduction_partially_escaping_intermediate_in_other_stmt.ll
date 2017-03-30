@@ -1,7 +1,7 @@
 ; RUN: opt %loadPolly -polly-dependences -analyze -basicaa < %s | FileCheck %s
 ;
 ; CHECK:      Reduction dependences:
-; CHECK-NEXT:     [N] -> { Stmt_for_body3[i0, i1] -> Stmt_for_body3[i0, 1 + i1] : 0 <= i0 <= 1023 and i1 >= 0 and 1024 - N + i0 <= i1 <= 1022 }
+; CHECK-NEXT:     [N] -> { Stmt_for_body3[i0, i1] -> Stmt_for_body3[i0, o1] : 0 <= i0 <= 1023 and i1 >= 0 and i1 < o1 <= 1023 }
 ;
 ; void f(int N, int * restrict sums, int * restrict escape) {
 ;   for (int i = 0; i < 1024; i++) {

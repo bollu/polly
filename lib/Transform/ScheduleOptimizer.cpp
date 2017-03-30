@@ -768,7 +768,7 @@ static bool containsOnlyMatrMultAcc(__isl_keep isl_map *PartialSchedule,
 /// Check for dependencies corresponding to the matrix multiplication.
 ///
 /// Check that there is only true dependence of the form
-/// S(..., k, ...) -> S(..., k + 1, …), where S is the SCoP statement
+/// S(..., k, ...) -> S(..., <anything>, ...), where S is the SCoP statement
 /// represented by @p Schedule and k is @p Pos. Such a dependence corresponds
 /// to the dependency produced by the matrix multiplication.
 ///
@@ -781,29 +781,46 @@ static bool containsOnlyMatrMultAcc(__isl_keep isl_map *PartialSchedule,
 ///         and false, otherwise.
 static bool containsOnlyMatMulDep(__isl_keep isl_map *Schedule,
                                   const Dependences *D, int &Pos) {
-  auto *Dep = D->getDependences(Dependences::TYPE_RAW);
-  auto *Red = D->getDependences(Dependences::TYPE_RED);
-  if (Red)
-    Dep = isl_union_map_union(Dep, Red);
+  auto *Dep = D->getDependences(Dependences::TYPE_RAW | Dependences::TYPE_RED);
   auto *DomainSpace = isl_space_domain(isl_map_get_space(Schedule));
   auto *Space = isl_space_map_from_domain_and_range(isl_space_copy(DomainSpace),
                                                     DomainSpace);
-  auto *Deltas = isl_map_deltas(isl_union_map_extract_map(Dep, Space));
+  auto *DomainDep = isl_union_map_extract_map(Dep, Space);
+  auto *Deltas = isl_map_deltas(DomainDep);
   isl_union_map_free(Dep);
   int DeltasDimNum = isl_set_dim(Deltas, isl_dim_set);
+
+  bool foundNonZeroDimension = false;
+
   for (int i = 0; i < DeltasDimNum; i++) {
     auto *Val = isl_set_plain_get_val_if_fixed(Deltas, isl_dim_set, i);
-    Pos = Pos < 0 && isl_val_is_one(Val) ? i : Pos;
-    if (isl_val_is_nan(Val) ||
-        !(isl_val_is_zero(Val) || (i == Pos && isl_val_is_one(Val)))) {
+    if (isl_val_is_zero(Val)) {
       isl_val_free(Val);
+      continue;
+    }
+    isl_val_free(Val);
+
+    // we have already found a nonzero subspace. Getting another
+    // nonzero subspace means that we have a dependence along another dimension.
+    if (foundNonZeroDimension) {
       isl_set_free(Deltas);
       return false;
     }
-    isl_val_free(Val);
+    foundNonZeroDimension = true;
+
+    // Pos < 0, we need to set the parameter which corresponds the dependence.
+    if (Pos < 0) {
+      Pos = i;
+    }
+    // Pos > 0, we should verify that the dimension is the one along which
+    // the dependence is supposed to be,
+    else if (Pos != i) {
+      isl_set_free(Deltas);
+      return false;
+    }
   }
   isl_set_free(Deltas);
-  if (DeltasDimNum == 0 || Pos < 0)
+  if (DeltasDimNum == 0 || !foundNonZeroDimension)
     return false;
   return true;
 }

@@ -9,7 +9,7 @@
 ; CHECK-NEXT: WAW dependences:
 ; CHECK-NEXT:     {  }
 ; CHECK-NEXT: Reduction dependences:
-; CHECK-NEXT:     { Stmt_for_body3[i0, i1] -> Stmt_for_body3[2 + i0, -1 + i1] : 0 <= i0 <= 97 and 0 < i1 <= 99 }
+; CHECK-NEXT:     { Stmt_for_body3[i0, i1] -> Stmt_for_body3[o0, o1] : 2o1 = i0 + 2i1 - o0 and i0 >= 0 and i1 <= 99 and i0 < o0 <= 99 and o0 <= i0 + 2i1 }
 ;
 ; void f(int *sum) {
 ;   for (int i = 0; i < 100; i++)
