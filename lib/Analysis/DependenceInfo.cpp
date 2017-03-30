@@ -167,10 +167,14 @@ static void collectInfo(Scop &S, isl_union_map *&Read,
 
       if (MA->isRead())
         Read = isl_union_map_add_map(Read, accdom);
-      else if (MA->isMayWrite())
-        MayWrite = isl_union_map_add_map(MayWrite, accdom);
-      else
-        MustWrite = isl_union_map_add_map(MustWrite, accdom);
+      else {
+        if (MA->isMayWrite() || MA->isReductionLike()) {
+          MayWrite = isl_union_map_add_map(MayWrite, isl_map_copy(accdom));
+        } else {
+          MustWrite = isl_union_map_add_map(MustWrite, isl_map_copy(accdom));
+        }
+        isl_map_free(accdom);
+      }
     }
 
     if (!ReductionArrays.empty() && Level == Dependences::AL_Statement)
@@ -194,92 +198,6 @@ static isl_stat fixSetToZero(__isl_take isl_set *Zero, void *user) {
     Zero = isl_set_fix_si(Zero, isl_dim_set, i, 0);
   *User = isl_union_set_add_set(*User, Zero);
   return isl_stat_ok;
-}
-
-/// Compute the privatization dependences for a given dependency @p Map
-///
-/// Privatization dependences are widened original dependences which originate
-/// or end in a reduction access. To compute them we apply the transitive close
-/// of the reduction dependences (which maps each iteration of a reduction
-/// statement to all following ones) on the RAW/WAR/WAW dependences. The
-/// dependences which start or end at a reduction statement will be extended to
-/// depend on all following reduction statement iterations as well.
-/// Note: "Following" here means according to the reduction dependences.
-///
-/// For the input:
-///
-///  S0:   *sum = 0;
-///        for (int i = 0; i < 1024; i++)
-///  S1:     *sum += i;
-///  S2:   *sum = *sum * 3;
-///
-/// we have the following dependences before we add privatization dependences:
-///
-///   RAW:
-///     { S0[] -> S1[0]; S1[1023] -> S2[] }
-///   WAR:
-///     {  }
-///   WAW:
-///     { S0[] -> S1[0]; S1[1024] -> S2[] }
-///   RED:
-///     { S1[i0] -> S1[1 + i0] : i0 >= 0 and i0 <= 1022 }
-///
-/// and afterwards:
-///
-///   RAW:
-///     { S0[] -> S1[i0] : i0 >= 0 and i0 <= 1023;
-///       S1[i0] -> S2[] : i0 >= 0 and i0 <= 1023}
-///   WAR:
-///     {  }
-///   WAW:
-///     { S0[] -> S1[i0] : i0 >= 0 and i0 <= 1023;
-///       S1[i0] -> S2[] : i0 >= 0 and i0 <= 1023}
-///   RED:
-///     { S1[i0] -> S1[1 + i0] : i0 >= 0 and i0 <= 1022 }
-///
-/// Note: This function also computes the (reverse) transitive closure of the
-///       reduction dependences.
-void Dependences::addPrivatizationDependences() {
-  isl_union_map *PrivRAW, *PrivWAW, *PrivWAR;
-
-  // The transitive closure might be over approximated, thus could lead to
-  // dependency cycles in the privatization dependences. To make sure this
-  // will not happen we remove all negative dependences after we computed
-  // the transitive closure.
-  TC_RED = isl_union_map_transitive_closure(isl_union_map_copy(RED), nullptr);
-
-  // FIXME: Apply the current schedule instead of assuming the identity schedule
-  //        here. The current approach is only valid as long as we compute the
-  //        dependences only with the initial (identity schedule). Any other
-  //        schedule could change "the direction of the backward dependences" we
-  //        want to eliminate here.
-  isl_union_set *UDeltas = isl_union_map_deltas(isl_union_map_copy(TC_RED));
-  isl_union_set *Universe = isl_union_set_universe(isl_union_set_copy(UDeltas));
-  isl_union_set *Zero = isl_union_set_empty(isl_union_set_get_space(Universe));
-  isl_union_set_foreach_set(Universe, fixSetToZero, &Zero);
-  isl_union_map *NonPositive = isl_union_set_lex_le_union_set(UDeltas, Zero);
-
-  TC_RED = isl_union_map_subtract(TC_RED, NonPositive);
-
-  TC_RED = isl_union_map_union(
-      TC_RED, isl_union_map_reverse(isl_union_map_copy(TC_RED)));
-  TC_RED = isl_union_map_coalesce(TC_RED);
-
-  isl_union_map **Maps[] = {&RAW, &WAW, &WAR};
-  isl_union_map **PrivMaps[] = {&PrivRAW, &PrivWAW, &PrivWAR};
-  for (unsigned u = 0; u < 3; u++) {
-    isl_union_map **Map = Maps[u], **PrivMap = PrivMaps[u];
-
-    *PrivMap = isl_union_map_apply_range(isl_union_map_copy(*Map),
-                                         isl_union_map_copy(TC_RED));
-    *PrivMap = isl_union_map_union(
-        *PrivMap, isl_union_map_apply_range(isl_union_map_copy(TC_RED),
-                                            isl_union_map_copy(*Map)));
-
-    *Map = isl_union_map_union(*Map, *PrivMap);
-  }
-
-  isl_union_set_free(Universe);
 }
 
 static __isl_give isl_union_flow *buildFlow(__isl_keep isl_union_map *Snk,
@@ -335,8 +253,8 @@ void Dependences::calculateDependences(Scop &S) {
     isl_union_pw_multi_aff *ReductionTags, *IdentityTags, *Tags;
 
     // Extract Reduction tags from the combined access domains in the given
-    // SCoP. The result is a map that maps each tagged element in the domain to
-    // the memory location it accesses. ReductionTags = {[Stmt[i] ->
+    // SCoP. The result is a map that maps each tagged element in the domain
+    // to the memory location it accesses. ReductionTags = {[Stmt[i] ->
     // Array[f(i)]] -> Stmt[i] }
     ReductionTags =
         isl_union_map_domain_map_union_pw_multi_aff(ReductionTagMap);
@@ -516,6 +434,8 @@ void Dependences::calculateDependences(Scop &S) {
   DEBUG({
     dbgs() << "Wrapped Dependences:\n";
     dump();
+    dbgs() << "\tStrict WAW dependences:\n\t\t";
+    dbgs() << StrictWAW << "\n";
     dbgs() << "\n";
   });
 
@@ -548,7 +468,9 @@ void Dependences::calculateDependences(Scop &S) {
 
   // Step 2)
   RED = isl_union_map_intersect(RED, isl_union_map_copy(RAW));
-  RED = isl_union_map_intersect(RED, StrictWAW);
+  RED = isl_union_map_intersect(RED, isl_union_map_copy(WAW));
+  // RED = isl_union_map_intersect(RED, StrictWAW);
+  isl_union_map_free(StrictWAW);
 
   if (!isl_union_map_is_empty(RED)) {
 
@@ -558,7 +480,10 @@ void Dependences::calculateDependences(Scop &S) {
     WAR = isl_union_map_subtract(WAR, isl_union_map_copy(RED));
 
     // Step 4)
-    addPrivatizationDependences();
+    // addPrivatizationDependences();
+    TC_RED = isl_union_map_union(isl_union_map_reverse(isl_union_map_copy(RED)),
+                                 isl_union_map_copy(RED));
+    TC_RED = isl_union_map_coalesce(TC_RED);
   }
 
   DEBUG({
@@ -568,17 +493,18 @@ void Dependences::calculateDependences(Scop &S) {
   });
 
   // RED_SIN is used to collect all reduction dependences again after we
-  // split them according to the causing memory accesses. The current assumption
-  // is that our method of splitting will not have any leftovers. In the end
-  // we validate this assumption until we have more confidence in this method.
+  // split them according to the causing memory accesses. The current
+  // assumption is that our method of splitting will not have any leftovers.
+  // In the end we validate this assumption until we have more confidence in
+  // this method.
   isl_union_map *RED_SIN = isl_union_map_empty(isl_union_map_get_space(RAW));
 
   // For each reduction like memory access, check if there are reduction
   // dependences with the access relation of the memory access as a domain
-  // (wrapped space!). If so these dependences are caused by this memory access.
-  // We then move this portion of reduction dependences back to the statement ->
-  // statement space and add a mapping from the memory access to these
-  // dependences.
+  // (wrapped space!). If so these dependences are caused by this memory
+  // access. We then move this portion of reduction dependences back to the
+  // statement -> statement space and add a mapping from the memory access to
+  // these dependences.
   for (ScopStmt &Stmt : S) {
     for (MemoryAccess *MA : Stmt) {
       if (!MA->isReductionLike())
