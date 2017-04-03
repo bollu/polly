@@ -7,7 +7,7 @@
 ; CHECK-NEXT: WAW dependences:
 ; CHECK-NEXT:     {  }
 ; CHECK-NEXT: Reduction dependences:
-; CHECK-NEXT:     { Stmt_for_body3[i0, i1] -> Stmt_for_body3[i0, 1 + i1] : 0 <= i0 <= 99 and 0 <= i1 <= 98; Stmt_for_body3[i0, 99] -> Stmt_for_body3[1 + i0, 0] : 0 <= i0 <= 98 }
+; CHECK-NEXT:     { Stmt_for_body3[i0, i1] -> Stmt_for_body3[o0, o1] : i0 >= 0 and 0 <= i1 <= 99 and i0 < o0 <= 99 and 0 <= o1 <= 99; Stmt_for_body3[i0, i1] -> Stmt_for_body3[i0, o1] : 0 <= i0 <= 99 and i1 >= 0 and i1 < o1 <= 99 }
 ;
 ; int f(int * restrict A, int * restrict sum) {
 ;   int i, j, k;

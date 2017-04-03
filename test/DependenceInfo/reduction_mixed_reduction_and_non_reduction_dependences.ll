@@ -1,13 +1,13 @@
 ; RUN: opt %loadPolly -polly-dependences -analyze < %s | FileCheck %s
 ;
 ; CHECK:      RAW dependences:
-; CHECK-NEXT:     { Stmt_for_body3[i0, i1] -> Stmt_for_body3[i0 + i1, o1] : i0 >= 0 and 0 <= i1 <= 1023 - i0 and i1 <= 1 and 0 < o1 <= 511 }
+; CHECK-NEXT:     { Stmt_for_body3[i0, i1] -> Stmt_for_body3[i0 + i1, o1] : i0 >= 0 and 0 <= i1 <= 1023 - i0 and i1 <= 511 and 0 < o1 <= 511 }
 ; CHECK-NEXT: WAR dependences:
 ; CHECK-NEXT:     {  }
 ; CHECK-NEXT: WAW dependences:
-; CHECK-NEXT:     { Stmt_for_body3[i0, i1] -> Stmt_for_body3[1 + i0, -1 + i1] : 0 <= i0 <= 1022 and 2 <= i1 <= 511; Stmt_for_body3[i0, 2] -> Stmt_for_body3[2 + i0, 0] : 0 <= i0 <= 1021 }
+; CHECK-NEXT:     { Stmt_for_body3[i0, i1] -> Stmt_for_body3[o0, i0 + i1 - o0] : i0 >= 0 and i1 <= 511 and i0 < o0 <= 1023 and o0 < i0 + i1 }
 ; CHECK-NEXT: Reduction dependences:
-; CHECK-NEXT:     { Stmt_for_body3[i0, 1] -> Stmt_for_body3[1 + i0, 0] : 0 <= i0 <= 1022 }
+; CHECK-NEXT:     { Stmt_for_body3[i0, i1] -> Stmt_for_body3[i0 + i1, 0] : i0 >= 0 and 0 < i1 <= 1023 - i0 and i1 <= 511 }
 ;
 ; void f(int *sum) {
 ;   for (int i = 0; i < 1024; i++)
