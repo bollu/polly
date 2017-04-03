@@ -191,15 +191,6 @@ static void collectInfo(Scop &S, isl_union_map *&Read,
   MayWrite = isl_union_map_coalesce(MayWrite);
 }
 
-/// Fix all dimension of @p Zero to 0 and add it to @p user
-static isl_stat fixSetToZero(__isl_take isl_set *Zero, void *user) {
-  isl_union_set **User = (isl_union_set **)user;
-  for (unsigned i = 0; i < isl_set_dim(Zero, isl_dim_set); i++)
-    Zero = isl_set_fix_si(Zero, isl_dim_set, i, 0);
-  *User = isl_union_set_add_set(*User, Zero);
-  return isl_stat_ok;
-}
-
 static __isl_give isl_union_flow *buildFlow(__isl_keep isl_union_map *Snk,
                                             __isl_keep isl_union_map *Src,
                                             __isl_keep isl_union_map *MaySrc,
