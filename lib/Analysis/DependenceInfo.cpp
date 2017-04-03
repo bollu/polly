@@ -285,6 +285,7 @@ void Dependences::calculateDependences(Scop &S) {
                                                isl_union_map_copy(MayWrite));
 
     if (OptAnalysisType == VALUE_BASED_ANALYSIS) {
+      isl_union_flow *Flow;
       Flow = buildFlow(Read, MustWrite, MayWrite, Schedule);
       RAW = isl_union_flow_get_may_dependence(Flow);
       isl_union_flow_free(Flow);
