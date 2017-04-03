@@ -277,63 +277,12 @@ void Dependences::calculateDependences(Scop &S) {
         dbgs() << "MayWrite: " << MayWrite << "\n";
         dbgs() << "Schedule: " << Schedule << "\n");
 
-  isl_union_map *StrictWAW = nullptr;
   {
     IslMaxOperationsGuard MaxOpGuard(IslCtx.get(), OptComputeOut);
 
     RAW = WAW = WAR = RED = nullptr;
     isl_union_map *Write = isl_union_map_union(isl_union_map_copy(MustWrite),
                                                isl_union_map_copy(MayWrite));
-
-    // We are interested in detecting reductions that do not have intermediate
-    // computations that are captured by other statements.
-    //
-    // Example:
-    // void f(int *A, int *B) {
-    //     for(int i = 0; i <= 100; i++) {
-    //
-    //            *-WAR (S0[i] -> S0[i + 1] 0 <= i <= 100)------------*
-    //            |                                                   |
-    //            *-WAW (S0[i] -> S0[i + 1] 0 <= i <= 100)------------*
-    //            |                                                   |
-    //            v                                                   |
-    //     S0:    *A += i; >------------------*-----------------------*
-    //                                        |
-    //         if (i >= 98) {          WAR (S0[i] -> S1[i]) 98 <= i <= 100
-    //                                        |
-    //     S1:        *B = *A; <--------------*
-    //         }
-    //     }
-    // }
-    //
-    // S0[0 <= i <= 100] has a reduction. However, the values in
-    // S0[98 <= i <= 100] is captured in S1[98 <= i <= 100].
-    // Since we allow free reordering on our reduction dependences, we need to
-    // remove all instances of a reduction statement that have data dependences
-    // orignating from them.
-    // In the case of the example, we need to remove S0[98 <= i <= 100] from
-    // our reduction dependences.
-    //
-    // When we build up the WAW dependences that are used to detect reductions,
-    // we consider only **Writes that have no intermediate Reads**.
-    //
-    // `isl_union_flow_get_must_dependence` gives us dependences of the form:
-    // (sink <- must_source).
-    //
-    // It *will not give* dependences of the form:
-    // 1. (sink <- ... <- may_source <- ... <- must_source)
-    // 2. (sink <- ... <- must_source <- ... <- must_source)
-    //
-    // For a detailed reference on ISL's flow analysis, see:
-    // "Presburger Formulas and Polyhedral Compilation" - Approximate Dataflow
-    //  Analysis.
-    //
-    // Since we set "Write" as a must-source, "Read" as a may-source, and ask
-    // for must dependences, we get all Writes to Writes that **do not flow
-    // through a Read**.
-    isl_union_flow *Flow = buildFlow(Write, Write, Read, Schedule);
-    StrictWAW = isl_union_flow_get_must_dependence(Flow);
-    isl_union_flow_free(Flow);
 
     if (OptAnalysisType == VALUE_BASED_ANALYSIS) {
       Flow = buildFlow(Read, MustWrite, MayWrite, Schedule);
@@ -407,8 +356,7 @@ void Dependences::calculateDependences(Scop &S) {
     isl_union_map_free(RAW);
     isl_union_map_free(WAW);
     isl_union_map_free(WAR);
-    isl_union_map_free(StrictWAW);
-    RAW = WAW = WAR = StrictWAW = nullptr;
+    RAW = WAW = WAR = nullptr;
     isl_ctx_reset_error(IslCtx.get());
   }
 
@@ -419,7 +367,6 @@ void Dependences::calculateDependences(Scop &S) {
     RED = isl_union_map_empty(isl_union_map_get_space(RAW));
     TC_RED = isl_union_map_empty(isl_union_set_get_space(TaggedStmtDomain));
     isl_union_set_free(TaggedStmtDomain);
-    isl_union_map_free(StrictWAW);
     return;
   }
 
@@ -430,12 +377,9 @@ void Dependences::calculateDependences(Scop &S) {
       isl_union_map_copy(WAW), isl_union_set_copy(TaggedStmtDomain));
   STMT_WAR =
       isl_union_map_intersect_domain(isl_union_map_copy(WAR), TaggedStmtDomain);
-
   DEBUG({
     dbgs() << "Wrapped Dependences:\n";
     dump();
-    dbgs() << "\tStrict WAW dependences:\n\t\t";
-    dbgs() << StrictWAW << "\n";
     dbgs() << "\n";
   });
 
@@ -469,8 +413,6 @@ void Dependences::calculateDependences(Scop &S) {
   // Step 2)
   RED = isl_union_map_intersect(RED, isl_union_map_copy(RAW));
   RED = isl_union_map_intersect(RED, isl_union_map_copy(WAW));
-  // RED = isl_union_map_intersect(RED, StrictWAW);
-  isl_union_map_free(StrictWAW);
 
   if (!isl_union_map_is_empty(RED)) {
 
@@ -480,7 +422,6 @@ void Dependences::calculateDependences(Scop &S) {
     WAR = isl_union_map_subtract(WAR, isl_union_map_copy(RED));
 
     // Step 4)
-    // addPrivatizationDependences();
     TC_RED = isl_union_map_union(isl_union_map_reverse(isl_union_map_copy(RED)),
                                  isl_union_map_copy(RED));
     TC_RED = isl_union_map_coalesce(TC_RED);
