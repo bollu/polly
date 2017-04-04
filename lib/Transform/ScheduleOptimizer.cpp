@@ -907,8 +907,12 @@ static bool containsOnlyMatMulDep(__isl_keep isl_map *Schedule,
                                   static_cast<void *>(&boundsInfo)) !=
         isl_stat_ok) {
 
-      isl_constraint_free(boundsInfo.bounds[0]);
-      isl_constraint_free(boundsInfo.bounds[1]);
+      for (int boundi = 0; boundi < 2; boundi++) {
+        if (boundsInfo.bounds[boundi] != nullptr) {
+          isl_constraint_free(boundsInfo.bounds[boundi]);
+        }
+      }
+      isl_set_free(Deltas);
       return false;
     }
 
@@ -927,20 +931,6 @@ static bool containsOnlyMatMulDep(__isl_keep isl_map *Schedule,
       ZeroConstraint = isl_constraint_set_constant_si(ZeroConstraint, 0);
       ZeroConstraint = isl_constraint_set_coefficient_si(
           ZeroConstraint, isl_dim_set, zerodim, 1);
-
-      // TODO: branch inside for, expensive?
-      // set all other dimensions to coefficient 0, except for our dimensions
-      // which should have coefficient 1
-      /*for(int otherdim = 0; otherdim < DeltasDimNum; otherdim++) {
-          if (otherdim == zerodim) {
-              ZeroConstraint = isl_constraint_set_coefficient_si(ZeroConstraint,
-      isl_dim_set, otherdim, 1);
-          }
-          else {
-              ZeroConstraint = isl_constraint_set_coefficient_si(ZeroConstraint,
-      isl_dim_set, otherdim, 0);
-          }
-      }*/
       ExpectedDeltas = isl_set_add_constraint(ExpectedDeltas, ZeroConstraint);
     }
 
@@ -950,40 +940,37 @@ static bool containsOnlyMatMulDep(__isl_keep isl_map *Schedule,
     for (int boundi = 0; boundi < 2; boundi++) {
       auto *Bound = boundsInfo.bounds[boundi];
 
-      if (boundsInfo.bounds[i] != nullptr) {
+      if (Bound != nullptr) {
         isl_val *coeff =
             isl_constraint_get_coefficient_val(Bound, isl_dim_set, 0);
         isl_val *constant = isl_constraint_get_constant_val(Bound);
+        
+        isl_constraint_free(Bound);
+        
+        isl_constraint *NewBound = nullptr;
+        if (isl_constraint_is_equality(Bound)) {
+            NewBound = isl_constraint_alloc_equality(
+                isl_local_space_from_space(isl_set_get_space(Deltas)));
+        }
+        else {
+            NewBound = isl_constraint_alloc_inequality(
+                isl_local_space_from_space(isl_set_get_space(Deltas)));
 
+        }
         // errs() << " *** coeff: " << isl_val_to_str(coeff)
         // << " | constant: " << isl_val_to_str(constant) << "\n";
-        isl_constraint *NewBound = isl_constraint_alloc_inequality(
-            isl_local_space_from_space(isl_set_get_space(Deltas)));
-
+        assert(NewBound != nullptr);
         NewBound = isl_constraint_set_constant_val(NewBound, constant);
         NewBound =
             isl_constraint_set_coefficient_val(NewBound, isl_dim_set, i, coeff);
-        /*
-        for(int otherdim = 0; otherdim < DeltasDimNum; otherdim++) {
-            if (otherdim == i) {
-                NewBound = isl_constraint_set_coefficient_val(NewBound,
-        isl_dim_set, otherdim, coeff);
-            }
-            else {
-                NewBound = isl_constraint_set_coefficient_si(NewBound,
-        isl_dim_set, otherdim, 0);
-            }
-        }*/
-
         isl_set_add_constraint(ExpectedDeltas, NewBound);
       }
     }
+
     // errs() << "*** Fully Constrained ExpectedDeltas: " << ExpectedDeltas
     // << "\n";
-
-    isl_constraint_free(boundsInfo.bounds[0]);
-    isl_constraint_free(boundsInfo.bounds[1]);
-
+    
+    // errs() << "*** Deltas: " << Deltas << "\n *** FinalExpectedDeltas: " << ExpectedDeltas << "\n";
     if (!isl_set_is_equal(Deltas, ExpectedDeltas)) {
       isl_set_free(Deltas);
       isl_set_free(ExpectedDeltas);
@@ -994,20 +981,8 @@ static bool containsOnlyMatMulDep(__isl_keep isl_map *Schedule,
       Pos = i;
       return true;
     }
-
-    /*
-    // Pos < 0, we need to set the parameter which corresponds the dependence.
-    if (Pos < 0) {
-      Pos = i;
-    }
-    // Pos > 0, we should verify that the dimension is the one along which
-    // the dependence is supposed to be,
-    else if (Pos != i) {
-      isl_set_free(Deltas);
-      return false;
-    }
-    */
   }
+
   isl_set_free(Deltas);
   if (DeltasDimNum == 0 || !foundNonZeroDimension)
     return false;
