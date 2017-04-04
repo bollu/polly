@@ -765,10 +765,93 @@ static bool containsOnlyMatrMultAcc(__isl_keep isl_map *PartialSchedule,
   return true;
 }
 
+struct BoundsInfo {
+  isl_constraint *bounds[2];
+  int dim;
+  int numdim;
+};
+
+static isl_stat
+getBoundsInfoFromConstraint(__isl_take isl_constraint *constraint, void *user) {
+
+  // errs() << "***constraint: " << constraint << "\n";
+  BoundsInfo *boundsInfo = static_cast<BoundsInfo *>(user);
+
+  if (isl_constraint_is_equality(constraint)) {
+    //   errs() << "\t equality\n";
+    if (boundsInfo->bounds[0] != nullptr || boundsInfo->bounds[1] != nullptr) {
+      isl_constraint_free(constraint);
+      return isl_stat_error;
+    }
+
+    boundsInfo->bounds[0] = isl_constraint_copy(constraint);
+    boundsInfo->bounds[1] = constraint;
+    return isl_stat_ok;
+  }
+
+  else if (isl_constraint_is_lower_bound(constraint, isl_dim_set, 0)) {
+    //  errs() << "\t lower bound\n";
+
+    if (boundsInfo->bounds[0] != nullptr) {
+      isl_constraint_free(constraint);
+      return isl_stat_error;
+    }
+
+    boundsInfo->bounds[0] = constraint;
+    return isl_stat_ok;
+  }
+
+  else if (isl_constraint_is_upper_bound(constraint, isl_dim_set, 0)) {
+    //  errs() << "\t upper bound\n";
+    if (boundsInfo->bounds[1] != nullptr) {
+      isl_constraint_free(constraint);
+      return isl_stat_error;
+    }
+
+    boundsInfo->bounds[1] = constraint;
+    return isl_stat_ok;
+  }
+
+  // we have recieved something that is not equality, lower or upper bound.
+  // This can be of no interest to us, so error out.
+  isl_constraint_free(constraint);
+  return isl_stat_error;
+}
+static isl_stat getBoundsInfoFromSet(__isl_take isl_basic_set *bset,
+                                     void *constraintData) {
+
+  BoundsInfo *boundsInfo = static_cast<BoundsInfo *>(constraintData);
+
+  // errs() << "*** boundsInfo: dim=" << boundsInfo->dim
+  //       << " | numdim=" << boundsInfo->numdim << "\n";
+  // errs() << "***Bset: " << isl_basic_set_to_str(bset) << "\n";
+
+  // project out all dimensions other than the one we are interested in.
+  // TODO: check if you need the conditions?
+  if (boundsInfo->dim < boundsInfo->numdim - 1) {
+    bset = isl_basic_set_project_out(bset, isl_dim_set, boundsInfo->dim + 1,
+                                     (boundsInfo->numdim - 1) -
+                                         (boundsInfo->dim + 1) + 1);
+  }
+  if (boundsInfo->dim > 0) {
+    bset = isl_basic_set_project_out(bset, isl_dim_set, 0, boundsInfo->dim);
+  }
+
+  // errs() << "*** After projection: Bset: " << isl_basic_set_to_str(bset)
+  //        << "\n";
+
+  // loop over the constraints. We know that they can only belong to the
+  // dimension we are interested in since everything else is projected out
+  isl_stat stat = isl_basic_set_foreach_constraint(
+      bset, getBoundsInfoFromConstraint, boundsInfo);
+  isl_basic_set_free(bset);
+  return stat;
+}
+
 /// Check for dependencies corresponding to the matrix multiplication.
 ///
 /// Check that there is only true dependence of the form
-/// S(..., k, ...) -> S(..., <anything>, ...), where S is the SCoP statement
+/// S(..., k, ...) -> S(..., <anything> , …), where S is the SCoP statement
 /// represented by @p Schedule and k is @p Pos. Such a dependence corresponds
 /// to the dependency produced by the matrix multiplication.
 ///
@@ -808,6 +891,111 @@ static bool containsOnlyMatMulDep(__isl_keep isl_map *Schedule,
     }
     foundNonZeroDimension = true;
 
+    if (isl_set_n_basic_set(Deltas) != 1) {
+      // Deltas has more than one basic set, which means that we have more than
+      // one dependence of the form S(..) -> S(..). This is illegal.
+      isl_set_free(Deltas);
+      return false;
+    }
+
+    BoundsInfo boundsInfo;
+    boundsInfo.dim = i;
+    boundsInfo.numdim = DeltasDimNum;
+    boundsInfo.bounds[0] = boundsInfo.bounds[1] = nullptr;
+
+    if (isl_set_foreach_basic_set(Deltas, getBoundsInfoFromSet,
+                                  static_cast<void *>(&boundsInfo)) !=
+        isl_stat_ok) {
+
+      isl_constraint_free(boundsInfo.bounds[0]);
+      isl_constraint_free(boundsInfo.bounds[1]);
+      return false;
+    }
+
+    isl_set *ExpectedDeltas = isl_set_universe(isl_set_get_space(Deltas));
+    // errs() << "*** ExpectedDeltas: " << ExpectedDeltas << "\n";
+
+    // set every dimension other than this one to zero
+    for (int zerodim = 0; zerodim < DeltasDimNum; zerodim++) {
+      if (zerodim == i) {
+        continue;
+      }
+
+      // i_zerodim = 0
+      auto *ZeroConstraint = isl_constraint_alloc_equality(
+          isl_local_space_from_space(isl_set_get_space(Deltas)));
+      ZeroConstraint = isl_constraint_set_constant_si(ZeroConstraint, 0);
+      ZeroConstraint = isl_constraint_set_coefficient_si(
+          ZeroConstraint, isl_dim_set, zerodim, 1);
+
+      // TODO: branch inside for, expensive?
+      // set all other dimensions to coefficient 0, except for our dimensions
+      // which should have coefficient 1
+      /*for(int otherdim = 0; otherdim < DeltasDimNum; otherdim++) {
+          if (otherdim == zerodim) {
+              ZeroConstraint = isl_constraint_set_coefficient_si(ZeroConstraint,
+      isl_dim_set, otherdim, 1);
+          }
+          else {
+              ZeroConstraint = isl_constraint_set_coefficient_si(ZeroConstraint,
+      isl_dim_set, otherdim, 0);
+          }
+      }*/
+      ExpectedDeltas = isl_set_add_constraint(ExpectedDeltas, ZeroConstraint);
+    }
+
+    // errs() << "*** Zeroed ExpectedDeltas: " << ExpectedDeltas << "\n";
+
+    // add the bounds received from getBoundsInfoFromSet
+    for (int boundi = 0; boundi < 2; boundi++) {
+      auto *Bound = boundsInfo.bounds[boundi];
+
+      if (boundsInfo.bounds[i] != nullptr) {
+        isl_val *coeff =
+            isl_constraint_get_coefficient_val(Bound, isl_dim_set, 0);
+        isl_val *constant = isl_constraint_get_constant_val(Bound);
+
+        // errs() << " *** coeff: " << isl_val_to_str(coeff)
+        // << " | constant: " << isl_val_to_str(constant) << "\n";
+        isl_constraint *NewBound = isl_constraint_alloc_inequality(
+            isl_local_space_from_space(isl_set_get_space(Deltas)));
+
+        NewBound = isl_constraint_set_constant_val(NewBound, constant);
+        NewBound =
+            isl_constraint_set_coefficient_val(NewBound, isl_dim_set, i, coeff);
+        /*
+        for(int otherdim = 0; otherdim < DeltasDimNum; otherdim++) {
+            if (otherdim == i) {
+                NewBound = isl_constraint_set_coefficient_val(NewBound,
+        isl_dim_set, otherdim, coeff);
+            }
+            else {
+                NewBound = isl_constraint_set_coefficient_si(NewBound,
+        isl_dim_set, otherdim, 0);
+            }
+        }*/
+
+        isl_set_add_constraint(ExpectedDeltas, NewBound);
+      }
+    }
+    // errs() << "*** Fully Constrained ExpectedDeltas: " << ExpectedDeltas
+    // << "\n";
+
+    isl_constraint_free(boundsInfo.bounds[0]);
+    isl_constraint_free(boundsInfo.bounds[1]);
+
+    if (!isl_set_is_equal(Deltas, ExpectedDeltas)) {
+      isl_set_free(Deltas);
+      isl_set_free(ExpectedDeltas);
+      return false;
+    } else {
+      isl_set_free(Deltas);
+      isl_set_free(ExpectedDeltas);
+      Pos = i;
+      return true;
+    }
+
+    /*
     // Pos < 0, we need to set the parameter which corresponds the dependence.
     if (Pos < 0) {
       Pos = i;
@@ -818,6 +1006,7 @@ static bool containsOnlyMatMulDep(__isl_keep isl_map *Schedule,
       isl_set_free(Deltas);
       return false;
     }
+    */
   }
   isl_set_free(Deltas);
   if (DeltasDimNum == 0 || !foundNonZeroDimension)
