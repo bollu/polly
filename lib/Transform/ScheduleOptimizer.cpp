@@ -788,22 +788,50 @@ static bool containsOnlyMatMulDep(__isl_keep isl_map *Schedule,
   auto *DomainSpace = isl_space_domain(isl_map_get_space(Schedule));
   auto *Space = isl_space_map_from_domain_and_range(isl_space_copy(DomainSpace),
                                                     DomainSpace);
-  auto *Deltas = isl_map_deltas(isl_union_map_extract_map(Dep, Space));
+  auto *DomainDep = isl_union_map_extract_map(Dep, Space);
+  auto *Deltas = isl_map_deltas(DomainDep);
   isl_union_map_free(Dep);
   int DeltasDimNum = isl_set_dim(Deltas, isl_dim_set);
+
+  bool foundSpanningSubspace = false;
+
+  errs() << "*** DeltasDimNum: " << DeltasDimNum << "\n";
   for (int i = 0; i < DeltasDimNum; i++) {
-    auto *Val = isl_set_plain_get_val_if_fixed(Deltas, isl_dim_set, i);
-    Pos = Pos < 0 && isl_val_is_one(Val) ? i : Pos;
-    if (isl_val_is_nan(Val) ||
-        !(isl_val_is_zero(Val) || (i == Pos && isl_val_is_one(Val)))) {
-      isl_val_free(Val);
-      isl_set_free(Deltas);
-      return false;
+    auto *DimSubset = isl_set_copy(Deltas);
+    DimSubset = isl_set_drop_constraints_not_involving_dims(DimSubset, isl_dim_set, i, 1);
+    auto *Val = isl_set_plain_get_val_if_fixed(DimSubset, isl_dim_set, i);
+    
+    if (isl_val_is_zero(Val)) { 
+        continue;
     }
+
+    // we have already found a spanning subspace. Getting another
+    // nonzero subspace does not match the pattern
+    if (foundSpanningSubspace) {
+        isl_val_free(Val);
+        isl_set_free(Deltas);
+        return false;
+    }
+   
+
+    isl_set *SubDeltas = isl_set_subtract(isl_set_copy(Deltas), DimSubset);
+
+    if (isl_set_is_empty(SubDeltas)) {
+        errs() << "***Spanning Subspace (" << i << "): " << SubDeltas <<"\n";
+        Pos = i;
+        foundSpanningSubspace = true;        
+    }
+    else {
+        isl_val_free(Val);
+        isl_set_free(SubDeltas);
+        return false;
+    }
+
     isl_val_free(Val);
+    isl_set_free(SubDeltas);
   }
   isl_set_free(Deltas);
-  if (DeltasDimNum == 0 || Pos < 0)
+  if (DeltasDimNum == 0 || !foundSpanningSubspace)
     return false;
   return true;
 }
