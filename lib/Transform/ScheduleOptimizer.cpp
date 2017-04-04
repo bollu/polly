@@ -781,10 +781,7 @@ static bool containsOnlyMatrMultAcc(__isl_keep isl_map *PartialSchedule,
 ///         and false, otherwise.
 static bool containsOnlyMatMulDep(__isl_keep isl_map *Schedule,
                                   const Dependences *D, int &Pos) {
-  auto *Dep = D->getDependences(Dependences::TYPE_RAW);
-  auto *Red = D->getDependences(Dependences::TYPE_RED);
-  if (Red)
-    Dep = isl_union_map_union(Dep, Red);
+  auto *Dep = D->getDependences(Dependences::TYPE_RAW | Dependences::TYPE_RED);
   auto *DomainSpace = isl_space_domain(isl_map_get_space(Schedule));
   auto *Space = isl_space_map_from_domain_and_range(isl_space_copy(DomainSpace),
                                                     DomainSpace);
@@ -793,46 +790,50 @@ static bool containsOnlyMatMulDep(__isl_keep isl_map *Schedule,
   isl_union_map_free(Dep);
   int DeltasDimNum = isl_set_dim(Deltas, isl_dim_set);
 
-  bool foundSpanningSubspace = false;
+  bool foundNonZeroDimension = false;
 
-  errs() << "*** DeltasDimNum: " << DeltasDimNum << "\n";
   for (int i = 0; i < DeltasDimNum; i++) {
-    auto *DimSubset = isl_set_copy(Deltas);
-    DimSubset = isl_set_drop_constraints_not_involving_dims(DimSubset, isl_dim_set, i, 1);
-    auto *Val = isl_set_plain_get_val_if_fixed(DimSubset, isl_dim_set, i);
-    
-    if (isl_val_is_zero(Val)) { 
-        isl_val_free(Val);
-        isl_set_free(DimSubset);
-        continue;
+    auto *Val = isl_set_plain_get_val_if_fixed(Deltas, isl_dim_set, i);
+    if (isl_val_is_zero(Val)) {
+      isl_val_free(Val);
+      continue;
     }
     isl_val_free(Val);
 
-    // we have already found a spanning subspace. Getting another
-    // nonzero subspace does not match the pattern
-    if (foundSpanningSubspace) {
-        isl_set_free(Deltas);
-        return false;
+    // we have already found a nonzero subspace. Getting another
+    // nonzero subspace means that we have a dependence along another dimension.
+    if (foundNonZeroDimension) {
+      isl_set_free(Deltas);
+      return false;
     }
-   
+    foundNonZeroDimension = true;
+    // Pos < 0, we need to set the parameter which corresponds the dependence.
+    if (Pos < 0) {
+      Pos = i;
+    }
+    // Pos > 0, we should verify that the dimension is the one along which
+    // the dependence is supposed to be,
+    else if (Pos != i) {
+      isl_set_free(Deltas);
+      return false;
+    }
 
+    /*
     isl_set *SubDeltas = isl_set_subtract(isl_set_copy(Deltas), DimSubset);
 
     if (isl_set_is_empty(SubDeltas)) {
-        errs() << "***Spanning Subspace (" << i << "): " << SubDeltas <<"\n";
-        Pos = i;
-        foundSpanningSubspace = true;        
-        isl_set_free(SubDeltas);
-    }
-    else {
-        isl_set_free(SubDeltas);
-        isl_set_free(Deltas);
-        return false;
-    }
-
+      errs() << "***Spanning Subspace (" << i << "): " << SubDeltas << "\n";
+      Pos = i;
+      foundNonZeroDimension = true;
+      isl_set_free(SubDeltas);
+    } else {
+      isl_set_free(SubDeltas);
+      isl_set_free(Deltas);
+      return false;
+    }*/
   }
   isl_set_free(Deltas);
-  if (DeltasDimNum == 0 || !foundSpanningSubspace)
+  if (DeltasDimNum == 0 || !foundNonZeroDimension)
     return false;
   return true;
 }
