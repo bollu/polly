@@ -244,8 +244,8 @@ void Dependences::calculateDependences(Scop &S) {
     isl_union_pw_multi_aff *ReductionTags, *IdentityTags, *Tags;
 
     // Extract Reduction tags from the combined access domains in the given
-    // SCoP. The result is a map that maps each tagged element in the domain
-    // to the memory location it accesses. ReductionTags = {[Stmt[i] ->
+    // SCoP. The result is a map that maps each tagged element in the domain to
+    // the memory location it accesses. ReductionTags = {[Stmt[i] ->
     // Array[f(i)]] -> Stmt[i] }
     ReductionTags =
         isl_union_map_domain_map_union_pw_multi_aff(ReductionTagMap);
@@ -425,19 +425,19 @@ void Dependences::calculateDependences(Scop &S) {
     dbgs() << "\n";
   });
 
+
   // RED_SIN is used to collect all reduction dependences again after we
-  // split them according to the causing memory accesses. The current
-  // assumption is that our method of splitting will not have any leftovers.
-  // In the end we validate this assumption until we have more confidence in
-  // this method.
+  // split them according to the causing memory accesses. The current assumption
+  // is that our method of splitting will not have any leftovers. In the end
+  // we validate this assumption until we have more confidence in this method.
   isl_union_map *RED_SIN = isl_union_map_empty(isl_union_map_get_space(RAW));
 
   // For each reduction like memory access, check if there are reduction
   // dependences with the access relation of the memory access as a domain
-  // (wrapped space!). If so these dependences are caused by this memory
-  // access. We then move this portion of reduction dependences back to the
-  // statement -> statement space and add a mapping from the memory access to
-  // these dependences.
+  // (wrapped space!). If so these dependences are caused by this memory access.
+  // We then move this portion of reduction dependences back to the statement ->
+  // statement space and add a mapping from the memory access to these
+  // dependences.
   for (ScopStmt &Stmt : S) {
     for (MemoryAccess *MA : Stmt) {
       if (!MA->isReductionLike())
