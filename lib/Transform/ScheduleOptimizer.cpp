@@ -768,7 +768,7 @@ static bool containsOnlyMatrMultAcc(__isl_keep isl_map *PartialSchedule,
 /// Check for dependencies corresponding to the matrix multiplication.
 ///
 /// Check that there is only true dependence of the form
-/// S(..., k, ...) -> S(..., k + 1, …), where S is the SCoP statement
+/// S(..., k, ...) -> S(..., <anything>, ...), where S is the SCoP statement
 /// represented by @p Schedule and k is @p Pos. Such a dependence corresponds
 /// to the dependency produced by the matrix multiplication.
 ///
@@ -807,6 +807,7 @@ static bool containsOnlyMatMulDep(__isl_keep isl_map *Schedule,
       return false;
     }
     foundNonZeroDimension = true;
+
     // Pos < 0, we need to set the parameter which corresponds the dependence.
     if (Pos < 0) {
       Pos = i;
@@ -817,20 +818,6 @@ static bool containsOnlyMatMulDep(__isl_keep isl_map *Schedule,
       isl_set_free(Deltas);
       return false;
     }
-
-    /*
-    isl_set *SubDeltas = isl_set_subtract(isl_set_copy(Deltas), DimSubset);
-
-    if (isl_set_is_empty(SubDeltas)) {
-      errs() << "***Spanning Subspace (" << i << "): " << SubDeltas << "\n";
-      Pos = i;
-      foundNonZeroDimension = true;
-      isl_set_free(SubDeltas);
-    } else {
-      isl_set_free(SubDeltas);
-      isl_set_free(Deltas);
-      return false;
-    }*/
   }
   isl_set_free(Deltas);
   if (DeltasDimNum == 0 || !foundNonZeroDimension)
