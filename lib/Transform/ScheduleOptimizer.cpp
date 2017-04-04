@@ -837,8 +837,18 @@ static isl_stat getBoundsInfoFromSet(__isl_take isl_basic_set *bset,
     bset = isl_basic_set_project_out(bset, isl_dim_set, 0, boundsInfo->dim);
   }
 
+  // project out all parametric dimensions out of the basic set. Otherwise,
+  // something like
+  // [i, j, k] -> { S [0, 0, i2] : 0 <= i2 <= 1024 and i > 10 and j < 20 }
+  // can mess with us, since we will recieve the "i" and "j" when iterating over
+  // constraints
+  isl_space *Space = isl_basic_set_get_space(bset);
+  const int nparams = isl_space_dim(Space, isl_dim_param);
+  isl_space_free(Space);
+  bset = isl_basic_set_project_out(bset, isl_dim_param, 0, nparams);
+
   // errs() << "*** After projection: Bset: " << isl_basic_set_to_str(bset)
-  //        << "\n";
+  // << "\n";
 
   // loop over the constraints. We know that they can only belong to the
   // dimension we are interested in since everything else is projected out
@@ -903,6 +913,7 @@ static bool containsOnlyMatMulDep(__isl_keep isl_map *Schedule,
     boundsInfo.numdim = DeltasDimNum;
     boundsInfo.bounds[0] = boundsInfo.bounds[1] = nullptr;
 
+    // errs() << "*** Looping over Deltas : " << Deltas << "\n";
     if (isl_set_foreach_basic_set(Deltas, getBoundsInfoFromSet,
                                   static_cast<void *>(&boundsInfo)) !=
         isl_stat_ok) {
@@ -944,18 +955,16 @@ static bool containsOnlyMatMulDep(__isl_keep isl_map *Schedule,
         isl_val *coeff =
             isl_constraint_get_coefficient_val(Bound, isl_dim_set, 0);
         isl_val *constant = isl_constraint_get_constant_val(Bound);
-        
+
         isl_constraint_free(Bound);
-        
+
         isl_constraint *NewBound = nullptr;
         if (isl_constraint_is_equality(Bound)) {
-            NewBound = isl_constraint_alloc_equality(
-                isl_local_space_from_space(isl_set_get_space(Deltas)));
-        }
-        else {
-            NewBound = isl_constraint_alloc_inequality(
-                isl_local_space_from_space(isl_set_get_space(Deltas)));
-
+          NewBound = isl_constraint_alloc_equality(
+              isl_local_space_from_space(isl_set_get_space(Deltas)));
+        } else {
+          NewBound = isl_constraint_alloc_inequality(
+              isl_local_space_from_space(isl_set_get_space(Deltas)));
         }
         // errs() << " *** coeff: " << isl_val_to_str(coeff)
         // << " | constant: " << isl_val_to_str(constant) << "\n";
@@ -969,17 +978,25 @@ static bool containsOnlyMatMulDep(__isl_keep isl_map *Schedule,
 
     // errs() << "*** Fully Constrained ExpectedDeltas: " << ExpectedDeltas
     // << "\n";
-    
-    // errs() << "*** Deltas: " << Deltas << "\n *** FinalExpectedDeltas: " << ExpectedDeltas << "\n";
-    if (!isl_set_is_equal(Deltas, ExpectedDeltas)) {
-      isl_set_free(Deltas);
-      isl_set_free(ExpectedDeltas);
-      return false;
-    } else {
-      isl_set_free(Deltas);
-      isl_set_free(ExpectedDeltas);
+
+    // errs() << "*** Deltas: " << Deltas << "\n *** FinalExpectedDeltas: " <<
+    // ExpectedDeltas << "\n";
+    isl_set *Difference = isl_set_subtract(Deltas, ExpectedDeltas);
+    // errs () << "***Difference: " << Difference;
+    if (isl_set_is_empty(Difference)) {
+      // errs() << "+++Empty!\n";
+      // if (!isl_set_is_equal(Deltas, ExpectedDeltas)) {
       Pos = i;
+      isl_set_free(Difference);
+
+      // isl_set_free(Deltas);
+      // isl_set_free(ExpectedDeltas);
       return true;
+    } else {
+      isl_set_free(Difference);
+      // isl_set_free(Deltas);
+      // isl_set_free(ExpectedDeltas);
+      return false;
     }
   }
 
