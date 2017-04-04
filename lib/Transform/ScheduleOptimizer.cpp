@@ -802,13 +802,15 @@ static bool containsOnlyMatMulDep(__isl_keep isl_map *Schedule,
     auto *Val = isl_set_plain_get_val_if_fixed(DimSubset, isl_dim_set, i);
     
     if (isl_val_is_zero(Val)) { 
+        isl_val_free(Val);
+        isl_set_free(DimSubset);
         continue;
     }
+    isl_val_free(Val);
 
     // we have already found a spanning subspace. Getting another
     // nonzero subspace does not match the pattern
     if (foundSpanningSubspace) {
-        isl_val_free(Val);
         isl_set_free(Deltas);
         return false;
     }
@@ -820,15 +822,14 @@ static bool containsOnlyMatMulDep(__isl_keep isl_map *Schedule,
         errs() << "***Spanning Subspace (" << i << "): " << SubDeltas <<"\n";
         Pos = i;
         foundSpanningSubspace = true;        
+        isl_set_free(SubDeltas);
     }
     else {
-        isl_val_free(Val);
         isl_set_free(SubDeltas);
+        isl_set_free(Deltas);
         return false;
     }
 
-    isl_val_free(Val);
-    isl_set_free(SubDeltas);
   }
   isl_set_free(Deltas);
   if (DeltasDimNum == 0 || !foundSpanningSubspace)
