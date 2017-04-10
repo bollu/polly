@@ -48,6 +48,9 @@ extern "C" {
 
 #include "llvm/Support/Debug.h"
 
+#define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
+#define DEBUG_PREAMBLE "@@@@@@@@@ " << __FILENAME__ << ":" << __LINE__ << "::: "
+
 using namespace polly;
 using namespace llvm;
 
@@ -178,7 +181,7 @@ private:
   std::vector<Value *> LocalArrays;
 
   /// A map from ScopArrays to their corresponding device allocations.
-  std::map<ScopArrayInfo *, Value *> DeviceAllocations;
+  // std::map<ScopArrayInfo *, Value *> DeviceAllocations;
 
   /// The current GPU context.
   Value *GPUContext;
@@ -226,8 +229,8 @@ private:
   ///
   /// @param TransferStmt The data transfer statement.
   /// @param Direction The direction in which to transfer data.
-  void createDataTransfer(__isl_take isl_ast_node *TransferStmt,
-                          enum DataDirection Direction);
+  // void createDataTransfer(__isl_take isl_ast_node *TransferStmt,
+  //                         enum DataDirection Direction);
 
   /// Find llvm::Values referenced in GPU kernel.
   ///
@@ -401,10 +404,10 @@ private:
   void finalizeKernelArguments(ppcg_kernel *Kernel);
 
   /// Create code that allocates memory to store arrays on device.
-  void allocateDeviceArrays();
+  // void allocateDeviceArrays();
 
   /// Free all allocated device arrays.
-  void freeDeviceArrays();
+  // void freeDeviceArrays();
 
   /// Create a call to initialize the GPU context.
   ///
@@ -485,15 +488,16 @@ void GPUNodeBuilder::initializeAfterRTH() {
   Builder.SetInsertPoint(&NewBB->front());
 
   GPUContext = createCallInitContext();
-  allocateDeviceArrays();
+  // allocateDeviceArrays();
 }
 
 void GPUNodeBuilder::finalize() {
-  freeDeviceArrays();
+  // freeDeviceArrays();
   createCallFreeContext(GPUContext);
   IslNodeBuilder::finalize();
 }
 
+/*
 void GPUNodeBuilder::allocateDeviceArrays() {
   isl_ast_build *Build = isl_ast_build_from_context(S.getContext());
 
@@ -517,6 +521,7 @@ void GPUNodeBuilder::allocateDeviceArrays() {
 
   isl_ast_build_free(Build);
 }
+*/
 
 void GPUNodeBuilder::addCUDAAnnotations(Module *M, Value *BlockDimX,
                                         Value *BlockDimY, Value *BlockDimZ) {
@@ -539,10 +544,12 @@ void GPUNodeBuilder::addCUDAAnnotations(Module *M, Value *BlockDimX,
   }
 }
 
+/*
 void GPUNodeBuilder::freeDeviceArrays() {
   for (auto &Array : DeviceAllocations)
     createCallFreeDeviceMemory(Array.second);
 }
+*/
 
 Value *GPUNodeBuilder::createCallGetKernel(Value *Buffer, Value *Entry) {
   const char *Name = "polly_getKernel";
@@ -675,7 +682,7 @@ void GPUNodeBuilder::createCallCopyFromHostToDevice(Value *HostData,
     F = Function::Create(Ty, Linkage, Name, M);
   }
 
-  Builder.CreateCall(F, {HostData, DeviceData, Size});
+  // Builder.CreateCall(F, {HostData, DeviceData, Size});
 }
 
 void GPUNodeBuilder::createCallCopyFromDeviceToHost(Value *DeviceData,
@@ -696,7 +703,7 @@ void GPUNodeBuilder::createCallCopyFromDeviceToHost(Value *DeviceData,
     F = Function::Create(Ty, Linkage, Name, M);
   }
 
-  Builder.CreateCall(F, {DeviceData, HostData, Size});
+  // Builder.CreateCall(F, {DeviceData, HostData, Size});
 }
 
 Value *GPUNodeBuilder::createCallInitContext() {
@@ -805,6 +812,7 @@ Value *GPUNodeBuilder::getArrayOffset(gpu_array_info *Array) {
   return ResultValue;
 }
 
+/*
 void GPUNodeBuilder::createDataTransfer(__isl_take isl_ast_node *TransferStmt,
                                         enum DataDirection Direction) {
   isl_ast_expr *Expr = isl_ast_node_user_get_expr(TransferStmt);
@@ -848,6 +856,7 @@ void GPUNodeBuilder::createDataTransfer(__isl_take isl_ast_node *TransferStmt,
   isl_ast_expr_free(Expr);
   isl_ast_node_free(TransferStmt);
 }
+*/
 
 void GPUNodeBuilder::createUser(__isl_take isl_ast_node *UserStmt) {
   isl_ast_expr *Expr = isl_ast_node_user_get_expr(UserStmt);
@@ -864,13 +873,13 @@ void GPUNodeBuilder::createUser(__isl_take isl_ast_node *UserStmt) {
   }
 
   if (isPrefix(Str, "to_device")) {
-    createDataTransfer(UserStmt, HOST_TO_DEVICE);
+    // createDataTransfer(UserStmt, HOST_TO_DEVICE);
     isl_ast_expr_free(Expr);
     return;
   }
 
   if (isPrefix(Str, "from_device")) {
-    createDataTransfer(UserStmt, DEVICE_TO_HOST);
+    // createDataTransfer(UserStmt, DEVICE_TO_HOST);
     isl_ast_expr_free(Expr);
     return;
   }
@@ -1094,10 +1103,22 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
 
     isl_id *Id = isl_space_get_tuple_id(Prog->array[i].space, isl_dim_set);
     const ScopArrayInfo *SAI = ScopArrayInfo::getFromId(Id);
+    errs() << DEBUG_PREAMBLE << "SAI BasePtr: " << *SAI->getBasePtr() << "\n";
 
+    auto Array = (gpu_array_info *)isl_id_get_user(Id);
+    Value *HostPtr;
+
+    if (gpu_array_is_scalar(Array))
+      HostPtr = BlockGen.getOrCreateAlloca(SAI);
+    else
+      HostPtr = SAI->getBasePtr();
+
+    errs() << DEBUG_PREAMBLE << "HostPtr: " << *HostPtr << "\n";
+    /*
     Value *DevArray = DeviceAllocations[const_cast<ScopArrayInfo *>(SAI)];
     DevArray = createCallGetDevicePtr(DevArray);
-
+    
+    
     Value *Offset = getArrayOffset(&Prog->array[i]);
 
     if (Offset) {
@@ -1106,15 +1127,24 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
       DevArray = Builder.CreateGEP(DevArray, Builder.CreateNeg(Offset));
       DevArray = Builder.CreatePointerCast(DevArray, Builder.getInt8PtrTy());
     }
+    */
+
     Value *Slot = Builder.CreateGEP(
         Parameters, {Builder.getInt64(0), Builder.getInt64(Index)});
 
     if (gpu_array_is_read_only_scalar(&Prog->array[i])) {
-      Value *ValPtr = BlockGen.getOrCreateAlloca(SAI);
+      errs() << DEBUG_PREAMBLE <<  " is read only scalar\n";
+      assert(false && "unhandled for now");
+      //Value *ValPtr = BlockGen.getOrCreateAlloca(SAI);
+      Value *ValPtr = HostPtr;
       Value *ValPtrCast =
           Builder.CreatePointerCast(ValPtr, Builder.getInt8PtrTy());
       Builder.CreateStore(ValPtrCast, Slot);
     } else {
+      errs() << DEBUG_PREAMBLE << " is NOT read only scalar\n";
+      HostPtr = Builder.CreatePointerCast(HostPtr, Builder.getInt8PtrTy());
+      errs() << DEBUG_PREAMBLE << " HostPtr after cast: " << HostPtr << "\n";
+      /*
       Instruction *Param = new AllocaInst(
           Builder.getInt8PtrTy(), Launch + "_param_" + std::to_string(Index),
           EntryBlock->getTerminator());
@@ -1122,6 +1152,8 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
       Value *ParamTyped =
           Builder.CreatePointerCast(Param, Builder.getInt8PtrTy());
       Builder.CreateStore(ParamTyped, Slot);
+      */
+      Builder.CreateStore(HostPtr, Slot);
     }
     Index++;
   }
