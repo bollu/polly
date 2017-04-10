@@ -48,7 +48,8 @@ extern "C" {
 
 #include "llvm/Support/Debug.h"
 
-#define __FILENAME__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
+#define __FILENAME__                                                           \
+  (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 #define DEBUG_PREAMBLE "@@@@@@@@@ " << __FILENAME__ << ":" << __LINE__ << "::: "
 
 using namespace polly;
@@ -1105,7 +1106,8 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
 
     isl_id *Id = isl_space_get_tuple_id(Prog->array[i].space, isl_dim_set);
     const ScopArrayInfo *SAI = ScopArrayInfo::getFromId(Id);
-    errs() << DEBUG_PREAMBLE << "SAI BasePtr: " << *SAI->getBasePtr() << "\n";
+    // errs() << DEBUG_PREAMBLE << "SAI BasePtr: " << *SAI->getBasePtr() <<
+    // "\n";
 
     auto Array = (gpu_array_info *)isl_id_get_user(Id);
     Value *HostPtr;
@@ -1115,12 +1117,12 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     else
       HostPtr = SAI->getBasePtr();
 
-    errs() << DEBUG_PREAMBLE << "HostPtr: " << *HostPtr << "\n";
+    // errs() << DEBUG_PREAMBLE << "HostPtr: " << *HostPtr << "\n";
     /*
     Value *DevArray = DeviceAllocations[const_cast<ScopArrayInfo *>(SAI)];
     DevArray = createCallGetDevicePtr(DevArray);
-    
-    
+
+
     Value *Offset = getArrayOffset(&Prog->array[i]);
 
     if (Offset) {
@@ -1135,17 +1137,17 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
         Parameters, {Builder.getInt64(0), Builder.getInt64(Index)});
 
     if (gpu_array_is_read_only_scalar(&Prog->array[i])) {
-      errs() << DEBUG_PREAMBLE <<  " is read only scalar\n";
+      // errs() << DEBUG_PREAMBLE << " is read only scalar\n";
       assert(false && "unhandled for now");
-      //Value *ValPtr = BlockGen.getOrCreateAlloca(SAI);
+      // Value *ValPtr = BlockGen.getOrCreateAlloca(SAI);
       Value *ValPtr = HostPtr;
       Value *ValPtrCast =
           Builder.CreatePointerCast(ValPtr, Builder.getInt8PtrTy());
       Builder.CreateStore(ValPtrCast, Slot);
     } else {
-      errs() << DEBUG_PREAMBLE << " is NOT read only scalar\n";
+      // errs() << DEBUG_PREAMBLE << " is NOT read only scalar\n";
       HostPtr = Builder.CreatePointerCast(HostPtr, Builder.getInt8PtrTy());
-      errs() << DEBUG_PREAMBLE << " HostPtr after cast: " << HostPtr << "\n";
+      // errs() << DEBUG_PREAMBLE << " HostPtr after cast: " << HostPtr << "\n";
       /*
       Instruction *Param = new AllocaInst(
           Builder.getInt8PtrTy(), Launch + "_param_" + std::to_string(Index),
