@@ -181,9 +181,6 @@ private:
   /// more.
   std::vector<Value *> LocalArrays;
 
-  /// A map from ScopArrays to their corresponding device allocations.
-  std::map<ScopArrayInfo *, Value *> DeviceAllocations;
-
   /// A map from ScopArrays to their corresponding host pointers
   std::map<ScopArrayInfo *, Value *> HostPointers;
 
@@ -410,12 +407,6 @@ private:
   /// @params Kernel The kernel to finalize kernel arguments for.
   void finalizeKernelArguments(ppcg_kernel *Kernel);
 
-  /// Create code that allocates memory to store arrays on device.
-  void allocateDeviceArrays();
-
-  /// Free all allocated device arrays.
-  void freeDeviceArrays();
-
   /// Create a call to initialize the GPU context.
   ///
   /// @returns A pointer to the newly initialized context.
@@ -440,24 +431,6 @@ private:
   /// @returns A pointer that identifies this allocation.
   Value *createCallAllocateMemoryForDevice(Value *Size);
 
-  /// Create a call to free a device array.
-  ///
-  /// @param Array The device array to free.
-  void createCallFreeDeviceMemory(Value *Array);
-
-  /// Create a call to copy data from host to device.
-  ///
-  /// @param HostPtr A pointer to the host data that should be copied.
-  /// @param DevicePtr A device pointer specifying the location to copy to.
-  void createCallCopyFromHostToDevice(Value *HostPtr, Value *DevicePtr,
-                                      Value *Size);
-
-  /// Create a call to copy data from device to host.
-  ///
-  /// @param DevicePtr A pointer to the device data that should be copied.
-  /// @param HostPtr A host pointer specifying the location to copy to.
-  void createCallCopyFromDeviceToHost(Value *DevicePtr, Value *HostPtr,
-                                      Value *Size);
 
   /// Create a call to get a kernel from an assembly string.
   ///
@@ -495,37 +468,11 @@ void GPUNodeBuilder::initializeAfterRTH() {
   Builder.SetInsertPoint(&NewBB->front());
 
   GPUContext = createCallInitContext();
-  allocateDeviceArrays();
 }
 
 void GPUNodeBuilder::finalize() {
-  freeDeviceArrays();
   createCallFreeContext(GPUContext);
   IslNodeBuilder::finalize();
-}
-
-void GPUNodeBuilder::allocateDeviceArrays() {
-  isl_ast_build *Build = isl_ast_build_from_context(S.getContext());
-
-  for (int i = 0; i < Prog->n_array; ++i) {
-    gpu_array_info *Array = &Prog->array[i];
-    auto *ScopArray = (ScopArrayInfo *)Array->user;
-    std::string DevArrayName("p_dev_array_");
-    DevArrayName.append(Array->name);
-
-    Value *ArraySize = getArraySize(Array);
-    Value *Offset = getArrayOffset(Array, ScopArray);
-    if (Offset)
-      ArraySize = Builder.CreateSub(
-          ArraySize,
-          Builder.CreateMul(Offset,
-                            Builder.getInt64(ScopArray->getElemSizeInBytes())));
-    Value *DevArray = createCallAllocateMemoryForDevice(ArraySize);
-    DevArray->setName(DevArrayName);
-    DeviceAllocations[ScopArray] = DevArray;
-  }
-
-  isl_ast_build_free(Build);
 }
 
 void GPUNodeBuilder::addCUDAAnnotations(Module *M, Value *BlockDimX,
@@ -547,11 +494,6 @@ void GPUNodeBuilder::addCUDAAnnotations(Module *M, Value *BlockDimX,
     MDNode *Node = MDNode::get(M->getContext(), Elements);
     AnnotationNode->addOperand(Node);
   }
-}
-
-void GPUNodeBuilder::freeDeviceArrays() {
-  for (auto &Array : DeviceAllocations)
-    createCallFreeDeviceMemory(Array.second);
 }
 
 Value *GPUNodeBuilder::createCallGetKernel(Value *Buffer, Value *Entry) {
@@ -633,40 +575,8 @@ void GPUNodeBuilder::createCallFreeKernel(Value *GPUKernel) {
   Builder.CreateCall(F, {GPUKernel});
 }
 
-void GPUNodeBuilder::createCallFreeDeviceMemory(Value *Array) {
-  const char *Name = "polly_freeDeviceMemory";
-  Module *M = Builder.GetInsertBlock()->getParent()->getParent();
-  Function *F = M->getFunction(Name);
 
-  // If F is not available, declare it.
-  if (!F) {
-    GlobalValue::LinkageTypes Linkage = Function::ExternalLinkage;
-    std::vector<Type *> Args;
-    Args.push_back(Builder.getInt8PtrTy());
-    FunctionType *Ty = FunctionType::get(Builder.getVoidTy(), Args, false);
-    F = Function::Create(Ty, Linkage, Name, M);
-  }
-
-  Builder.CreateCall(F, {Array});
-}
-
-Value *GPUNodeBuilder::createCallAllocateMemoryForDevice(Value *Size) {
-  const char *Name = "polly_allocateMemoryForDevice";
-  Module *M = Builder.GetInsertBlock()->getParent()->getParent();
-  Function *F = M->getFunction(Name);
-
-  // If F is not available, declare it.
-  if (!F) {
-    GlobalValue::LinkageTypes Linkage = Function::ExternalLinkage;
-    std::vector<Type *> Args;
-    Args.push_back(Builder.getInt64Ty());
-    FunctionType *Ty = FunctionType::get(Builder.getInt8PtrTy(), Args, false);
-    F = Function::Create(Ty, Linkage, Name, M);
-  }
-
-  return Builder.CreateCall(F, {Size});
-}
-
+/*
 void GPUNodeBuilder::createCallCopyFromHostToDevice(Value *HostData,
                                                     Value *DeviceData,
                                                     Value *Size) {
@@ -685,11 +595,6 @@ void GPUNodeBuilder::createCallCopyFromHostToDevice(Value *HostData,
     F = Function::Create(Ty, Linkage, Name, M);
   }
 
-  /*
-  errs() << DEBUG_PREAMBLE << "DeviceData: " << *DeviceData << "\n";
-  errs() << DEBUG_PREAMBLE << "HostData: " << *HostData << "\n";
-  errs() << DEBUG_PREAMBLE << "Size: " << *Size << "\n";
-  */
   Builder.CreateCall(F, {HostData, DeviceData, Size});
 }
 
@@ -712,7 +617,7 @@ void GPUNodeBuilder::createCallCopyFromDeviceToHost(Value *DeviceData,
   }
 
   Builder.CreateCall(F, {DeviceData, HostData, Size});
-}
+}*/
 
 Value *GPUNodeBuilder::createCallInitContext() {
   const char *Name = "polly_initContext";
@@ -780,26 +685,15 @@ Value *GPUNodeBuilder::getArraySize(gpu_array_info *Array) {
 
 Value *GPUNodeBuilder::getArrayOffset(gpu_array_info *Array,
                                       const ScopArrayInfo *SAI) {
-  errs() << "getArrayOffset()\n";
-  errs() << DEBUG_PREAMBLE << "SAI: ";
-  SAI->print(errs());
-
   if (gpu_array_is_scalar(Array)) {
-    errs() << DEBUG_PREAMBLE << "Array IS SCALAR. Returning @@nullptr@@\n";
     return nullptr;
   }
 
   isl_ast_build *Build = isl_ast_build_from_context(S.getContext());
 
-  errs() << DEBUG_PREAMBLE << "Array->extent: " << isl_set_to_str(Array->extent)
-         << "\n";
-
   isl_set *Min = isl_set_lexmin(isl_set_copy(Array->extent));
 
   isl_set *ZeroSet = isl_set_universe(isl_set_get_space(Min));
-
-  errs() << DEBUG_PREAMBLE << "Min: " << isl_set_to_str(Min) << "\n";
-  errs() << DEBUG_PREAMBLE << "ZeroSet: " << isl_set_to_str(ZeroSet) << "\n";
 
   for (long i = 0; i < isl_set_dim(Min, isl_dim_set); i++)
     ZeroSet = isl_set_fix_si(ZeroSet, isl_dim_set, i, 0);
@@ -836,16 +730,12 @@ Value *GPUNodeBuilder::getArrayOffset(gpu_array_info *Array,
 void GPUNodeBuilder::createHostPtr(__isl_keep gpu_array_info *Array,
                                    ScopArrayInfo *ArrayInfo, Value *&HostPtr) {
 
-  errs() << "createHostPtr()\n";
   Value *Offset = getArrayOffset(Array, ArrayInfo);
   if (gpu_array_is_scalar(Array)) {
-    errs() << DEBUG_PREAMBLE << "Array IS scalar\n";
     HostPtr = BlockGen.getOrCreateAlloca(ArrayInfo);
   } else {
-    errs() << DEBUG_PREAMBLE << "Array IS NOT scalar\n";
     HostPtr = ArrayInfo->getBasePtr();
   }
-  errs() << DEBUG_PREAMBLE << "HostPtr: " << *HostPtr << "\n";
 
   if (Offset) {
     HostPtr = Builder.CreatePointerCast(
@@ -854,14 +744,11 @@ void GPUNodeBuilder::createHostPtr(__isl_keep gpu_array_info *Array,
   }
 
   HostPtr = Builder.CreatePointerCast(HostPtr, Builder.getInt8PtrTy());
-  errs() << DEBUG_PREAMBLE << "HostPtr after cast: " << *HostPtr << "\n";
   HostPointers[ArrayInfo] = HostPtr;
 }
+/*
 void GPUNodeBuilder::createDataTransfer(__isl_take isl_ast_node *TransferStmt,
                                         enum DataDirection Direction) {
-  errs() << "createDataTransfer("
-         << (Direction == HOST_TO_DEVICE ? "HOST_TO_DEVICE" : "DEVICE_TO_HOST")
-         << ")\n";
   isl_ast_expr *Expr = isl_ast_node_user_get_expr(TransferStmt);
   isl_ast_expr *Arg = isl_ast_expr_get_op_arg(Expr, 0);
   isl_id *Id = isl_ast_expr_get_id(Arg);
@@ -872,12 +759,9 @@ void GPUNodeBuilder::createDataTransfer(__isl_take isl_ast_node *TransferStmt,
   Value *Offset = getArrayOffset(Array, ScopArray);
   Value *DevPtr = DeviceAllocations[ScopArray];
 
-  errs() << DEBUG_PREAMBLE << "SAI: ";
-  ScopArray->print(errs());
 
   Value *HostPtr;
   createHostPtr(Array, ScopArray, HostPtr);
-  errs() << DEBUG_PREAMBLE << "DevPtr: " << *DevPtr << "\n";
 
   if (Offset) {
     Size = Builder.CreateSub(
@@ -895,6 +779,7 @@ void GPUNodeBuilder::createDataTransfer(__isl_take isl_ast_node *TransferStmt,
   isl_ast_expr_free(Expr);
   isl_ast_node_free(TransferStmt);
 }
+*/
 
 void GPUNodeBuilder::createUser(__isl_take isl_ast_node *UserStmt) {
   isl_ast_expr *Expr = isl_ast_node_user_get_expr(UserStmt);
@@ -910,6 +795,12 @@ void GPUNodeBuilder::createUser(__isl_take isl_ast_node *UserStmt) {
     return;
   }
 
+  if (isPrefix(Str, "to_device") || isPrefix(Str, "from_device")) {
+    isl_ast_node_free(UserStmt);
+    isl_ast_expr_free(Expr);
+    return;
+  }
+  /*
   if (isPrefix(Str, "to_device")) {
     createDataTransfer(UserStmt, HOST_TO_DEVICE);
     isl_ast_expr_free(Expr);
@@ -921,6 +812,7 @@ void GPUNodeBuilder::createUser(__isl_take isl_ast_node *UserStmt) {
     isl_ast_expr_free(Expr);
     return;
   }
+  */
 
   isl_id *Anno = isl_ast_node_get_annotation(UserStmt);
   struct ppcg_kernel_stmt *KernelStmt =
@@ -1141,12 +1033,8 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
 
     isl_id *Id = isl_space_get_tuple_id(Prog->array[i].space, isl_dim_set);
     const ScopArrayInfo *SAI = ScopArrayInfo::getFromId(Id);
-    // auto Array = (gpu_array_info *)isl_id_get_user(Id);
     auto Array = Prog->array[i];
 
-    errs() << "createLaunchParameters()\n";
-    errs() << DEBUG_PREAMBLE << "SAI: ";
-    SAI->print(errs());
 
     Value *HostPtr = NULL;
 
@@ -1158,46 +1046,14 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
         createHostPtr(&Array, const_cast<ScopArrayInfo *>(SAI), HostPtr);
     }
 
-    errs() << DEBUG_PREAMBLE << "HostPtr: ";
-    if (HostPtr != NULL) {
-      HostPtr->print(errs());
-      errs() << "\n";
-    } else {
-      errs() << "@@@NULL@@@\n";
-    }
-
-    Value *DevArray = DeviceAllocations[const_cast<ScopArrayInfo *>(SAI)];
-    errs() << DEBUG_PREAMBLE << "DevPtr: " << *DevArray << "\n";
-    DevArray = createCallGetDevicePtr(DevArray);
-    errs() << DEBUG_PREAMBLE << "DevArray: " << *DevArray << "\n";
-    Value *Offset = getArrayOffset(&Prog->array[i], SAI);
-
-    if (Offset) {
-      DevArray = Builder.CreatePointerCast(
-          DevArray, SAI->getElementType()->getPointerTo());
-      DevArray = Builder.CreateGEP(DevArray, Builder.CreateNeg(Offset));
-      DevArray = Builder.CreatePointerCast(DevArray, Builder.getInt8PtrTy());
-    }
     Value *Slot = Builder.CreateGEP(
         Parameters, {Builder.getInt64(0), Builder.getInt64(Index)});
-
     if (gpu_array_is_read_only_scalar(&Prog->array[i])) {
-      //Value *ValPtr = BlockGen.getOrCreateAlloca(SAI);
-      Value *ValPtr = HostPtr; //BlockGen.getOrCreateAlloca(SAI);
+      Value *ValPtr = HostPtr;
       Value *ValPtrCast =
           Builder.CreatePointerCast(ValPtr, Builder.getInt8PtrTy());
       Builder.CreateStore(ValPtrCast, Slot);
     } else {
-    /*
-      Instruction *Param = new AllocaInst(
-          Builder.getInt8PtrTy(), Launch + "_param_" + std::to_string(Index),
-          EntryBlock->getTerminator());
-      Builder.CreateStore(DevArray, Param);
-      Value *ParamTyped =
-          Builder.CreatePointerCast(Param, Builder.getInt8PtrTy());
-      Builder.CreateStore(ParamTyped, Slot);
-      */
-
       Value *ParamTyped =
           Builder.CreatePointerCast(HostPtr, Builder.getInt8PtrTy());
       Builder.CreateStore(ParamTyped, Slot);
