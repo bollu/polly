@@ -232,7 +232,7 @@ private:
 
   void createHostPtr(__isl_keep gpu_array_info *Array, 
                                     ScopArrayInfo *ArrayInfo,
-                                    Value **HostPtr);
+                                    Value *&HostPtr);
 
   /// Create code for a data transfer statement
   ///
@@ -781,14 +781,27 @@ Value *GPUNodeBuilder::getArraySize(gpu_array_info *Array) {
 }
 
 Value *GPUNodeBuilder::getArrayOffset(gpu_array_info *Array) {
-  if (gpu_array_is_scalar(Array))
-    return nullptr;
+  errs() << "getArrayOffset()\n";
+  {
+    auto SAI = (ScopArrayInfo *)(Array->user);
+    errs() << DEBUG_PREAMBLE << "SAI: ";  SAI->print(errs()); errs() << "\n";
+  }
+
+  if (gpu_array_is_scalar(Array)) {
+      errs() << DEBUG_PREAMBLE << "Array IS SCALAR. Returning @@nullptr@@\n";
+      return nullptr;
+  }
 
   isl_ast_build *Build = isl_ast_build_from_context(S.getContext());
+
+  errs() << DEBUG_PREAMBLE << "Array->extent: " << isl_set_to_str(Array->extent) << "\n";
 
   isl_set *Min = isl_set_lexmin(isl_set_copy(Array->extent));
 
   isl_set *ZeroSet = isl_set_universe(isl_set_get_space(Min));
+
+  errs() << DEBUG_PREAMBLE << "Min: " << isl_set_to_str(Min) << "\n";
+  errs() << DEBUG_PREAMBLE << "ZeroSet: " << isl_set_to_str(ZeroSet) << "\n";
 
   for (long i = 0; i < isl_set_dim(Min, isl_dim_set); i++)
     ZeroSet = isl_set_fix_si(ZeroSet, isl_dim_set, i, 0);
@@ -825,27 +838,27 @@ Value *GPUNodeBuilder::getArrayOffset(gpu_array_info *Array) {
 
 void GPUNodeBuilder::createHostPtr(__isl_keep gpu_array_info *Array, 
                                     ScopArrayInfo *ArrayInfo,
-                                    Value **HostPtr) {
+                                    Value *&HostPtr) {
 
   Value *Offset = getArrayOffset(Array);
   if (gpu_array_is_scalar(Array)) {
     errs() << DEBUG_PREAMBLE << "Array IS scalar\n";
-    *HostPtr = BlockGen.getOrCreateAlloca(ArrayInfo);
+    HostPtr = BlockGen.getOrCreateAlloca(ArrayInfo);
   } else {
     errs() << DEBUG_PREAMBLE << "Array IS NOT scalar\n";
-    *HostPtr = ArrayInfo->getBasePtr();
+    HostPtr = ArrayInfo->getBasePtr();
   }
-  errs() << DEBUG_PREAMBLE << "HostPtr: " << **HostPtr << "\n";
+  errs() << DEBUG_PREAMBLE << "HostPtr: " << *HostPtr << "\n";
 
   if (Offset) {
-    *HostPtr = Builder.CreatePointerCast(
-        *HostPtr, ArrayInfo->getElementType()->getPointerTo());
-    *HostPtr = Builder.CreateGEP(*HostPtr, Offset);
+    HostPtr = Builder.CreatePointerCast(
+        HostPtr, ArrayInfo->getElementType()->getPointerTo());
+    HostPtr = Builder.CreateGEP(HostPtr, Offset);
   }
 
-  *HostPtr = Builder.CreatePointerCast(*HostPtr, Builder.getInt8PtrTy());
-  errs() << DEBUG_PREAMBLE << "HostPtr after cast: " << **HostPtr << "\n";
-  HostPointers[ArrayInfo] = *HostPtr;
+  HostPtr = Builder.CreatePointerCast(HostPtr, Builder.getInt8PtrTy());
+  errs() << DEBUG_PREAMBLE << "HostPtr after cast: " << *HostPtr << "\n";
+  HostPointers[ArrayInfo] = HostPtr;
 
 }
 void GPUNodeBuilder::createDataTransfer(__isl_take isl_ast_node *TransferStmt,
@@ -861,13 +874,13 @@ void GPUNodeBuilder::createDataTransfer(__isl_take isl_ast_node *TransferStmt,
   Value *DevPtr = DeviceAllocations[ScopArray];
 
 
+  errs() << "createDataTransfer(" << (Direction == HOST_TO_DEVICE ? "HOST_TO_DEVICE" : "DEVICE_TO_HOST") << ")\n";
   errs() << DEBUG_PREAMBLE << "SAI: "; ScopArray->print(errs());
 
   Value *HostPtr;
-  createHostPtr(Array, ScopArray, &HostPtr);
+  createHostPtr(Array, ScopArray, HostPtr);
   errs() << DEBUG_PREAMBLE << "DevPtr: " << *DevPtr << "\n";
 
-  errs() << "createDataTransfer(" << (Direction == HOST_TO_DEVICE ? "HOST_TO_DEVICE" : "DEVICE_TO_HOST") << ")\n";
 
   if (Offset) {
     Size = Builder.CreateSub(
@@ -1140,7 +1153,7 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     errs() << DEBUG_PREAMBLE << "SAI: "; SAI->print(errs());
     
     Value *HostPtr = NULL; 
-    // createHostPtr(Array, ScopArray, &HostPtr);
+    // createHostPtr(Array, ScopArray, HostPtr);
 
     
     auto it = HostPointers.find(const_cast<ScopArrayInfo *>(SAI));
