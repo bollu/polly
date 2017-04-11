@@ -424,12 +424,6 @@ private:
   /// @param Context A pointer to an initialized GPU context.
   void createCallFreeContext(Value *Context);
 
-  /// Create a call to allocate memory on the device.
-  ///
-  /// @param Size The size of memory to allocate
-  ///
-  /// @returns A pointer that identifies this allocation.
-  Value *createCallAllocateMemoryForDevice(Value *Size);
 
 
   /// Create a call to get a kernel from an assembly string.
@@ -1189,6 +1183,7 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
   Value *GridDimX, *GridDimY;
   std::tie(GridDimX, GridDimY) = getGridSizes(Kernel);
 
+  errs () << "@@@creating launchKernel@@@\n";
   createCallLaunchKernel(GPUKernel, GridDimX, GridDimY, BlockDimX, BlockDimY,
                          BlockDimZ, Parameters);
   createCallFreeKernel(GPUKernel);
