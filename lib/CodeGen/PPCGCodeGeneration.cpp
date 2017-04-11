@@ -1051,15 +1051,21 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
 
     Value *Slot = Builder.CreateGEP(
         Parameters, {Builder.getInt64(0), Builder.getInt64(Index)});
+
     if (gpu_array_is_read_only_scalar(&Prog->array[i])) {
       Value *ValPtr = HostPtr;
       Value *ValPtrCast =
           Builder.CreatePointerCast(ValPtr, Builder.getInt8PtrTy());
       Builder.CreateStore(ValPtrCast, Slot);
     } else {
+      Instruction *Param = new AllocaInst(
+          Builder.getInt8PtrTy(), Launch + "_param_" + std::to_string(Index),
+          EntryBlock->getTerminator());
+      Builder.CreateStore(HostPtr, Param);
       Value *ParamTyped =
-          Builder.CreatePointerCast(HostPtr, Builder.getInt8PtrTy());
+          Builder.CreatePointerCast(Param, Builder.getInt8PtrTy());
       Builder.CreateStore(ParamTyped, Slot);
+
     }
     Index++;
   }
