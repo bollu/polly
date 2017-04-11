@@ -98,7 +98,7 @@ static cl::opt<std::string>
 static cl::opt<int>
     MinCompute("polly-acc-mincompute",
                cl::desc("Minimal number of compute statements to run on GPU."),
-               cl::Hidden, cl::init(10 * 512 * 512));
+               cl::Hidden, cl::init(0));
 
 /// Create the ast expressions for a ScopStmt.
 ///
@@ -1028,6 +1028,7 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     isl_id *Id = isl_space_get_tuple_id(Prog->array[i].space, isl_dim_set);
     const ScopArrayInfo *SAI = ScopArrayInfo::getFromId(Id);
     auto Array = Prog->array[i];
+    Value *Offset = getArrayOffset(&Prog->array[i], SAI);
 
 
     Value *HostPtr = NULL;
@@ -1038,6 +1039,14 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     }
     if (HostPtr == NULL) {
         createHostPtr(&Array, const_cast<ScopArrayInfo *>(SAI), HostPtr);
+    }
+
+
+    if (Offset) {
+      HostPtr = Builder.CreatePointerCast(
+          HostPtr, SAI->getElementType()->getPointerTo());
+      HostPtr = Builder.CreateGEP(HostPtr, Builder.CreateNeg(Offset));
+      HostPtr = Builder.CreatePointerCast(HostPtr, Builder.getInt8PtrTy());
     }
 
     Value *Slot = Builder.CreateGEP(
