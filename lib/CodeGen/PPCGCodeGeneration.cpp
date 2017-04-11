@@ -48,6 +48,10 @@ extern "C" {
 
 #include "llvm/Support/Debug.h"
 
+#define __FILENAME__                                                           \
+  (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
+#define DEBUG_PREAMBLE "@@@@@@@@@ " << __FILENAME__ << ":" << __LINE__ << "::: "
+
 using namespace polly;
 using namespace llvm;
 
@@ -179,6 +183,9 @@ private:
 
   /// A map from ScopArrays to their corresponding device allocations.
   std::map<ScopArrayInfo *, Value *> DeviceAllocations;
+  
+  /// A map from ScopArrays to their corresponding host pointers
+  std::map<ScopArrayInfo *, Value *> HostPointers; 
 
   /// The current GPU context.
   Value *GPUContext;
@@ -221,6 +228,11 @@ private:
   virtual void createUser(__isl_take isl_ast_node *UserStmt);
 
   enum DataDirection { HOST_TO_DEVICE, DEVICE_TO_HOST };
+
+
+  void createHostPtr(__isl_keep gpu_array_info *Array, 
+                                    ScopArrayInfo *ArrayInfo,
+                                    Value **HostPtr);
 
   /// Create code for a data transfer statement
   ///
@@ -675,6 +687,11 @@ void GPUNodeBuilder::createCallCopyFromHostToDevice(Value *HostData,
     F = Function::Create(Ty, Linkage, Name, M);
   }
 
+  /*
+  errs() << DEBUG_PREAMBLE << "DeviceData: " << *DeviceData << "\n";
+  errs() << DEBUG_PREAMBLE << "HostData: " << *HostData << "\n";
+  errs() << DEBUG_PREAMBLE << "Size: " << *Size << "\n";
+  */
   Builder.CreateCall(F, {HostData, DeviceData, Size});
 }
 
@@ -805,6 +822,32 @@ Value *GPUNodeBuilder::getArrayOffset(gpu_array_info *Array) {
   return ResultValue;
 }
 
+
+void GPUNodeBuilder::createHostPtr(__isl_keep gpu_array_info *Array, 
+                                    ScopArrayInfo *ArrayInfo,
+                                    Value **HostPtr) {
+
+  Value *Offset = getArrayOffset(Array);
+  if (gpu_array_is_scalar(Array)) {
+    errs() << DEBUG_PREAMBLE << "Array IS scalar\n";
+    *HostPtr = BlockGen.getOrCreateAlloca(ArrayInfo);
+  } else {
+    errs() << DEBUG_PREAMBLE << "Array IS NOT scalar\n";
+    *HostPtr = ArrayInfo->getBasePtr();
+  }
+  errs() << DEBUG_PREAMBLE << "HostPtr: " << **HostPtr << "\n";
+
+  if (Offset) {
+    *HostPtr = Builder.CreatePointerCast(
+        *HostPtr, ArrayInfo->getElementType()->getPointerTo());
+    *HostPtr = Builder.CreateGEP(*HostPtr, Offset);
+  }
+
+  *HostPtr = Builder.CreatePointerCast(*HostPtr, Builder.getInt8PtrTy());
+  errs() << DEBUG_PREAMBLE << "HostPtr after cast: " << **HostPtr << "\n";
+  HostPointers[ArrayInfo] = *HostPtr;
+
+}
 void GPUNodeBuilder::createDataTransfer(__isl_take isl_ast_node *TransferStmt,
                                         enum DataDirection Direction) {
   isl_ast_expr *Expr = isl_ast_node_user_get_expr(TransferStmt);
@@ -817,20 +860,14 @@ void GPUNodeBuilder::createDataTransfer(__isl_take isl_ast_node *TransferStmt,
   Value *Offset = getArrayOffset(Array);
   Value *DevPtr = DeviceAllocations[ScopArray];
 
+
+  errs() << DEBUG_PREAMBLE << "SAI: "; ScopArray->print(errs());
+
   Value *HostPtr;
+  createHostPtr(Array, ScopArray, &HostPtr);
+  errs() << DEBUG_PREAMBLE << "DevPtr: " << *DevPtr << "\n";
 
-  if (gpu_array_is_scalar(Array))
-    HostPtr = BlockGen.getOrCreateAlloca(ScopArray);
-  else
-    HostPtr = ScopArray->getBasePtr();
-
-  if (Offset) {
-    HostPtr = Builder.CreatePointerCast(
-        HostPtr, ScopArray->getElementType()->getPointerTo());
-    HostPtr = Builder.CreateGEP(HostPtr, Offset);
-  }
-
-  HostPtr = Builder.CreatePointerCast(HostPtr, Builder.getInt8PtrTy());
+  errs() << "createDataTransfer(" << (Direction == HOST_TO_DEVICE ? "HOST_TO_DEVICE" : "DEVICE_TO_HOST") << ")\n";
 
   if (Offset) {
     Size = Builder.CreateSub(
@@ -1095,9 +1132,33 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     isl_id *Id = isl_space_get_tuple_id(Prog->array[i].space, isl_dim_set);
     const ScopArrayInfo *SAI = ScopArrayInfo::getFromId(Id);
 
-    Value *DevArray = DeviceAllocations[const_cast<ScopArrayInfo *>(SAI)];
-    DevArray = createCallGetDevicePtr(DevArray);
+    auto Array = (gpu_array_info *)isl_id_get_user(Id);
+    auto ScopArray = (ScopArrayInfo *)(Array->user);
+    
+    
+    errs() << "createLaunchParameters()\n";
+    errs() << DEBUG_PREAMBLE << "SAI: "; SAI->print(errs());
+    
+    Value *HostPtr = NULL; 
+    // createHostPtr(Array, ScopArray, &HostPtr);
 
+    
+    auto it = HostPointers.find(const_cast<ScopArrayInfo *>(SAI));
+    if (it != HostPointers.end()) {
+        HostPtr = it->second;
+    }
+
+    Value *DevArray = DeviceAllocations[const_cast<ScopArrayInfo *>(SAI)];
+    errs() << DEBUG_PREAMBLE << "DevPtr: " <<*DevArray << "\n";
+    DevArray = createCallGetDevicePtr(DevArray);
+    errs() << DEBUG_PREAMBLE << "DevArray: " <<*DevArray << "\n";
+    errs() << DEBUG_PREAMBLE << "HostPtr: "; 
+    if (HostPtr != NULL) {
+        HostPtr->print(errs()); errs() << "\n";
+    }
+    else {
+        errs() << "@@@NULL@@@\n";
+    }
     Value *Offset = getArrayOffset(&Prog->array[i]);
 
     if (Offset) {
