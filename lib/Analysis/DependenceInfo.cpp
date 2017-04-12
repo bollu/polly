@@ -167,14 +167,10 @@ static void collectInfo(Scop &S, isl_union_map *&Read,
 
       if (MA->isRead())
         Read = isl_union_map_add_map(Read, accdom);
-      else {
-        if (MA->isMayWrite() || MA->isReductionLike()) {
-          MayWrite = isl_union_map_add_map(MayWrite, isl_map_copy(accdom));
-        } else {
-          MustWrite = isl_union_map_add_map(MustWrite, isl_map_copy(accdom));
-        }
-        isl_map_free(accdom);
-      }
+      else if (MA->isMayWrite() || MA->isReductionLike())
+        MayWrite = isl_union_map_add_map(MayWrite, accdom);
+      else
+        MustWrite = isl_union_map_add_map(MustWrite, accdom);
     }
 
     if (!ReductionArrays.empty() && Level == Dependences::AL_Statement)
