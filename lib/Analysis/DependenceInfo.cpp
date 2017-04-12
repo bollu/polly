@@ -410,6 +410,9 @@ void Dependences::calculateDependences(Scop &S) {
     WAR = isl_union_map_subtract(WAR, isl_union_map_copy(RED));
 
     // Step 4)
+    // We need to reverse the reductions and add them to TC_RED in cases where
+    // loop reversal may take place. That way, we still have legitimate
+    // dependences even when the schedule has reversed.
     TC_RED = isl_union_map_union(isl_union_map_reverse(isl_union_map_copy(RED)),
                                  isl_union_map_copy(RED));
     TC_RED = isl_union_map_coalesce(TC_RED);
