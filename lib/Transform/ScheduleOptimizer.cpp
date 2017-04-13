@@ -785,8 +785,7 @@ static bool containsOnlyMatMulDep(__isl_keep isl_map *Schedule,
   auto *DomainSpace = isl_space_domain(isl_map_get_space(Schedule));
   auto *Space = isl_space_map_from_domain_and_range(isl_space_copy(DomainSpace),
                                                     DomainSpace);
-  auto *DomainDep = isl_union_map_extract_map(Dep, Space);
-  auto *Deltas = isl_map_deltas(DomainDep);
+  auto *Deltas = isl_map_deltas(isl_union_map_extract_map(Dep, Space);
   isl_union_map_free(Dep);
   int DeltasDimNum = isl_set_dim(Deltas, isl_dim_set);
 

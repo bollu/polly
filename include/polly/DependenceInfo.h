@@ -161,9 +161,6 @@ private:
       : RAW(nullptr), WAR(nullptr), WAW(nullptr), RED(nullptr), TC_RED(nullptr),
         IslCtx(IslCtx), Level(Level) {}
 
-  /// Calculate and add at the privatization dependences.
-  // void addPrivatizationDependences();
-
   /// Calculate the dependences for a certain SCoP @p S.
   void calculateDependences(Scop &S);
 
