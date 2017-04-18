@@ -86,6 +86,13 @@ static cl::opt<bool> PrivateMemory("polly-acc-use-private",
                                    cl::init(false), cl::ZeroOrMore,
                                    cl::cat(PollyCategory));
 
+static cl::opt<bool> ManagedMemory("polly-acc-codegen-managed-memory",
+                                   cl::desc("Generate Host kernel code assuming"
+                                            " that all memory has been"
+                                            " declared as managed memory"),
+                                   cl::Hidden, cl::init(false), cl::ZeroOrMore,
+                                   cl::cat(PollyCategory));
+
 static cl::opt<std::string>
     CudaVersion("polly-acc-cuda-version",
                 cl::desc("The CUDA version to compile for"), cl::Hidden,
@@ -177,6 +184,9 @@ private:
   /// more.
   std::vector<Value *> LocalArrays;
 
+  /// a Map from ScopArrays to the corresponding host pointer.
+  std::map<ScopArrayInfo *, Value *> HostPointers;
+
   /// A map from ScopArrays to their corresponding device allocations.
   std::map<ScopArrayInfo *, Value *> DeviceAllocations;
 
@@ -242,6 +252,9 @@ private:
   ///
   /// @returns A tuple with grid sizes for X and Y dimension
   std::tuple<Value *, Value *> getGridSizes(ppcg_kernel *Kernel);
+
+  Value *getOrCreateHostPtr(__isl_keep gpu_array_info *Array,
+                            ScopArrayInfo *ArrayInfo);
 
   /// Compute the sizes of the thread blocks for a given kernel.
   ///
@@ -805,6 +818,36 @@ Value *GPUNodeBuilder::getArrayOffset(gpu_array_info *Array) {
   return ResultValue;
 }
 
+Value *GPUNodeBuilder::getOrCreateHostPtr(__isl_keep gpu_array_info *Array,
+                                          ScopArrayInfo *ArrayInfo) {
+
+  std::map<ScopArrayInfo *, Value *>::iterator it;
+  if ((it = HostPointers.find(ArrayInfo)) != HostPointers.end()) {
+    return it->second;
+  };
+
+  Value *HostPtr = nullptr;
+  Value *Offset = getArrayOffset(Array);
+  if (gpu_array_is_scalar(Array)) {
+    HostPtr = BlockGen.getOrCreateAlloca(ArrayInfo);
+  } else {
+    HostPtr = ArrayInfo->getBasePtr();
+  }
+
+  if (Offset) {
+    HostPtr = Builder.CreatePointerCast(
+        HostPtr, ArrayInfo->getElementType()->getPointerTo());
+    HostPtr = Builder.CreateGEP(HostPtr, Offset);
+  }
+
+  HostPtr = Builder.CreatePointerCast(HostPtr, Builder.getInt8PtrTy());
+  HostPointers[ArrayInfo] = HostPtr;
+
+  assert(HostPtr != nullptr && "invalid control flow, HostPtr should be "
+                               "initialized");
+  return HostPtr;
+}
+
 void GPUNodeBuilder::createDataTransfer(__isl_take isl_ast_node *TransferStmt,
                                         enum DataDirection Direction) {
   isl_ast_expr *Expr = isl_ast_node_user_get_expr(TransferStmt);
@@ -817,20 +860,7 @@ void GPUNodeBuilder::createDataTransfer(__isl_take isl_ast_node *TransferStmt,
   Value *Offset = getArrayOffset(Array);
   Value *DevPtr = DeviceAllocations[ScopArray];
 
-  Value *HostPtr;
-
-  if (gpu_array_is_scalar(Array))
-    HostPtr = BlockGen.getOrCreateAlloca(ScopArray);
-  else
-    HostPtr = ScopArray->getBasePtr();
-
-  if (Offset) {
-    HostPtr = Builder.CreatePointerCast(
-        HostPtr, ScopArray->getElementType()->getPointerTo());
-    HostPtr = Builder.CreateGEP(HostPtr, Offset);
-  }
-
-  HostPtr = Builder.CreatePointerCast(HostPtr, Builder.getInt8PtrTy());
+  Value *HostPtr = getOrCreateHostPtr(Array, ScopArray);
 
   if (Offset) {
     Size = Builder.CreateSub(
@@ -1096,9 +1126,17 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     isl_id *Id = isl_space_get_tuple_id(Prog->array[i].space, isl_dim_set);
     const ScopArrayInfo *SAI = ScopArrayInfo::getFromId(Id);
 
-    Value *DevArray = DeviceAllocations[const_cast<ScopArrayInfo *>(SAI)];
-    DevArray = createCallGetDevicePtr(DevArray);
-
+    Value *DevArray = nullptr;
+    if (ManagedMemory) {
+      // auto Array = Prog->array[i];
+      DevArray =
+          getOrCreateHostPtr(&Prog->array[i], const_cast<ScopArrayInfo *>(SAI));
+    } else {
+      DevArray = DeviceAllocations[const_cast<ScopArrayInfo *>(SAI)];
+      DevArray = createCallGetDevicePtr(DevArray);
+    }
+    assert(DevArray != nullptr && "Array to be offloaded to device not "
+                                  "initialized");
     Value *Offset = getArrayOffset(&Prog->array[i]);
 
     if (Offset) {
@@ -1111,7 +1149,14 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
         Parameters, {Builder.getInt64(0), Builder.getInt64(Index)});
 
     if (gpu_array_is_read_only_scalar(&Prog->array[i])) {
-      Value *ValPtr = BlockGen.getOrCreateAlloca(SAI);
+      Value *ValPtr = nullptr;
+      if (ManagedMemory) {
+        ValPtr = DevArray;
+        // getOrCreateHostPtr(&Array, const_cast<ScopArrayInfo *>(SAI));
+      } else {
+        ValPtr = BlockGen.getOrCreateAlloca(SAI);
+      }
+      assert(ValPtr != nullptr);
       Value *ValPtrCast =
           Builder.CreatePointerCast(ValPtr, Builder.getInt8PtrTy());
       Builder.CreateStore(ValPtrCast, Slot);
