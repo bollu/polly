@@ -184,9 +184,6 @@ private:
   /// more.
   std::vector<Value *> LocalArrays;
 
-  /// a Map from ScopArrays to the corresponding host pointer.
-  std::map<ScopArrayInfo *, Value *> HostPointers;
-
   /// A map from ScopArrays to their corresponding device allocations.
   std::map<ScopArrayInfo *, Value *> DeviceAllocations;
 
@@ -253,7 +250,11 @@ private:
   /// @returns A tuple with grid sizes for X and Y dimension
   std::tuple<Value *, Value *> getGridSizes(ppcg_kernel *Kernel);
 
-  Value *getOrCreateHostPtr(gpu_array_info *Array, ScopArrayInfo *ArrayInfo);
+  /// Creates a array that can be sent to the kernel on the device using a
+  /// host pointer. This is required for managed memory, when we directly send
+  /// host pointers to the device.
+  Value *getOrCreateManagedDeviceArray(gpu_array_info *Array,
+                                       ScopArrayInfo *ArrayInfo);
 
   /// Compute the sizes of the thread blocks for a given kernel.
   ///
@@ -851,14 +852,15 @@ Value *GPUNodeBuilder::getArrayOffset(gpu_array_info *Array) {
   return ResultValue;
 }
 
-Value *GPUNodeBuilder::getOrCreateHostPtr(gpu_array_info *Array,
-                                          ScopArrayInfo *ArrayInfo) {
+Value *GPUNodeBuilder::getOrCreateManagedDeviceArray(gpu_array_info *Array,
+                                                     ScopArrayInfo *ArrayInfo) {
 
   assert(ManagedMemory && "this is only used when you wish to get a host "
                           "pointer for sending data to the kernel, "
                           "with managed memory");
   std::map<ScopArrayInfo *, Value *>::iterator it;
-  if ((it = HostPointers.find(ArrayInfo)) != HostPointers.end()) {
+  if ((it = DeviceAllocations.find(ArrayInfo)) != DeviceAllocations.end()) {
+    assert(false && "multiple allocations for same scop");
     return it->second;
   } else {
     Value *HostPtr;
@@ -876,7 +878,7 @@ Value *GPUNodeBuilder::getOrCreateHostPtr(gpu_array_info *Array,
     }
 
     HostPtr = Builder.CreatePointerCast(HostPtr, Builder.getInt8PtrTy());
-    HostPointers[ArrayInfo] = HostPtr;
+    DeviceAllocations[ArrayInfo] = HostPtr;
     return HostPtr;
   }
 }
@@ -1184,8 +1186,8 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
 
     Value *DevArray = nullptr;
     if (ManagedMemory) {
-      DevArray =
-          getOrCreateHostPtr(&Prog->array[i], const_cast<ScopArrayInfo *>(SAI));
+      DevArray = getOrCreateManagedDeviceArray(
+          &Prog->array[i], const_cast<ScopArrayInfo *>(SAI));
     } else {
       DevArray = DeviceAllocations[const_cast<ScopArrayInfo *>(SAI)];
       DevArray = createCallGetDevicePtr(DevArray);
