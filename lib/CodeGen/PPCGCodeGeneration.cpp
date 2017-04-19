@@ -253,6 +253,8 @@ private:
   /// Creates a array that can be sent to the kernel on the device using a
   /// host pointer. This is required for managed memory, when we directly send
   /// host pointers to the device.
+  /// \note
+  /// This is to be used only with managed memory
   Value *getOrCreateManagedDeviceArray(gpu_array_info *Array,
                                        ScopArrayInfo *ArrayInfo);
 
