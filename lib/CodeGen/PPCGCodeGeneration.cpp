@@ -497,7 +497,10 @@ void GPUNodeBuilder::initializeAfterRTH() {
   Builder.SetInsertPoint(&NewBB->front());
 
   GPUContext = createCallInitContext();
-  allocateDeviceArrays();
+
+  if (!ManagedMemory) {
+    allocateDeviceArrays();
+  }
 }
 
 void GPUNodeBuilder::finalize() {
@@ -820,6 +823,9 @@ Value *GPUNodeBuilder::getArrayOffset(gpu_array_info *Array) {
 Value *GPUNodeBuilder::getOrCreateHostPtr(gpu_array_info *Array,
                                           ScopArrayInfo *ArrayInfo) {
 
+  assert(ManagedMemory && "this is only used when you wish to get a host "
+                          "pointer for sending data to the kernel, "
+                          "with managed memory");
   std::map<ScopArrayInfo *, Value *>::iterator it;
   if ((it = HostPointers.find(ArrayInfo)) != HostPointers.end()) {
     return it->second;
@@ -856,20 +862,6 @@ void GPUNodeBuilder::createDataTransfer(__isl_take isl_ast_node *TransferStmt,
   Value *Offset = getArrayOffset(Array);
   Value *DevPtr = DeviceAllocations[ScopArray];
 
-  // Value *HostPtr = getOrCreateHostPtr(Array, ScopArray);
-
-  auto it = HostPointers.find(ScopArray);
-  if (it != HostPointers.end()) {
-    errs() << "@@@ScopArray: ";
-    ScopArray->print(errs());
-    errs() << "\n";
-    errs() << "@@@Older Host Pointer: " << *it->second << "\n";
-    errs() << "@@@DevPtr: " << *DevPtr << "\n";
-    errs() << "@@@AST node: ";
-    isl_ast_node_dump(TransferStmt);
-    errs() << "\n";
-    // assert(false);
-  }
   Value *HostPtr;
 
   if (gpu_array_is_scalar(Array))
@@ -884,8 +876,6 @@ void GPUNodeBuilder::createDataTransfer(__isl_take isl_ast_node *TransferStmt,
   }
 
   HostPtr = Builder.CreatePointerCast(HostPtr, Builder.getInt8PtrTy());
-
-  // HostPointers[ScopArray] = HostPtr;
 
   if (Offset) {
     Size = Builder.CreateSub(
@@ -1159,7 +1149,6 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
 
     Value *DevArray = nullptr;
     if (ManagedMemory) {
-      // auto Array = Prog->array[i];
       DevArray =
           getOrCreateHostPtr(&Prog->array[i], const_cast<ScopArrayInfo *>(SAI));
     } else {
