@@ -919,20 +919,22 @@ void GPUNodeBuilder::createUser(__isl_take isl_ast_node *UserStmt) {
     return;
   }
 
-  if (ManagedMemory) {
-    isl_ast_node_free(UserStmt);
-    isl_ast_expr_free(Expr);
-    return;
-  }
-
   if (isPrefix(Str, "to_device")) {
-    createDataTransfer(UserStmt, HOST_TO_DEVICE);
+    if (!ManagedMemory) {
+      createDataTransfer(UserStmt, HOST_TO_DEVICE);
+    } else {
+      isl_ast_node_free(UserStmt);
+    }
     isl_ast_expr_free(Expr);
     return;
   }
 
   if (isPrefix(Str, "from_device")) {
-    createDataTransfer(UserStmt, DEVICE_TO_HOST);
+    if (!ManagedMemory) {
+      createDataTransfer(UserStmt, DEVICE_TO_HOST);
+    } else {
+      isl_ast_node_free(UserStmt);
+    }
     isl_ast_expr_free(Expr);
     return;
   }
