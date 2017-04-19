@@ -512,6 +512,8 @@ void GPUNodeBuilder::finalize() {
 }
 
 void GPUNodeBuilder::allocateDeviceArrays() {
+  assert(!ManagedMemory && "managed memory will directly send host pointers "
+                           "to the kernel. There is no need for device arrays");
   isl_ast_build *Build = isl_ast_build_from_context(S.getContext());
 
   for (int i = 0; i < Prog->n_array; ++i) {
@@ -557,6 +559,7 @@ void GPUNodeBuilder::addCUDAAnnotations(Module *M, Value *BlockDimX,
 }
 
 void GPUNodeBuilder::freeDeviceArrays() {
+  assert(!ManagedMemory && "Managed memory does not use device arrays");
   for (auto &Array : DeviceAllocations)
     createCallFreeDeviceMemory(Array.second);
 }
@@ -641,6 +644,7 @@ void GPUNodeBuilder::createCallFreeKernel(Value *GPUKernel) {
 }
 
 void GPUNodeBuilder::createCallFreeDeviceMemory(Value *Array) {
+  assert(!ManagedMemory);
   const char *Name = "polly_freeDeviceMemory";
   Module *M = Builder.GetInsertBlock()->getParent()->getParent();
   Function *F = M->getFunction(Name);
@@ -658,6 +662,8 @@ void GPUNodeBuilder::createCallFreeDeviceMemory(Value *Array) {
 }
 
 Value *GPUNodeBuilder::createCallAllocateMemoryForDevice(Value *Size) {
+  assert(!ManagedMemory &&
+         "device memory allocation is not used by Managed Memory");
   const char *Name = "polly_allocateMemoryForDevice";
   Module *M = Builder.GetInsertBlock()->getParent()->getParent();
   Function *F = M->getFunction(Name);
@@ -677,6 +683,7 @@ Value *GPUNodeBuilder::createCallAllocateMemoryForDevice(Value *Size) {
 void GPUNodeBuilder::createCallCopyFromHostToDevice(Value *HostData,
                                                     Value *DeviceData,
                                                     Value *Size) {
+  assert(!ManagedMemory);
   const char *Name = "polly_copyFromHostToDevice";
   Module *M = Builder.GetInsertBlock()->getParent()->getParent();
   Function *F = M->getFunction(Name);
@@ -698,6 +705,7 @@ void GPUNodeBuilder::createCallCopyFromHostToDevice(Value *HostData,
 void GPUNodeBuilder::createCallCopyFromDeviceToHost(Value *DeviceData,
                                                     Value *HostData,
                                                     Value *Size) {
+  assert(!ManagedMemory);
   const char *Name = "polly_copyFromDeviceToHost";
   Module *M = Builder.GetInsertBlock()->getParent()->getParent();
   Function *F = M->getFunction(Name);
@@ -854,6 +862,7 @@ Value *GPUNodeBuilder::getOrCreateHostPtr(gpu_array_info *Array,
 
 void GPUNodeBuilder::createDataTransfer(__isl_take isl_ast_node *TransferStmt,
                                         enum DataDirection Direction) {
+  assert(!ManagedMemory && "managed memory needs no data transfers");
   isl_ast_expr *Expr = isl_ast_node_user_get_expr(TransferStmt);
   isl_ast_expr *Arg = isl_ast_expr_get_op_arg(Expr, 0);
   isl_id *Id = isl_ast_expr_get_id(Arg);
