@@ -461,6 +461,11 @@ private:
   void createCallCopyFromDeviceToHost(Value *DevicePtr, Value *HostPtr,
                                       Value *Size);
 
+  /// Create a call to synchronize Host & Device.
+  /// \note
+  /// This is to be used only with managed memory.
+  void createCallSynchronizeDevice();
+
   /// Create a call to get a kernel from an assembly string.
   ///
   /// @param Buffer The string describing the kernel.
@@ -724,6 +729,22 @@ void GPUNodeBuilder::createCallCopyFromDeviceToHost(Value *DeviceData,
   Builder.CreateCall(F, {DeviceData, HostData, Size});
 }
 
+void GPUNodeBuilder::createCallSynchronizeDevice() {
+  assert(ManagedMemory);
+  const char *Name = "polly_synchronizeDevice";
+  Module *M = Builder.GetInsertBlock()->getParent()->getParent();
+  Function *F = M->getFunction(Name);
+
+  // If F is not available, declare it.
+  if (!F) {
+    GlobalValue::LinkageTypes Linkage = Function::ExternalLinkage;
+    FunctionType *Ty = FunctionType::get(Builder.getVoidTy(), false);
+    F = Function::Create(Ty, Linkage, Name, M);
+  }
+
+  Builder.CreateCall(F);
+}
+
 Value *GPUNodeBuilder::createCallInitContext() {
   const char *Name = "polly_initContext";
   Module *M = Builder.GetInsertBlock()->getParent()->getParent();
@@ -933,6 +954,7 @@ void GPUNodeBuilder::createUser(__isl_take isl_ast_node *UserStmt) {
     if (!ManagedMemory) {
       createDataTransfer(UserStmt, DEVICE_TO_HOST);
     } else {
+      createCallSynchronizeDevice();
       isl_ast_node_free(UserStmt);
     }
     isl_ast_expr_free(Expr);
