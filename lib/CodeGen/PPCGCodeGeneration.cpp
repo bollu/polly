@@ -504,7 +504,9 @@ void GPUNodeBuilder::initializeAfterRTH() {
 }
 
 void GPUNodeBuilder::finalize() {
-  freeDeviceArrays();
+  if (!ManagedMemory) {
+    freeDeviceArrays();
+  }
   createCallFreeContext(GPUContext);
   IslNodeBuilder::finalize();
 }
