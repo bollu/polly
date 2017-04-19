@@ -253,8 +253,7 @@ private:
   /// @returns A tuple with grid sizes for X and Y dimension
   std::tuple<Value *, Value *> getGridSizes(ppcg_kernel *Kernel);
 
-  Value *getOrCreateHostPtr(__isl_keep gpu_array_info *Array,
-                            ScopArrayInfo *ArrayInfo);
+  Value *getHostPtr(gpu_array_info *Array, ScopArrayInfo *ArrayInfo);
 
   /// Compute the sizes of the thread blocks for a given kernel.
   ///
@@ -818,34 +817,34 @@ Value *GPUNodeBuilder::getArrayOffset(gpu_array_info *Array) {
   return ResultValue;
 }
 
-Value *GPUNodeBuilder::getOrCreateHostPtr(__isl_keep gpu_array_info *Array,
-                                          ScopArrayInfo *ArrayInfo) {
+Value *GPUNodeBuilder::getHostPtr(gpu_array_info *Array,
+                                  ScopArrayInfo *ArrayInfo) {
 
   std::map<ScopArrayInfo *, Value *>::iterator it;
   if ((it = HostPointers.find(ArrayInfo)) != HostPointers.end()) {
     return it->second;
-  };
-
-  Value *HostPtr = nullptr;
-  Value *Offset = getArrayOffset(Array);
-  if (gpu_array_is_scalar(Array)) {
-    HostPtr = BlockGen.getOrCreateAlloca(ArrayInfo);
   } else {
-    HostPtr = ArrayInfo->getBasePtr();
+    assert(ManagedMemory && "Host pointer that has not been initialised "
+                            "will not be asked for unless managed memory "
+                            "is used.");
+    Value *HostPtr;
+
+    if (gpu_array_is_scalar(Array))
+      HostPtr = BlockGen.getOrCreateAlloca(ArrayInfo);
+    else
+      HostPtr = ArrayInfo->getBasePtr();
+
+    Value *Offset = getArrayOffset(Array);
+    if (Offset) {
+      HostPtr = Builder.CreatePointerCast(
+          HostPtr, ArrayInfo->getElementType()->getPointerTo());
+      HostPtr = Builder.CreateGEP(HostPtr, Offset);
+    }
+
+    HostPtr = Builder.CreatePointerCast(HostPtr, Builder.getInt8PtrTy());
+    HostPointers[ArrayInfo] = HostPtr;
+    return HostPtr;
   }
-
-  if (Offset) {
-    HostPtr = Builder.CreatePointerCast(
-        HostPtr, ArrayInfo->getElementType()->getPointerTo());
-    HostPtr = Builder.CreateGEP(HostPtr, Offset);
-  }
-
-  HostPtr = Builder.CreatePointerCast(HostPtr, Builder.getInt8PtrTy());
-  HostPointers[ArrayInfo] = HostPtr;
-
-  assert(HostPtr != nullptr && "invalid control flow, HostPtr should be "
-                               "initialized");
-  return HostPtr;
 }
 
 void GPUNodeBuilder::createDataTransfer(__isl_take isl_ast_node *TransferStmt,
@@ -860,7 +859,21 @@ void GPUNodeBuilder::createDataTransfer(__isl_take isl_ast_node *TransferStmt,
   Value *Offset = getArrayOffset(Array);
   Value *DevPtr = DeviceAllocations[ScopArray];
 
-  Value *HostPtr = getOrCreateHostPtr(Array, ScopArray);
+  Value *HostPtr;
+
+  if (gpu_array_is_scalar(Array))
+    HostPtr = BlockGen.getOrCreateAlloca(ScopArray);
+  else
+    HostPtr = ScopArray->getBasePtr();
+
+  if (Offset) {
+    HostPtr = Builder.CreatePointerCast(
+        HostPtr, ScopArray->getElementType()->getPointerTo());
+    HostPtr = Builder.CreateGEP(HostPtr, Offset);
+  }
+
+  HostPtr = Builder.CreatePointerCast(HostPtr, Builder.getInt8PtrTy());
+  HostPointers[ScopArray] = HostPtr;
 
   if (Offset) {
     Size = Builder.CreateSub(
@@ -1129,8 +1142,7 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     Value *DevArray = nullptr;
     if (ManagedMemory) {
       // auto Array = Prog->array[i];
-      DevArray =
-          getOrCreateHostPtr(&Prog->array[i], const_cast<ScopArrayInfo *>(SAI));
+      DevArray = getHostPtr(&Prog->array[i], const_cast<ScopArrayInfo *>(SAI));
     } else {
       DevArray = DeviceAllocations[const_cast<ScopArrayInfo *>(SAI)];
       DevArray = createCallGetDevicePtr(DevArray);
@@ -1152,7 +1164,7 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
       Value *ValPtr = nullptr;
       if (ManagedMemory) {
         ValPtr = DevArray;
-        // getOrCreateHostPtr(&Array, const_cast<ScopArrayInfo *>(SAI));
+        // getHostPtr(&Array, const_cast<ScopArrayInfo *>(SAI));
       } else {
         ValPtr = BlockGen.getOrCreateAlloca(SAI);
       }
