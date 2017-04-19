@@ -824,9 +824,6 @@ Value *GPUNodeBuilder::getOrCreateHostPtr(gpu_array_info *Array,
   if ((it = HostPointers.find(ArrayInfo)) != HostPointers.end()) {
     return it->second;
   } else {
-    assert(ManagedMemory && "Host pointer that has not been initialised "
-                            "will not be asked for unless managed memory "
-                            "is used.");
     Value *HostPtr;
 
     if (gpu_array_is_scalar(Array))
@@ -859,6 +856,20 @@ void GPUNodeBuilder::createDataTransfer(__isl_take isl_ast_node *TransferStmt,
   Value *Offset = getArrayOffset(Array);
   Value *DevPtr = DeviceAllocations[ScopArray];
 
+  // Value *HostPtr = getOrCreateHostPtr(Array, ScopArray);
+
+  auto it = HostPointers.find(ScopArray);
+  if (it != HostPointers.end()) {
+    errs() << "@@@ScopArray: ";
+    ScopArray->print(errs());
+    errs() << "\n";
+    errs() << "@@@Older Host Pointer: " << *it->second << "\n";
+    errs() << "@@@DevPtr: " << *DevPtr << "\n";
+    errs() << "@@@AST node: ";
+    isl_ast_node_dump(TransferStmt);
+    errs() << "\n";
+    // assert(false);
+  }
   Value *HostPtr;
 
   if (gpu_array_is_scalar(Array))
@@ -873,7 +884,8 @@ void GPUNodeBuilder::createDataTransfer(__isl_take isl_ast_node *TransferStmt,
   }
 
   HostPtr = Builder.CreatePointerCast(HostPtr, Builder.getInt8PtrTy());
-  HostPointers[ScopArray] = HostPtr;
+
+  // HostPointers[ScopArray] = HostPtr;
 
   if (Offset) {
     Size = Builder.CreateSub(
@@ -902,6 +914,12 @@ void GPUNodeBuilder::createUser(__isl_take isl_ast_node *UserStmt) {
   const char *Str = isl_id_get_name(Id);
   if (!strcmp(Str, "kernel")) {
     createKernel(UserStmt);
+    isl_ast_expr_free(Expr);
+    return;
+  }
+
+  if (ManagedMemory) {
+    isl_ast_node_free(UserStmt);
     isl_ast_expr_free(Expr);
     return;
   }
