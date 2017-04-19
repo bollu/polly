@@ -253,7 +253,7 @@ private:
   /// @returns A tuple with grid sizes for X and Y dimension
   std::tuple<Value *, Value *> getGridSizes(ppcg_kernel *Kernel);
 
-  Value *getHostPtr(gpu_array_info *Array, ScopArrayInfo *ArrayInfo);
+  Value *getOrCreateHostPtr(gpu_array_info *Array, ScopArrayInfo *ArrayInfo);
 
   /// Compute the sizes of the thread blocks for a given kernel.
   ///
@@ -817,8 +817,8 @@ Value *GPUNodeBuilder::getArrayOffset(gpu_array_info *Array) {
   return ResultValue;
 }
 
-Value *GPUNodeBuilder::getHostPtr(gpu_array_info *Array,
-                                  ScopArrayInfo *ArrayInfo) {
+Value *GPUNodeBuilder::getOrCreateHostPtr(gpu_array_info *Array,
+                                          ScopArrayInfo *ArrayInfo) {
 
   std::map<ScopArrayInfo *, Value *>::iterator it;
   if ((it = HostPointers.find(ArrayInfo)) != HostPointers.end()) {
@@ -1142,7 +1142,8 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     Value *DevArray = nullptr;
     if (ManagedMemory) {
       // auto Array = Prog->array[i];
-      DevArray = getHostPtr(&Prog->array[i], const_cast<ScopArrayInfo *>(SAI));
+      DevArray =
+          getOrCreateHostPtr(&Prog->array[i], const_cast<ScopArrayInfo *>(SAI));
     } else {
       DevArray = DeviceAllocations[const_cast<ScopArrayInfo *>(SAI)];
       DevArray = createCallGetDevicePtr(DevArray);
@@ -1164,7 +1165,6 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
       Value *ValPtr = nullptr;
       if (ManagedMemory) {
         ValPtr = DevArray;
-        // getHostPtr(&Array, const_cast<ScopArrayInfo *>(SAI));
       } else {
         ValPtr = BlockGen.getOrCreateAlloca(SAI);
       }
