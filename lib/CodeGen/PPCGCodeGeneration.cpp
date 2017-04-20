@@ -862,7 +862,6 @@ Value *GPUNodeBuilder::getOrCreateManagedDeviceArray(gpu_array_info *Array,
                           "with managed memory");
   std::map<ScopArrayInfo *, Value *>::iterator it;
   if ((it = DeviceAllocations.find(ArrayInfo)) != DeviceAllocations.end()) {
-    assert(false && "multiple allocations for same scop");
     return it->second;
   } else {
     Value *HostPtr;
