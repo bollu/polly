@@ -319,7 +319,14 @@ bool ScopArrayInfo::updateSizes(ArrayRef<const SCEV *> NewSizes,
   DimensionSizesPw.clear();
   for (const SCEV *Expr : DimensionSizes) {
     if (!Expr) {
-      DimensionSizesPw.push_back(nullptr);
+      isl_space *space = isl_space_set_alloc(S.getIslCtx(), 1, 0);
+      isl_basic_set *identity = isl_basic_set_universe(space);
+      isl_local_space *ls = isl_basic_set_get_local_space(identity);
+      isl_basic_set_free(identity);
+
+      isl_aff *aff = isl_aff_var_on_domain(ls, isl_dim_param, 0);
+      isl_pw_aff *pa = isl_pw_aff_from_aff(aff);
+      DimensionSizesPw.push_back(pa);
       continue;
     }
     isl_pw_aff *Size = S.getPwAffOnly(Expr);
@@ -350,7 +357,13 @@ void ScopArrayInfo::print(raw_ostream &OS, bool SizeAsPwAff) const {
   OS.indent(8) << *getElementType() << " " << getName();
   unsigned u = 0;
   if (getNumberOfDimensions() > 0 && !getDimensionSize(0)) {
-    OS << "[*]";
+    if (SizeAsPwAff) {
+      auto *Size = getDimensionSizePw(u);
+      OS << " " << Size << " ";
+      isl_pw_aff_free(Size);
+    } else {
+      OS << "[*]";
+    }
     u++;
   }
   for (; u < getNumberOfDimensions(); u++) {
