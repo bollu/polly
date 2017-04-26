@@ -136,7 +136,6 @@ void ScopBuilder::buildEscapingDependences(Instruction *Inst) {
 ///   4. store/load <memtype> <val>, <memtype>* %gepmem, align 8, !tbaa !5
 GlobalValue *
 ScopBuilder::findFortranArrayDescriptorForArrayAccess(MemAccInst Inst) {
-  errs() << "#############################################\n";
   Inst.get()->print(errs()); errs() << "\n";
 
   // match: 4. store/load

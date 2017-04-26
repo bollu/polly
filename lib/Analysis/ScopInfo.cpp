@@ -1062,11 +1062,23 @@ void MemoryAccess::print(raw_ostream &OS) const {
     OS.indent(12) << "MayWriteAccess :=\t";
     break;
   }
+
   OS << "[Reduction Type: " << getReductionType() << "] ";
+
+    OS << "[Fortran array descriptor: ";
+  if (FortranArrayDescriptor) {
+    OS << (*FortranArrayDescriptor)->getName();
+  }
+  else {
+    OS << "NONE";
+  }
+  OS << "] ";
+
   OS << "[Scalar: " << isScalarKind() << "]\n";
   OS.indent(16) << getOriginalAccessRelationStr() << ";\n";
   if (hasNewAccessRelation())
     OS.indent(11) << "new: " << getNewAccessRelationStr() << ";\n";
+  
 }
 
 void MemoryAccess::dump() const { print(errs()); }
