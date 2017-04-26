@@ -58,7 +58,7 @@ class ScopBuilder {
   void buildScop(Region &R, AssumptionCache &AC);
 
 
-  bool buildAccessMultiDimFixedFortranAllocated(MemAccInst Inst, ScopStmt *Stmt);
+  GlobalValue* findFortranArrayDescriptorForArrayAccess(MemAccInst Inst);
 
 
   /// Try to build a multi-dimensional fixed sized MemoryAccess from the
