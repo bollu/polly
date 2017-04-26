@@ -239,6 +239,7 @@ public:
                 ArrayRef<const SCEV *> DimensionSizes, MemoryKind Kind,
                 const DataLayout &DL, Scop *S, const char *BaseName = nullptr);
 
+
   ///  Update the element type of the ScopArrayInfo object.
   ///
   ///  Memory accesses referencing this ScopArrayInfo object may use
@@ -680,6 +681,10 @@ private:
   ///   A[1][6] -> A[2][2]
   void wrapConstantDimensions();
 
+  /// The Fortran description associated with the array 
+  /// of the memory access.
+  AssertingVH<GlobalValue> *FortranArrayDescriptor;
+
 public:
   /// Create a new MemoryAccess.
   ///
@@ -708,6 +713,15 @@ public:
   /// @param AccType    Whether read or write access.
   /// @param AccRel     The access relation that describes the memory access.
   MemoryAccess(ScopStmt *Stmt, AccessType AccType, __isl_take isl_map *AccRel);
+
+  /// Set the array descriptor corresponding to the Array on which the
+  /// memory access is performed.
+  ///
+  /// @param ArrayDescriptor The struct reference which is the array
+  ///                                 descriptor.
+  void setFortranArrayDescriptor(GlobalValue *ArrayDescriptor);
+
+
 
   ~MemoryAccess();
 

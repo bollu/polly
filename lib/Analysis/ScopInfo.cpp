@@ -984,7 +984,8 @@ MemoryAccess::MemoryAccess(ScopStmt *Stmt, Instruction *AccessInst,
       Sizes(Sizes.begin(), Sizes.end()), AccessInstruction(AccessInst),
       AccessValue(AccessValue), IsAffine(Affine),
       Subscripts(Subscripts.begin(), Subscripts.end()), AccessRelation(nullptr),
-      NewAccessRelation(nullptr) {
+      NewAccessRelation(nullptr),
+      FortranArrayDescriptor(nullptr) {
   static const std::string TypeStrings[] = {"", "_Read", "_Write", "_MayWrite"};
   const std::string Access = TypeStrings[AccType] + utostr(Stmt->size());
 
@@ -996,7 +997,8 @@ MemoryAccess::MemoryAccess(ScopStmt *Stmt, AccessType AccType,
                            __isl_take isl_map *AccRel)
     : Kind(MemoryKind::Array), AccType(AccType), RedType(RT_NONE),
       Statement(Stmt), InvalidDomain(nullptr), AccessInstruction(nullptr),
-      IsAffine(true), AccessRelation(nullptr), NewAccessRelation(AccRel) {
+      IsAffine(true), AccessRelation(nullptr), NewAccessRelation(AccRel),
+      FortranArrayDescriptor(nullptr)  {
   auto *ArrayInfoId = isl_map_get_tuple_id(NewAccessRelation, isl_dim_out);
   auto *SAI = ScopArrayInfo::getFromId(ArrayInfoId);
   Sizes.push_back(nullptr);
@@ -1031,6 +1033,23 @@ raw_ostream &polly::operator<<(raw_ostream &OS,
     OS << MemoryAccess::getReductionOperatorStr(RT);
   return OS;
 }
+
+
+void MemoryAccess::setFortranArrayDescriptor(GlobalValue *ArrayDescriptor)  {
+
+    StructType *ty = dyn_cast<StructType>(ArrayDescriptor->getValueType());
+
+    assert(ty && "expected value of type Fortran array descriptor");
+
+
+    assert(ty->hasName() && ty->getName().startswith("struct.array") && "expected global to follow Fortran array descriptor type naming convention");
+    assert(ty->getNumElements() == 4 && "expected layout to be like Fortran array descriptor type");
+    //TODO: write checks to make sure it looks _exactly_ like a Fortran array descriptor
+
+    FortranArrayDescriptor = new AssertingVH<GlobalValue>(ArrayDescriptor);
+
+};
+
 
 void MemoryAccess::print(raw_ostream &OS) const {
   switch (AccType) {
