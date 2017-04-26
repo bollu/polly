@@ -112,6 +112,152 @@ void ScopBuilder::buildEscapingDependences(Instruction *Inst) {
   }
 }
 
+/// Pattern match to find fortran arrays that have been created using Alloc
+/// 1. Arrays that are created using Allocate / malloc'd
+/// ----------------------------------------------------
+///   1. %mallocmem = tail call noalias i8* @malloc(i64 40) #1
+///   store i8* %mallocmem, i8** getelementptr inbounds (%"struct.array1_real(kind=8)", %"struct.array1_real(kind=8)"* @globalname, i64 0, i32 0), align 32, !tbaa !3
+///   2. %typedmem = bitcast i8* %mallocmem to <memtype>*
+///   3(optional, will not be there for first element) [%gepmem = getelementptr inbounds i8, i8* %typedmem, i64 <index>] 
+///   4. store/load <memtype> <val>, <memtype>* %gepmem, align 8, !tbaa !5
+bool ScopBuilder::buildAccessMultiDimFixedFortranAllocated(MemAccInst Inst, ScopStmt *Stmt) {
+  errs() << "\n\n" << __FILE__ << ":" << __LINE__ << "\n";
+  if (Stmt->getBasicBlock())
+    errs() << "@@@@" << "Stmt (BB): "; Stmt->getBasicBlock()->print(errs()); errs() << "\n";
+
+  // if (Stmt->getRegion())
+  //   errs() << "@@@@" << "Stmt (Region): "; Stmt->getRegion()->print(errs()); errs() << "\n";
+  
+  errs() << "@@@@" << "Inst: "; Inst.get()->print(errs()); errs() << "\n";
+  Value *Val = Inst.getValueOperand();
+
+  Value *Address = Inst.getPointerOperand();
+
+  const BitCastInst *Bitcast = dyn_cast<BitCastInst>(Address);
+  
+  if (!Bitcast) {
+    if (auto *GEP = dyn_cast<GetElementPtrInst>(Address)) {
+      errs() << "\tGEP: "; GEP->print(errs()); errs() << "\n";
+      Value *PointerDerefed = GEP->getPointerOperand();
+      errs() << "\t\tPointerDerefed: "; PointerDerefed->print(errs()); errs() << "\n";
+      Bitcast = dyn_cast<BitCastInst>(PointerDerefed);
+    }
+    else {
+      errs() << "\tNeither bitcast nor GEP.";
+      return false;
+    }
+  }
+
+  if (!Bitcast) {
+    errs() << "\tCould not retrieve bitcast";
+    return false;
+  }
+  errs() << "\tBitcast: "; Bitcast->print(errs()); errs() << "\n";
+  auto *Src = Bitcast->getOperand(0);
+  errs() << "\t\tSrc: "; Src->print(errs()); errs() << "\n";
+
+  auto *FnCall = dyn_cast<CallInst>(Src);
+  if (!FnCall) {
+    errs() << "\t\tis not function call";
+    return false;
+  }
+
+  errs() << "\tCallInst: "; FnCall->print(errs()); errs() << "\n";
+  Function *CalledFn = FnCall->getCalledFunction();
+  if(!CalledFn) {
+    errs() << "\t\tIs an indirect function call";
+    return false;
+  }
+
+  errs() << "\tCalledFn: "; CalledFn->print(errs());errs() << " | name: " << CalledFn->getName(); errs() << "\n"; 
+
+  if (CalledFn->getName() == "malloc") {
+    errs() << "\t@@@ Found malloc!";
+  }
+
+  // errs() << "@@@@" << "ElementType: "; ElementType->print(errs()); errs() << "\n";
+  // errs() << "@@@@" << "Address: "; Address->print(errs()); errs() << "\n";
+
+  /*
+  const SCEV *AccessFunction =
+      SE.getSCEVAtScope(Address, LI.getLoopFor(Inst->getParent()));
+  const SCEVUnknown *BasePointer =
+      dyn_cast<SCEVUnknown>(SE.getPointerBase(AccessFunction));
+  enum MemoryAccess::AccessType AccType =
+      isa<LoadInst>(Inst) ? MemoryAccess::READ : MemoryAccess::MUST_WRITE;
+
+  if (auto *BitCast = dyn_cast<BitCastInst>(Address)) {
+    errs() << "@@@@" << "BitCast: "; BitCast->print(errs()); errs() << "\n";
+
+    auto *Src = BitCast->getOperand(0);
+    auto *SrcTy = Src->getType();
+    auto *DstTy = BitCast->getType();
+
+    errs() << "\tsrc: "; Src->print(errs()); errs() << "\n";
+
+
+    // Do not try to delinearize non-sized (opaque) pointers.
+    if ((SrcTy->isPointerTy() && !SrcTy->getPointerElementType()->isSized()) ||
+        (DstTy->isPointerTy() && !DstTy->getPointerElementType()->isSized())) {
+      return false;
+    }
+    if (SrcTy->isPointerTy() && DstTy->isPointerTy() &&
+        DL.getTypeAllocSize(SrcTy->getPointerElementType()) ==
+            DL.getTypeAllocSize(DstTy->getPointerElementType()))
+      Address = Src;
+  }
+
+  auto *GEP = dyn_cast<GetElementPtrInst>(Address);
+  if (!GEP)
+    return false;
+
+  errs() << "@@@@" << "GEP: "; GEP->print(errs()); errs() << "\n";
+
+  std::vector<const SCEV *> Subscripts;
+  std::vector<int> Sizes;
+  std::tie(Subscripts, Sizes) = getIndexExpressionsFromGEP(GEP, SE);
+  auto *BasePtr = GEP->getOperand(0);
+
+  if (auto *BasePtrCast = dyn_cast<BitCastInst>(BasePtr))
+    BasePtr = BasePtrCast->getOperand(0);
+
+  // Check for identical base pointers to ensure that we do not miss index
+  // offsets that have been added before this GEP is applied.
+  if (BasePtr != BasePointer->getValue())
+    return false;
+
+  std::vector<const SCEV *> SizesSCEV;
+
+  const InvariantLoadsSetTy &ScopRIL = scop->getRequiredInvariantLoads();
+
+  Loop *SurroundingLoop = Stmt->getSurroundingLoop();
+  for (auto *Subscript : Subscripts) {
+    InvariantLoadsSetTy AccessILS;
+    if (!isAffineExpr(&scop->getRegion(), SurroundingLoop, Subscript, SE,
+                      &AccessILS))
+      return false;
+
+    for (LoadInst *LInst : AccessILS)
+      if (!ScopRIL.count(LInst))
+        return false;
+  }
+
+  if (Sizes.empty())
+    return false;
+
+  SizesSCEV.push_back(nullptr);
+
+  for (auto V : Sizes)
+    SizesSCEV.push_back(SE.getSCEV(
+        ConstantInt::get(IntegerType::getInt64Ty(BasePtr->getContext()), V)));
+
+  addArrayAccess(Inst, AccType, BasePointer->getValue(), ElementType, true,
+                 Subscripts, SizesSCEV, Val);
+  return true;
+  */
+}
+
+
 bool ScopBuilder::buildAccessMultiDimFixed(MemAccInst Inst, ScopStmt *Stmt) {
   Value *Val = Inst.getValueOperand();
   Type *ElementType = Val->getType();
@@ -397,6 +543,8 @@ void ScopBuilder::buildMemoryAccess(MemAccInst Inst, ScopStmt *Stmt) {
 
   if (buildAccessCallInst(Inst, Stmt))
     return;
+
+  buildAccessMultiDimFixedFortranAllocated(Inst, Stmt);
 
   if (buildAccessMultiDimFixed(Inst, Stmt))
     return;
