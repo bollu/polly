@@ -116,28 +116,36 @@ void ScopBuilder::buildEscapingDependences(Instruction *Inst) {
 /// 1. Arrays that are created using Allocate / malloc'd
 /// ----------------------------------------------------
 ///   1. %mallocmem = tail call noalias i8* @malloc(i64 40) #1
-///   store i8* %mallocmem, i8** getelementptr inbounds (%"struct.array1_real(kind=8)", %"struct.array1_real(kind=8)"* @globalname, i64 0, i32 0), align 32, !tbaa !3
-///   2. %typedmem = bitcast i8* %mallocmem to <memtype>*
-///   3(optional, will not be there for first element) [%gepmem = getelementptr inbounds i8, i8* %typedmem, i64 <index>] 
-///   4. store/load <memtype> <val>, <memtype>* %gepmem, align 8, !tbaa !5
-GlobalValue* ScopBuilder::findFortranArrayDescriptorForArrayAccess(MemAccInst Inst) {
-  dbgs() << "\n\n" << __FILE__ << ":" << __LINE__ << "\n";
-  
-  dbgs() << "@@@@" << "Inst: "; Inst.get()->print(dbgs()); dbgs() << "\n";
-  Value *Val = Inst.getValueOperand();
+///   store i8* %mallocmem, i8** getelementptr inbounds
+///   (%"struct.array1_real(kind=8)", %"struct.array1_real(kind=8)"*
+///   @globalname, i64 0, i32 0), align 32, !tbaa !3 2. %typedmem = bitcast i8*
+///   %mallocmem to <memtype>* 3(optional, will not be there for first element)
+///   [%gepmem = getelementptr inbounds i8, i8* %typedmem, i64 <index>] 4.
+///   store/load <memtype> <val>, <memtype>* %gepmem, align 8, !tbaa !5
+GlobalValue *
+ScopBuilder::findFortranArrayDescriptorForArrayAccess(MemAccInst Inst) {
+  Inst.get()->print(dbgs());
+  dbgs() << "\n";
 
+  if (!isa<LoadInst>(Inst) || !isa<StoreInst>(Inst))
+    return nullptr;
+
+  Value *Val = Inst.getValueOperand();
   Value *Address = Inst.getPointerOperand();
 
   const BitCastInst *Bitcast = dyn_cast<BitCastInst>(Address);
-  
+
   if (!Bitcast) {
     if (auto *GEP = dyn_cast<GetElementPtrInst>(Address)) {
-      dbgs() << "\tGEP: "; GEP->print(dbgs()); dbgs() << "\n";
+      dbgs() << "\tGEP: ";
+      GEP->print(dbgs());
+      dbgs() << "\n";
       Value *PointerDerefed = GEP->getPointerOperand();
-      dbgs() << "\t\tPointerDerefed: "; PointerDerefed->print(dbgs()); dbgs() << "\n";
+      dbgs() << "\t\tPointerDerefed: ";
+      PointerDerefed->print(dbgs());
+      dbgs() << "\n";
       Bitcast = dyn_cast<BitCastInst>(PointerDerefed);
-    }
-    else {
+    } else {
       dbgs() << "\tNeither bitcast nor GEP.";
       return nullptr;
     }
@@ -147,9 +155,13 @@ GlobalValue* ScopBuilder::findFortranArrayDescriptorForArrayAccess(MemAccInst In
     dbgs() << "\tCould not retrieve bitcast";
     return nullptr;
   }
-  dbgs() << "\tBitcast: "; Bitcast->print(dbgs()); dbgs() << "\n";
+  dbgs() << "\tBitcast: ";
+  Bitcast->print(dbgs());
+  dbgs() << "\n";
   auto *Src = Bitcast->getOperand(0);
-  dbgs() << "\t\tSrc: "; Src->print(dbgs()); dbgs() << "\n";
+  dbgs() << "\t\tSrc: ";
+  Src->print(dbgs());
+  dbgs() << "\n";
 
   auto *FnCall = dyn_cast<CallInst>(Src);
   if (!FnCall) {
@@ -157,68 +169,81 @@ GlobalValue* ScopBuilder::findFortranArrayDescriptorForArrayAccess(MemAccInst In
     return nullptr;
   }
 
-  dbgs() << "\tCallInst: "; FnCall->print(dbgs()); dbgs() << "\n";
+  dbgs() << "\tCallInst: ";
+  FnCall->print(dbgs());
+  dbgs() << "\n";
   Function *CalledFn = FnCall->getCalledFunction();
-  if(!CalledFn) {
+  if (!CalledFn) {
     dbgs() << "\t\tIs an indirect function call\n";
     return nullptr;
   }
 
-  dbgs() << "\tCalledFn: "; CalledFn->print(dbgs());dbgs() << " | name: " << CalledFn->getName(); dbgs() << "\n"; 
-
-  if (CalledFn->getName() != "malloc") {
+  if (!(CalledFn->hasName() && CalledFn->getName() == "malloc"))
     return nullptr;
-  }
+
   dbgs() << "\t@@ Found malloc!\n";
 
   // Find all uses the malloc'd memory.
   // We are looking for a store into a struct with the type being the Fortran
   // descriptor type
-  for(auto use : Src->users()) {
-    dbgs() << "\tUse: "; use->print(dbgs()); dbgs() << "\n";
+  for (auto use : Src->users()) {
+    dbgs() << "\tUse: ";
+    use->print(dbgs());
+    dbgs() << "\n";
 
-    /// match: [[store]] i8* %mallocmem, [[i8** getelementptr inbounds (%"struct.array1_real(kind=8)", %"struct.array1_real(kind=8)"* @globalname, i64 0, i32 0), align 32, !tbaa !3]]
-    /// match: store
+    /// match: [[store]] i8* %mallocmem, [[i8** getelementptr inbounds
+    /// (%"struct.array1_real(kind=8)", %"struct.array1_real(kind=8)"*
+    /// @globalname, i64 0, i32 0), align 32, !tbaa !3]] match: store
     auto *Store = dyn_cast<StoreInst>(use);
-    if (!Store) continue;
+    if (!Store)
+      continue;
 
     dbgs() << "\t\t@@Is Store!\n";
-    
-    // this is actually a GetElementPtrConstantExpr, but we cannot cast it to that
-    // since it is internal to ConstantExpr.
+
+    // this is actually a GetElementPtrConstantExpr, but we cannot cast it to
+    // that since it is internal to ConstantExpr.
     auto *StoreOperand = dyn_cast<ConstantExpr>(Store->getPointerOperand());
-    if (!StoreOperand) continue;
+    if (!StoreOperand)
+      continue;
 
-    dbgs() << "\t\tOperand: "; StoreOperand->print(dbgs()); dbgs() << "\n";
-    
-    auto *StoreGEP = dyn_cast<GetElementPtrInst>(StoreOperand->getAsInstruction());
+    dbgs() << "\t\tOperand: ";
+    StoreOperand->print(dbgs());
+    dbgs() << "\n";
 
-    if(!(StoreGEP && StoreGEP->hasAllConstantIndices())) continue;
-    dbgs() << "\t\tIsGEP succeeded\n" ; 
+    auto *StoreGEP =
+        dyn_cast<GetElementPtrInst>(StoreOperand->getAsInstruction());
 
+    if (!(StoreGEP && StoreGEP->hasAllConstantIndices()))
+      continue;
+    dbgs() << "\t\tIsGEP succeeded\n";
 
-    //match: %"struct.array3_real(kind=8).17" = type { i8*, i64, i64, [3 x %struct.descriptor_dimension] }
+    // match: %"struct.array3_real(kind=8).17" = type { i8*, i64, i64, [3 x
+    // %struct.descriptor_dimension] }
     auto StoreLocType = dyn_cast<StructType>(StoreGEP->getSourceElementType());
-    if (!(StoreLocType && StoreLocType->hasName())) continue;
+    if (!(StoreLocType && StoreLocType->hasName()))
+      continue;
     StringRef name = StoreLocType->getName();
-    if (!name.startswith("struct.array")) continue;
+    if (!name.startswith("struct.array"))
+      continue;
 
     dbgs() << "\t\tLegitimate struct name: " << name << "\n";
 
-    GlobalValue *sourceArray = dyn_cast<GlobalValue>(StoreGEP->getPointerOperand());
+    GlobalValue *sourceArray =
+        dyn_cast<GlobalValue>(StoreGEP->getPointerOperand());
     dbgs() << "\t\tsourceArray pointer: " << sourceArray << "\n";
 
-    if(!sourceArray) continue;
+    if (!sourceArray)
+      continue;
 
-    dbgs() << "\t\tsource array: "; sourceArray->dump(); dbgs() << "\n";
+    dbgs() << "\t\tsource array: ";
+    sourceArray->dump();
+    dbgs() << "\n";
 
     return sourceArray;
   }
 
   return nullptr;
-
 }
-
 
 bool ScopBuilder::buildAccessMultiDimFixed(MemAccInst Inst, ScopStmt *Stmt) {
   Value *Val = Inst.getValueOperand();
@@ -645,14 +670,14 @@ void ScopBuilder::addArrayAccess(
     Type *ElementType, bool IsAffine, ArrayRef<const SCEV *> Subscripts,
     ArrayRef<const SCEV *> Sizes, Value *AccessValue) {
   ArrayBasePointers.insert(BaseAddress);
-  auto *MemAccess = addMemoryAccess(MemAccInst->getParent(), MemAccInst, AccType, BaseAddress,
-                  ElementType, IsAffine, AccessValue, Subscripts, Sizes,
-                  MemoryKind::Array);
+  auto *MemAccess = addMemoryAccess(
+      MemAccInst->getParent(), MemAccInst, AccType, BaseAddress, ElementType,
+      IsAffine, AccessValue, Subscripts, Sizes, MemoryKind::Array);
 
-  if (GlobalValue *desc = findFortranArrayDescriptorForArrayAccess(MemAccInst)) {
+  if (GlobalValue *desc =
+          findFortranArrayDescriptorForArrayAccess(MemAccInst)) {
     MemAccess->setFortranArrayDescriptor(desc);
   }
-
 }
 
 void ScopBuilder::ensureValueWrite(Instruction *Inst) {
