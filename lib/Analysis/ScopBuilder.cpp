@@ -190,6 +190,8 @@ ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
     if (!DescriptorGEP)
       continue;
 
+    //this needs to be deleted, on the basis of:
+    //https://github.com/llvm-mirror/llvm/blob/93e6e5414ded14bcbb233baaaa5567132fee9a0c/unittests/IR/ConstantsTest.cpp#L186
     Instruction *DescriptorGEPRawInst = DescriptorGEP->getAsInstruction();
 
     // We want an instruction and not a ConstantExpr since this should

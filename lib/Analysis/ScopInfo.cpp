@@ -606,7 +606,7 @@ static MemoryAccess::ReductionType getReductionType(const BinaryOperator *BinOp,
 
 MemoryAccess::~MemoryAccess() {
   if (FortranArrayDescriptor) {
-      errs() << "#####Freeing: "; FortranArrayDescriptor->print(errs()); errs() << "\n";
+      errs() << "#####Freeing: "; FortranArrayDescriptorOwningInstruction->print(errs()); errs() << "\n";
      delete FortranArrayDescriptorOwningInstruction;
   }
   isl_id_free(Id);
