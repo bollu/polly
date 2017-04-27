@@ -1,17 +1,12 @@
-; RUN: opt -S -analyze -polly-process-unprofitable  -polly-remarks-minimal -instcombine  -polly-scops -polly-dependences -debug-only=polly-dependence -polly-canonicalize -polly-allow-nonaffine   -polly-ignore-aliasing   -polly-invariant-load-hoisting < %s| FileCheck %s
+; RUN: opt -S -analyze -polly-process-unprofitable  -polly-remarks-minimal -polly-canonicalize  -polly-scops -polly-dependences -debug-only=polly-dependence -polly-canonicalize -polly-allow-nonaffine   -polly-ignore-aliasing   -polly-invariant-load-hoisting < %s| FileCheck %s
 
 ; -instcombine is a hard requirement. We style our pattern matches assuming that
 ; instcombine has happened.
 
 
-; CHECK:      Schedule :=
-; CHECK-NEXT:     [p_0_loaded_from_n, p_1_loaded_from___src_soil_MOD_xdzs] -> { Stmt__3_[i0] -> [i0] };
-; CHECK-NEXT: ReadAccess :=	[Reduction Type: NONE] [Fortran array descriptor: __src_soil_MOD_xdzs] [Scalar: 0]
-; CHECK-NEXT:     [p_0_loaded_from_n, p_1_loaded_from___src_soil_MOD_xdzs] -> { Stmt__3_[i0] -> MemRef_3[22 + p_1_loaded_from___src_soil_MOD_xdzs + i0] };
-; CHECK-NEXT: ReadAccess :=	[Reduction Type: NONE] [Fortran array descriptor: __src_soil_MOD_xdzs] [Scalar: 0]
-; CHECK-NEXT:     [p_0_loaded_from_n, p_1_loaded_from___src_soil_MOD_xdzs] -> { Stmt__3_[i0] -> MemRef_3[21 + p_1_loaded_from___src_soil_MOD_xdzs + i0] };
-; CHECK-NEXT: MustWriteAccess :=	[Reduction Type: NONE] [Fortran array descriptor: __src_soil_MOD_xdzs] [Scalar: 0]
-; CHECK-NEXT:     [p_0_loaded_from_n, p_1_loaded_from___src_soil_MOD_xdzs] -> { Stmt__3_[i0] -> MemRef_3[22 + p_1_loaded_from___src_soil_MOD_xdzs + i0] };
+; CHECK: ReadAccess :=	[Reduction Type: NONE] [Fortran array descriptor: __src_soil_MOD_xdzs] [Scalar: 0]
+; CHECK: ReadAccess :=	[Reduction Type: NONE] [Fortran array descriptor: __src_soil_MOD_xdzs] [Scalar: 0]
+; CHECK: MustWriteAccess :=	[Reduction Type: NONE] [Fortran array descriptor: __src_soil_MOD_xdzs] [Scalar: 0]
 
 ; MODULE src_soil
 ; USE data_parameters, ONLY :   &
