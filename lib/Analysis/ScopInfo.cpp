@@ -1047,7 +1047,7 @@ void MemoryAccess::setFortranArrayDescriptor(GlobalValue *ArrayDescriptor) {
   // TODO: write checks to make sure it looks _exactly_ like a Fortran array
   // descriptor
 
-  FortranArrayDescriptor = new AssertingVH<GlobalValue>(ArrayDescriptor);
+  FortranArrayDescriptor = ArrayDescriptor;
 };
 
 void MemoryAccess::print(raw_ostream &OS) const {
@@ -1066,7 +1066,7 @@ void MemoryAccess::print(raw_ostream &OS) const {
   OS << "[Reduction Type: " << getReductionType() << "] ";
 
   if (FortranArrayDescriptor) {
-    OS << "[Fortran array descriptor: " << (*FortranArrayDescriptor)->getName();
+    OS << "[Fortran array descriptor: " << FortranArrayDescriptor->getName();
     OS << "] ";
   };
 
