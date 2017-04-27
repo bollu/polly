@@ -57,7 +57,9 @@ class ScopBuilder {
   // Build the SCoP for Region @p R.
   void buildScop(Region &R, AssumptionCache &AC);
 
-  GlobalValue *findFortranArrayDescriptorForArrayAccess(MemAccInst Inst);
+  GlobalValue *findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst);
+  GlobalValue *
+  findFortranArrayDescriptorForNonAllocArrayAccess(MemAccInst Inst);
 
   /// Try to build a multi-dimensional fixed sized MemoryAccess from the
   /// Load/Store instruction.

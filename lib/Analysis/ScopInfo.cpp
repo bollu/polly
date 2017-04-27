@@ -1064,11 +1064,10 @@ void MemoryAccess::print(raw_ostream &OS) const {
 
   OS << "[Reduction Type: " << getReductionType() << "] ";
 
-    OS << "[Fortran array descriptor: ";
+  OS << "[Fortran array descriptor: ";
   if (FortranArrayDescriptor) {
     OS << (*FortranArrayDescriptor)->getName();
-  }
-  else {
+  } else {
     OS << "NONE";
   }
   OS << "] ";
@@ -1077,7 +1076,6 @@ void MemoryAccess::print(raw_ostream &OS) const {
   OS.indent(16) << getOriginalAccessRelationStr() << ";\n";
   if (hasNewAccessRelation())
     OS.indent(11) << "new: " << getNewAccessRelationStr() << ";\n";
-  
 }
 
 void MemoryAccess::dump() const { print(errs()); }
