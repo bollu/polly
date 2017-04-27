@@ -135,7 +135,7 @@ void ScopBuilder::buildEscapingDependences(Instruction *Inst) {
 ///
 ///   4.1 store/load <memtype> <val>, <memtype>* %typedmem, align 8, !tbaa !5
 ///   4.2 store/load <memtype> <val>, <memtype>* %slot, align 8, !tbaa !5
-std::tuple<GlobalValue *, Instruction*>
+std::tuple<GlobalValue *, std::unique_ptr<Instruction>>
 ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
   // match: 4. store/load
   if (!isa<LoadInst>(Inst) && !isa<StoreInst>(Inst)) {
@@ -192,15 +192,14 @@ ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
 
     //this needs to be deleted, on the basis of:
     //https://github.com/llvm-mirror/llvm/blob/93e6e5414ded14bcbb233baaaa5567132fee9a0c/unittests/IR/ConstantsTest.cpp#L186
-    Instruction *DescriptorGEPRawInst = DescriptorGEP->getAsInstruction();
+    std::unique_ptr<Instruction> DescriptorGEPRawInst(DescriptorGEP->getAsInstruction());
 
     // We want an instruction and not a ConstantExpr since this should
     // give us more flexibility to inspect the GEP.
     auto *DescriptorGEPInst =
-        dyn_cast<GetElementPtrInst>(DescriptorGEPRawInst);
+        dyn_cast<GetElementPtrInst>(DescriptorGEPRawInst.get());
 
     if (!(DescriptorGEPInst && DescriptorGEPInst->hasAllConstantIndices())) {
-      delete (DescriptorGEPRawInst);
       continue;
     }
 
@@ -209,25 +208,22 @@ ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
     auto DescriptorType =
         dyn_cast<StructType>(DescriptorGEPInst->getSourceElementType());
     if (!(DescriptorType && DescriptorType->hasName())) {
-      delete (DescriptorGEPRawInst);
       continue;
     }
 
     // name does not match expected name
     if (!DescriptorType->getName().startswith("struct.array")) {
-      delete (DescriptorGEPRawInst);
       continue;
     }
     GlobalValue *Descriptor =
         dyn_cast<GlobalValue>(DescriptorGEPInst->getPointerOperand());
 
     if (!Descriptor) {
-      delete (DescriptorGEPRawInst);
       continue;
     }
 
       // delete (DescriptorGEPRawInst);
-     return std::make_tuple(Descriptor, DescriptorGEPRawInst);
+     return std::make_tuple(Descriptor, std::move(DescriptorGEPRawInst));
 
   }
 
@@ -701,9 +697,11 @@ void ScopBuilder::addArrayAccess(
       MemAccInst->getParent(), MemAccInst, AccType, BaseAddress, ElementType,
       IsAffine, AccessValue, Subscripts, Sizes, MemoryKind::Array);
 
-  std::tuple<GlobalValue*, Instruction*> desc = findFortranArrayDescriptorForAllocArrayAccess(MemAccInst);
-  if (std::get<0>(desc)) {
-    MemAccess->setFortranArrayDescriptor(std::get<0>(desc), std::get<1>(desc));
+  GlobalValue *global;
+  std::unique_ptr<Instruction> instrPtr;
+  std::tie(global, instrPtr) = findFortranArrayDescriptorForAllocArrayAccess(MemAccInst);
+  if (global) {
+    MemAccess->setFortranArrayDescriptor(global, std::move(instrPtr));
   }
   /*
   else if (GlobalValue *desc =

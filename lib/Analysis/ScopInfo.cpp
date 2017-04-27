@@ -605,10 +605,7 @@ static MemoryAccess::ReductionType getReductionType(const BinaryOperator *BinOp,
 }
 
 MemoryAccess::~MemoryAccess() {
-  if (FortranArrayDescriptor) {
-      errs() << "#####Freeing: "; FortranArrayDescriptorOwningInstruction->print(errs()); errs() << "\n";
-     delete FortranArrayDescriptorOwningInstruction;
-  }
+  // NOTE: I am *not confident* about the correctness of this.
   isl_id_free(Id);
   isl_set_free(InvalidDomain);
   isl_map_free(AccessRelation);
@@ -988,7 +985,8 @@ MemoryAccess::MemoryAccess(ScopStmt *Stmt, Instruction *AccessInst,
       Sizes(Sizes.begin(), Sizes.end()), AccessInstruction(AccessInst),
       AccessValue(AccessValue), IsAffine(Affine),
       Subscripts(Subscripts.begin(), Subscripts.end()), AccessRelation(nullptr),
-      NewAccessRelation(nullptr), FortranArrayDescriptor(nullptr) {
+      NewAccessRelation(nullptr), FortranArrayDescriptor(nullptr),
+      FortranArrayDescriptorOwningInstruction(nullptr) {
   static const std::string TypeStrings[] = {"", "_Read", "_Write", "_MayWrite"};
   const std::string Access = TypeStrings[AccType] + utostr(Stmt->size());
 
@@ -1001,7 +999,8 @@ MemoryAccess::MemoryAccess(ScopStmt *Stmt, AccessType AccType,
     : Kind(MemoryKind::Array), AccType(AccType), RedType(RT_NONE),
       Statement(Stmt), InvalidDomain(nullptr), AccessInstruction(nullptr),
       IsAffine(true), AccessRelation(nullptr), NewAccessRelation(AccRel),
-      FortranArrayDescriptor(nullptr) {
+      FortranArrayDescriptor(nullptr),
+      FortranArrayDescriptorOwningInstruction(nullptr) {
   auto *ArrayInfoId = isl_map_get_tuple_id(NewAccessRelation, isl_dim_out);
   auto *SAI = ScopArrayInfo::getFromId(ArrayInfoId);
   Sizes.push_back(nullptr);
@@ -1037,7 +1036,7 @@ raw_ostream &polly::operator<<(raw_ostream &OS,
   return OS;
 }
 
-  void MemoryAccess::setFortranArrayDescriptor(GlobalValue *ArrayDescriptor, Instruction *OwningInstruction) {
+  void MemoryAccess::setFortranArrayDescriptor(GlobalValue *ArrayDescriptor, std::unique_ptr<Instruction> &&OwningInstruction) {
 
   StructType *ty = dyn_cast<StructType>(ArrayDescriptor->getValueType());
 
@@ -1052,7 +1051,7 @@ raw_ostream &polly::operator<<(raw_ostream &OS,
   // descriptor
 
   FortranArrayDescriptor = ArrayDescriptor;
-  FortranArrayDescriptorOwningInstruction = OwningInstruction;
+  FortranArrayDescriptorOwningInstruction = std::move(OwningInstruction);
 };
 
 void MemoryAccess::print(raw_ostream &OS) const {

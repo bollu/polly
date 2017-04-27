@@ -685,7 +685,7 @@ private:
   /// The Fortran description associated with the array
   /// of the memory access.
   llvm::WeakVH FortranArrayDescriptor;
-  Instruction *FortranArrayDescriptorOwningInstruction;
+  std::unique_ptr<Instruction> FortranArrayDescriptorOwningInstruction;
 
 public:
   /// Create a new MemoryAccess.
@@ -721,7 +721,7 @@ public:
   ///
   /// @param ArrayDescriptor The struct reference which is the array
   ///                                 descriptor.
-  void setFortranArrayDescriptor(GlobalValue *ArrayDescriptor, Instruction *OwningInstruction);
+  void setFortranArrayDescriptor(GlobalValue *ArrayDescriptor, std::unique_ptr<Instruction> &&OwningInstruction);
 
   ~MemoryAccess();
 
