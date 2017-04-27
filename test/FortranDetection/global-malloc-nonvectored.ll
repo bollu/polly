@@ -1,6 +1,10 @@
-; RUN: opt -S  -analyze -polly-process-unprofitable  -polly-remarks-minimal -polly-scops -polly-dependences -debug-only=polly-dependence -polly-canonicalize -polly-allow-nonaffine   -polly-ignore-aliasing   -polly-invariant-load-hoisting  -debug-pass=Structure < %s| FileCheck %s
+; RUN: opt -S  -analyze -polly-process-unprofitable  -polly-remarks-minimal -polly-scops -polly-dependences -debug-only=polly-dependence -polly-canonicalize -polly-allow-nonaffine   -polly-ignore-aliasing   -polly-invariant-load-hoisting  < %s| FileCheck %s
 
-; CHECK: [
+
+; CHECK:      ReadAccess :=	[Reduction Type: NONE] [Fortran array descriptor: __src_soil_MOD_xdzs] [Scalar: 0]
+; CHECK-NEXT:     [p_0_loaded_from_n] -> { Stmt__21_[i0] -> MemRef_13[1 + i0] };
+; CHECK-NEXT: MustWriteAccess :=	[Reduction Type: NONE] [Fortran array descriptor: __src_soil_MOD_xdzs] [Scalar: 0]
+; CHECK-NEXT:     [p_0_loaded_from_n] -> { Stmt__21_[i0] -> MemRef_13[1 + i0] };
 
 ; MODULE src_soil
 ; USE data_parameters, ONLY :   &
