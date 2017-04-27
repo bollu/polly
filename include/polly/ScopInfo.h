@@ -413,17 +413,40 @@ private:
   Scop &S;
 };
 
+/// Hold Fortran Array related information.
+/// Meant to be a dumb struct.
 class FortranArrayDescriptor {
 private:
-  std::unique_ptr<Instruction> DescriptorOwningInstruction;
+  /// Fortran arrays that are created using "Allocate" are stored in terms
+  /// of a descriptor struct. This maintains a raw pointer to the memory,
+  /// along with auxiliary fields with information such as dimensions.
+  /// We hold a reference to the descriptor corresponding to a MemoryAccess
+  /// into a Fortran array
   AssertingVH<GlobalValue> Descriptor;
+
+  /// The creation of the Descriptor requires a copy to be made from a
+  /// ConstantExpr by using ConstantExpr::getAsInstruction()
+  /// I (Siddharth Bhat) think Polly has strange interactions with the
+  /// PassManager which does not allow this to be cleaned up neatly. So, we
+  /// maintain a reference to the Instruction that owns the Descriptor. This
+  /// makes sure the Instruction is freed when the FortranArrayDescriptor
+  /// finally goes out of scope.
+  /// @see ScopBuilder::findFortranArrayDescriptor*
+  /// @see ConstantExpr::getAsInstruction
+  /// @see
+  /// https://github.com/llvm-mirror/llvm/blob/93e6e5414ded14bcbb233baaaa5567132fee9a0c/unittests/IR/ConstantsTest.cpp#L186
+  std::unique_ptr<Instruction> DescriptorOwningInstruction;
+
+  FortranArrayDescriptor(const FortranArrayDescriptor &) = delete;
+  const FortranArrayDescriptor &
+  operator=(const FortranArrayDescriptor &) = delete;
 
 public:
   FortranArrayDescriptor(
       GlobalValue *Descriptor,
       std::unique_ptr<Instruction> &&DescriptorOwningInstruction)
-      : DescriptorOwningInstruction(std::move(DescriptorOwningInstruction)),
-        Descriptor(Descriptor) {
+      : Descriptor(Descriptor),
+        DescriptorOwningInstruction(std::move(DescriptorOwningInstruction)) {
     assert(Descriptor != nullptr && "given nullptr for Descriptor");
 
     StructType *ty = dyn_cast<StructType>(Descriptor->getValueType());
@@ -710,7 +733,7 @@ private:
   void wrapConstantDimensions();
 
   /// If this is a Fortran array, this will contain a descriptor of the
-  /// array
+  /// array. @see FortranArrayDescriptor
   std::unique_ptr<FortranArrayDescriptor> FAD;
 
 public:
