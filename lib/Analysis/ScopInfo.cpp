@@ -605,9 +605,10 @@ static MemoryAccess::ReductionType getReductionType(const BinaryOperator *BinOp,
 }
 
 MemoryAccess::~MemoryAccess() {
-  // if (FortranArrayDescriptor) {
-  //   delete FortranArrayDescriptor;
-  // }
+  if (FortranArrayDescriptor) {
+      errs() << "#####Freeing: "; FortranArrayDescriptor->print(errs()); errs() << "\n";
+     delete FortranArrayDescriptorOwningInstruction;
+  }
   isl_id_free(Id);
   isl_set_free(InvalidDomain);
   isl_map_free(AccessRelation);
@@ -1036,7 +1037,7 @@ raw_ostream &polly::operator<<(raw_ostream &OS,
   return OS;
 }
 
-void MemoryAccess::setFortranArrayDescriptor(GlobalValue *ArrayDescriptor) {
+  void MemoryAccess::setFortranArrayDescriptor(GlobalValue *ArrayDescriptor, Instruction *OwningInstruction) {
 
   StructType *ty = dyn_cast<StructType>(ArrayDescriptor->getValueType());
 
@@ -1051,6 +1052,7 @@ void MemoryAccess::setFortranArrayDescriptor(GlobalValue *ArrayDescriptor) {
   // descriptor
 
   FortranArrayDescriptor = ArrayDescriptor;
+  FortranArrayDescriptorOwningInstruction = OwningInstruction;
 };
 
 void MemoryAccess::print(raw_ostream &OS) const {

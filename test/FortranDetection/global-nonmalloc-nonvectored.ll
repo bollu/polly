@@ -1,4 +1,4 @@
-; RUN: opt -S  -analyze -polly-process-unprofitable  -polly-remarks-minimal -polly-scops -polly-dependences -debug-only=polly-dependence -polly-canonicalize -polly-allow-nonaffine   -polly-ignore-aliasing   -polly-invariant-load-hoisting < %s| FileCheck %s
+; RUN: opt -S  -analyze -polly-process-unprofitable  -polly-remarks-minimal -polly-scops -polly-dependences -debug-only=polly-dependence -polly-canonicalize -polly-allow-nonaffine   -polly-ignore-aliasing   -polly-invariant-load-hoisting  -debug-pass=Structure < %s| FileCheck %s
 ;
 ; CHECK: [
 

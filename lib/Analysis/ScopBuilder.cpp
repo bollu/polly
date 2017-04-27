@@ -118,29 +118,6 @@ void ScopBuilder::buildEscapingDependences(Instruction *Inst) {
   }
 }
 
-GlobalValue *findFortranArrayDescriptorFromGEP(GetElementPtrInst *GEPInst) {
-  if (!(GEPInst && GEPInst->hasAllConstantIndices()))
-    return nullptr;
-
-  // match: %"struct.array3_real(kind=8).17" = type { i8*, i64, i64, [3 x
-  // %struct.descriptor_dimension] }
-  auto StoreLocType = dyn_cast<StructType>(GEPInst->getSourceElementType());
-  if (!(StoreLocType && StoreLocType->hasName()))
-    return nullptr;
-
-  // name does not match expected name
-  if (!StoreLocType->getName().startswith("struct.array"))
-    return nullptr;
-
-  GlobalValue *sourceArray =
-      dyn_cast<GlobalValue>(GEPInst->getPointerOperand());
-
-  if (!sourceArray)
-    return nullptr;
-
-  return sourceArray;
-}
-
 /// Pattern match to find fortran arrays that have been created using Alloc
 /// 1. Arrays that are created using Allocate / malloc'd
 /// ----------------------------------------------------
@@ -154,10 +131,11 @@ GlobalValue *findFortranArrayDescriptorFromGEP(GetElementPtrInst *GEPInst) {
 ///
 ///   3 is optional because if you are writing to the 0th index, you don't
 //      need a GEP.
-///   3. [%gepmem = getelementptr inbounds i8, i8* %typedmem, i64 <index>]
+///   3. [%slot = getelementptr inbounds i8, i8* %typedmem, i64 <index>]
 ///
-///   4. store/load <memtype> <val>, <memtype>* %gepmem, align 8, !tbaa !5
-GlobalValue *
+///   4.1 store/load <memtype> <val>, <memtype>* %typedmem, align 8, !tbaa !5
+///   4.2 store/load <memtype> <val>, <memtype>* %slot, align 8, !tbaa !5
+std::tuple<GlobalValue *, Instruction*>
 ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
   // match: 4. store/load
   if (!isa<LoadInst>(Inst) && !isa<StoreInst>(Inst)) {
@@ -168,10 +146,10 @@ ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
 
   const BitCastInst *Bitcast = nullptr;
   // match: 3
-  if (auto *GEP = dyn_cast<GetElementPtrInst>(Address)) {
-    Value *PointerDerefed = GEP->getPointerOperand();
+  if (auto *Slot = dyn_cast<GetElementPtrInst>(Address)) {
+    Value *TypedMem = Slot->getPointerOperand();
     // match: 2
-    Bitcast = dyn_cast<BitCastInst>(PointerDerefed);
+    Bitcast = dyn_cast<BitCastInst>(TypedMem);
   } else {
     // match: 2. %typedmem = bitcast i8* %mallocmem to <memtype>*
     Bitcast = dyn_cast<BitCastInst>(Address);
@@ -181,46 +159,74 @@ ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
     return nullptr;
   }
 
-  auto *Src = Bitcast->getOperand(0);
+  auto *MallocMem = Bitcast->getOperand(0);
 
   // match 1: %mallocmem = tail call noalias i8* @malloc(i64 40) #1
-  auto *FnCall = dyn_cast<CallInst>(Src);
-  if (!FnCall) {
+  auto *MallocCall = dyn_cast<CallInst>(MallocMem);
+  if (!MallocCall) {
     return nullptr;
   }
 
-  Function *CalledFn = FnCall->getCalledFunction();
-  if (!(CalledFn && CalledFn->hasName() && CalledFn->getName() == "malloc"))
+  Function *MallocFn = MallocCall->getCalledFunction();
+  if (!(MallocFn && MallocFn->hasName() && MallocFn->getName() == "malloc"))
     return nullptr;
 
   // Find all uses the malloc'd memory.
   // We are looking for a "store" into a struct with the type being the Fortran
   // descriptor type
-  for (auto use : Src->users()) {
+  for (auto user : MallocMem->users()) {
 
     /// match: [[store]] i8* %mallocmem, [[i8** getelementptr inbounds
     /// (%"struct.array1_real(kind=8)", %"struct.array1_real(kind=8)"*
     /// @globalname, i64 0, i32 0), align 32, !tbaa !3]] match: store
-    auto *Store = dyn_cast<StoreInst>(use);
-    if (!Store)
+    auto *MallocStore = dyn_cast<StoreInst>(user);
+    if (!MallocStore)
       continue;
 
     // this is actually a GetElementPtrConstantExpr, but we cannot cast it to
     // that since it is internal to ConstantExpr.
-    auto *StoreOperand = dyn_cast<ConstantExpr>(Store->getPointerOperand());
-    if (!StoreOperand)
+    auto *DescriptorGEP =
+        dyn_cast<ConstantExpr>(MallocStore->getPointerOperand());
+    if (!DescriptorGEP)
       continue;
+
+    Instruction *DescriptorGEPRawInst = DescriptorGEP->getAsInstruction();
 
     // We want an instruction and not a ConstantExpr since this should
     // give us more flexibility to inspect the GEP.
-    auto *StoreGEP =
-        dyn_cast<GetElementPtrInst>(StoreOperand->getAsInstruction());
+    auto *DescriptorGEPInst =
+        dyn_cast<GetElementPtrInst>(DescriptorGEPRawInst);
 
-    auto *sourceArray = findFortranArrayDescriptorFromGEP(StoreGEP);
-    if (!sourceArray)
+    if (!(DescriptorGEPInst && DescriptorGEPInst->hasAllConstantIndices())) {
+      delete (DescriptorGEPRawInst);
       continue;
+    }
 
-    return sourceArray;
+    // match: %"struct.array3_real(kind=8).17" = type { i8*, i64, i64, [3 x
+    // %struct.descriptor_dimension] }
+    auto DescriptorType =
+        dyn_cast<StructType>(DescriptorGEPInst->getSourceElementType());
+    if (!(DescriptorType && DescriptorType->hasName())) {
+      delete (DescriptorGEPRawInst);
+      continue;
+    }
+
+    // name does not match expected name
+    if (!DescriptorType->getName().startswith("struct.array")) {
+      delete (DescriptorGEPRawInst);
+      continue;
+    }
+    GlobalValue *Descriptor =
+        dyn_cast<GlobalValue>(DescriptorGEPInst->getPointerOperand());
+
+    if (!Descriptor) {
+      delete (DescriptorGEPRawInst);
+      continue;
+    }
+
+      // delete (DescriptorGEPRawInst);
+     return std::make_tuple(Descriptor, DescriptorGEPRawInst);
+
   }
 
   return nullptr;
@@ -693,13 +699,15 @@ void ScopBuilder::addArrayAccess(
       MemAccInst->getParent(), MemAccInst, AccType, BaseAddress, ElementType,
       IsAffine, AccessValue, Subscripts, Sizes, MemoryKind::Array);
 
-  if (GlobalValue *desc =
-          findFortranArrayDescriptorForAllocArrayAccess(MemAccInst)) {
-    MemAccess->setFortranArrayDescriptor(desc);
-  } else if (GlobalValue *desc =
+  std::tuple<GlobalValue*, Instruction*> desc = findFortranArrayDescriptorForAllocArrayAccess(MemAccInst);
+  if (std::get<0>(desc)) {
+    MemAccess->setFortranArrayDescriptor(std::get<0>(desc), std::get<1>(desc));
+  }
+  /*
+  else if (GlobalValue *desc =
                  findFortranArrayDescriptorForNonAllocArrayAccess(MemAccInst)) {
     MemAccess->setFortranArrayDescriptor(desc);
-  }
+  }*/
 }
 
 void ScopBuilder::ensureValueWrite(Instruction *Inst) {
