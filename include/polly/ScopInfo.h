@@ -680,7 +680,7 @@ private:
 
   /// The Fortran description associated with the array
   /// of the memory access.
-  AssertingVH<GlobalValue> *FortranArrayDescriptor;
+  AssertingVH<GlobalValue> FortranArrayDescriptor;
 
 public:
   /// Create a new MemoryAccess.
