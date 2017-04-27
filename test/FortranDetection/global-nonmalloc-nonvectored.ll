@@ -1,10 +1,6 @@
-; RUN: opt -S %loadPolly -polly-dependences -analyze \
-; RUN:  -debug-only=polly-dependence \
-; RUN:  -polly-canonicalize -polly-scops -polly-allow-nonaffine \
-; RUN:  -polly-ignore-aliasing \
-; RUN:  -polly-invariant-load-hoisting < %s | FileCheck %s
+; RUN: opt -S  -analyze -polly-process-unprofitable  -polly-remarks-minimal -polly-scops -polly-dependences -debug-only=polly-dependence -polly-canonicalize -polly-allow-nonaffine   -polly-ignore-aliasing   -polly-invariant-load-hoisting < %s| FileCheck %s
 ;
-; CHECK: qwweqeqwjeqwjeklqjeqwlkejqklejqlke
+; CHECK: [
 
 ; !+ Source module  "src_soil"
 ; !------------------------------------------------------------------------------
