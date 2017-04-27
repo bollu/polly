@@ -981,8 +981,7 @@ MemoryAccess::MemoryAccess(ScopStmt *Stmt, Instruction *AccessInst,
       ElementType(ElementType), Sizes(Sizes.begin(), Sizes.end()),
       AccessInstruction(AccessInst), AccessValue(AccessValue), IsAffine(Affine),
       Subscripts(Subscripts.begin(), Subscripts.end()), AccessRelation(nullptr),
-      NewAccessRelation(nullptr), FortranArrayDescriptor(nullptr),
-      FortranArrayDescriptorOwningInstruction(nullptr) {
+      NewAccessRelation(nullptr), FAD(nullptr) {
   static const std::string TypeStrings[] = {"", "_Read", "_Write", "_MayWrite"};
   const std::string Access = TypeStrings[AccType] + utostr(Stmt->size()) + "_";
 
@@ -996,8 +995,7 @@ MemoryAccess::MemoryAccess(ScopStmt *Stmt, AccessType AccType,
     : Kind(MemoryKind::Array), AccType(AccType), RedType(RT_NONE),
       Statement(Stmt), InvalidDomain(nullptr), AccessInstruction(nullptr),
       IsAffine(true), AccessRelation(nullptr), NewAccessRelation(AccRel),
-      FortranArrayDescriptor(nullptr),
-      FortranArrayDescriptorOwningInstruction(nullptr) {
+      FAD(nullptr) {
   auto *ArrayInfoId = isl_map_get_tuple_id(NewAccessRelation, isl_dim_out);
   auto *SAI = ScopArrayInfo::getFromId(ArrayInfoId);
   Sizes.push_back(nullptr);
@@ -1035,22 +1033,12 @@ raw_ostream &polly::operator<<(raw_ostream &OS,
   return OS;
 }
 
-  void MemoryAccess::setFortranArrayDescriptor(GlobalValue *ArrayDescriptor, std::unique_ptr<Instruction> &&OwningInstruction) {
+void MemoryAccess::setFortranArrayDescriptor(
+    std::unique_ptr<FortranArrayDescriptor> &&FAD) {
+  this->FAD = std::move(FAD);
 
-  StructType *ty = dyn_cast<StructType>(ArrayDescriptor->getValueType());
-
-  assert(ty && "expected value of type Fortran array descriptor");
-
-  assert(ty->hasName() && ty->getName().startswith("struct.array") &&
-         "expected global to follow Fortran array descriptor type naming "
-         "convention");
-  assert(ty->getNumElements() == 4 &&
-         "expected layout to be like Fortran array descriptor type");
   // TODO: write checks to make sure it looks _exactly_ like a Fortran array
   // descriptor
-
-  FortranArrayDescriptor = ArrayDescriptor;
-  FortranArrayDescriptorOwningInstruction = std::move(OwningInstruction);
 };
 
 void MemoryAccess::print(raw_ostream &OS) const {
@@ -1068,8 +1056,8 @@ void MemoryAccess::print(raw_ostream &OS) const {
 
   OS << "[Reduction Type: " << getReductionType() << "] ";
 
-  if (FortranArrayDescriptor) {
-    OS << "[Fortran array descriptor: " << FortranArrayDescriptor->getName();
+  if (FAD) {
+    OS << "[Fortran array descriptor: " << FAD->getName();
     OS << "] ";
   };
 
