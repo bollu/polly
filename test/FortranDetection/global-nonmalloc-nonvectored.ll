@@ -1,29 +1,33 @@
-; RUN: opt -S  -analyze -polly-process-unprofitable  -polly-remarks-minimal -polly-scops -polly-dependences -debug-only=polly-dependence -polly-canonicalize -polly-allow-nonaffine   -polly-ignore-aliasing   -polly-invariant-load-hoisting  -debug-pass=Structure < %s| FileCheck %s
-;
-; CHECK: [
+; RUN: opt -S -analyze -polly-process-unprofitable  -polly-remarks-minimal -instcombine  -polly-scops -polly-dependences -debug-only=polly-dependence -polly-canonicalize -polly-allow-nonaffine   -polly-ignore-aliasing   -polly-invariant-load-hoisting < %s| FileCheck %s
 
-; !+ Source module  "src_soil"
-; !------------------------------------------------------------------------------
+; -instcombine is a hard requirement. We style our pattern matches assuming that
+; instcombine has happened.
+
+
+; CHECK:      Schedule :=
+; CHECK-NEXT:     [p_0_loaded_from_n, p_1_loaded_from___src_soil_MOD_xdzs] -> { Stmt__3_[i0] -> [i0] };
+; CHECK-NEXT: ReadAccess :=	[Reduction Type: NONE] [Fortran array descriptor: __src_soil_MOD_xdzs] [Scalar: 0]
+; CHECK-NEXT:     [p_0_loaded_from_n, p_1_loaded_from___src_soil_MOD_xdzs] -> { Stmt__3_[i0] -> MemRef_3[22 + p_1_loaded_from___src_soil_MOD_xdzs + i0] };
+; CHECK-NEXT: ReadAccess :=	[Reduction Type: NONE] [Fortran array descriptor: __src_soil_MOD_xdzs] [Scalar: 0]
+; CHECK-NEXT:     [p_0_loaded_from_n, p_1_loaded_from___src_soil_MOD_xdzs] -> { Stmt__3_[i0] -> MemRef_3[21 + p_1_loaded_from___src_soil_MOD_xdzs + i0] };
+; CHECK-NEXT: MustWriteAccess :=	[Reduction Type: NONE] [Fortran array descriptor: __src_soil_MOD_xdzs] [Scalar: 0]
+; CHECK-NEXT:     [p_0_loaded_from_n, p_1_loaded_from___src_soil_MOD_xdzs] -> { Stmt__3_[i0] -> MemRef_3[22 + p_1_loaded_from___src_soil_MOD_xdzs + i0] };
 
 ; MODULE src_soil
-
-
 ; USE data_parameters, ONLY :   &
 ;     wp,        & ! KIND-type parameter for real variables
 ;     iintegers    ! KIND-type parameter for standard integer variables
-
 ; IMPLICIT NONE
-
 ; REAL (KIND = wp),     ALLOCATABLE, PRIVATE  :: &
 ;   xdzs     (:)
 ; CONTAINS
-
+;
 ; SUBROUTINE terra1(n)
 ;   INTEGER, intent(in) :: n
-
+;
 ;   INTEGER (KIND=iintegers) ::  &
 ;     j
-
+;
 ;    DO j = 22, n
 ;         xdzs(j) = xdzs(j) * xdzs(j) + xdzs(j - 1)
 ;   END DO
