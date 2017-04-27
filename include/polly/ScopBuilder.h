@@ -57,7 +57,8 @@ class ScopBuilder {
   // Build the SCoP for Region @p R.
   void buildScop(Region &R, AssumptionCache &AC);
 
-  std::tuple<GlobalValue *, std::unique_ptr<Instruction>> findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst);
+  std::unique_ptr<FortranArrayDescriptor>
+  findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst);
   GlobalValue *
   findFortranArrayDescriptorForNonAllocArrayAccess(MemAccInst Inst);
 

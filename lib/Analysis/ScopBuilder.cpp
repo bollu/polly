@@ -135,7 +135,7 @@ void ScopBuilder::buildEscapingDependences(Instruction *Inst) {
 ///
 ///   4.1 store/load <memtype> <val>, <memtype>* %typedmem, align 8, !tbaa !5
 ///   4.2 store/load <memtype> <val>, <memtype>* %slot, align 8, !tbaa !5
-std::tuple<GlobalValue *, std::unique_ptr<Instruction>>
+std::unique_ptr<FortranArrayDescriptor>
 ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
   // match: 4. store/load
   if (!isa<LoadInst>(Inst) && !isa<StoreInst>(Inst)) {
@@ -190,9 +190,10 @@ ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
     if (!DescriptorGEP)
       continue;
 
-    //this needs to be deleted, on the basis of:
-    //https://github.com/llvm-mirror/llvm/blob/93e6e5414ded14bcbb233baaaa5567132fee9a0c/unittests/IR/ConstantsTest.cpp#L186
-    std::unique_ptr<Instruction> DescriptorGEPRawInst(DescriptorGEP->getAsInstruction());
+    // this needs to be deleted, on the basis of:
+    // https://github.com/llvm-mirror/llvm/blob/93e6e5414ded14bcbb233baaaa5567132fee9a0c/unittests/IR/ConstantsTest.cpp#L186
+    std::unique_ptr<Instruction> DescriptorGEPRawInst(
+        DescriptorGEP->getAsInstruction());
 
     // We want an instruction and not a ConstantExpr since this should
     // give us more flexibility to inspect the GEP.
@@ -221,10 +222,8 @@ ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
     if (!Descriptor) {
       continue;
     }
-
-      // delete (DescriptorGEPRawInst);
-     return std::make_tuple(Descriptor, std::move(DescriptorGEPRawInst));
-
+    return make_unique<FortranArrayDescriptor>(Descriptor,
+                                               std::move(DescriptorGEPRawInst));
   }
 
   return nullptr;
@@ -697,11 +696,10 @@ void ScopBuilder::addArrayAccess(
       MemAccInst->getParent(), MemAccInst, AccType, BaseAddress, ElementType,
       IsAffine, AccessValue, Subscripts, Sizes, MemoryKind::Array);
 
-  GlobalValue *global;
-  std::unique_ptr<Instruction> instrPtr;
-  std::tie(global, instrPtr) = findFortranArrayDescriptorForAllocArrayAccess(MemAccInst);
-  if (global) {
-    MemAccess->setFortranArrayDescriptor(global, std::move(instrPtr));
+  std::unique_ptr<FortranArrayDescriptor> FAD =
+      findFortranArrayDescriptorForAllocArrayAccess(MemAccInst);
+  if (FAD) {
+    MemAccess->setFortranArrayDescriptor(std::move(FAD));
   }
   /*
   else if (GlobalValue *desc =

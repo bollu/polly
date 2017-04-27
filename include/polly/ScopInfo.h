@@ -413,6 +413,33 @@ private:
   Scop &S;
 };
 
+class FortranArrayDescriptor {
+private:
+  std::unique_ptr<Instruction> DescriptorOwningInstruction;
+  AssertingVH<GlobalValue> Descriptor;
+
+public:
+  FortranArrayDescriptor(
+      GlobalValue *Descriptor,
+      std::unique_ptr<Instruction> &&DescriptorOwningInstruction)
+      : DescriptorOwningInstruction(std::move(DescriptorOwningInstruction)),
+        Descriptor(Descriptor) {
+    assert(Descriptor != nullptr && "given nullptr for Descriptor");
+
+    StructType *ty = dyn_cast<StructType>(Descriptor->getValueType());
+
+    assert(ty && "expected value of type Fortran array descriptor");
+
+    assert(ty->hasName() && ty->getName().startswith("struct.array") &&
+           "expected global to follow Fortran array descriptor type naming "
+           "convention");
+    assert(ty->getNumElements() == 4 &&
+           "expected layout to be like Fortran array descriptor type");
+  };
+
+  StringRef getName() { return Descriptor->getName(); }
+};
+
 /// Represent memory accesses in statements.
 class MemoryAccess {
   friend class Scop;
@@ -682,10 +709,9 @@ private:
   ///   A[1][6] -> A[2][2]
   void wrapConstantDimensions();
 
-  /// The Fortran description associated with the array
-  /// of the memory access.
-  llvm::WeakVH FortranArrayDescriptor;
-  std::unique_ptr<Instruction> FortranArrayDescriptorOwningInstruction;
+  /// If this is a Fortran array, this will contain a descriptor of the
+  /// array
+  std::unique_ptr<FortranArrayDescriptor> FAD;
 
 public:
   /// Create a new MemoryAccess.
@@ -721,7 +747,7 @@ public:
   ///
   /// @param ArrayDescriptor The struct reference which is the array
   ///                                 descriptor.
-  void setFortranArrayDescriptor(GlobalValue *ArrayDescriptor, std::unique_ptr<Instruction> &&OwningInstruction);
+  void setFortranArrayDescriptor(std::unique_ptr<FortranArrayDescriptor> &&FAD);
 
   ~MemoryAccess();
 
