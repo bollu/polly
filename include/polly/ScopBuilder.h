@@ -59,7 +59,7 @@ class ScopBuilder {
 
   std::unique_ptr<FortranArrayDescriptor>
   findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst);
-  GlobalValue *
+  std::unique_ptr<FortranArrayDescriptor>
   findFortranArrayDescriptorForNonAllocArrayAccess(MemAccInst Inst);
 
   /// Try to build a multi-dimensional fixed sized MemoryAccess from the
