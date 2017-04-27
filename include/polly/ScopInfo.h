@@ -23,6 +23,8 @@
 
 #include "llvm/ADT/MapVector.h"
 #include "llvm/Analysis/RegionPass.h"
+#include "llvm/IR/ValueHandle.h"
+
 #include "isl/aff.h"
 #include "isl/ctx.h"
 #include "isl/set.h"
@@ -680,7 +682,7 @@ private:
 
   /// The Fortran description associated with the array
   /// of the memory access.
-  AssertingVH<GlobalValue> FortranArrayDescriptor;
+  llvm::WeakVH FortranArrayDescriptor;
 
 public:
   /// Create a new MemoryAccess.
