@@ -211,33 +211,10 @@ ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
         dyn_cast<GetElementPtrInst>(StoreOperand->getAsInstruction());
 
     auto *sourceArray = findFortranArrayDescriptorFromGEP(StoreGEP);
-    if (!sourceArray) {
-      continue;
-    }
-
-    return sourceArray;
-
-    /*
-    if (!(StoreGEP && StoreGEP->hasAllConstantIndices()))
-      continue;
-
-    // match: %"struct.array3_real(kind=8).17" = type { i8*, i64, i64, [3 x
-    // %struct.descriptor_dimension] }
-    auto StoreLocType = dyn_cast<StructType>(StoreGEP->getSourceElementType());
-    if (!(StoreLocType && StoreLocType->hasName()))
-      continue;
-
-    // name does not match expected name
-    if (!StoreLocType->getName().startswith("struct.array"))
-      continue;
-
-    GlobalValue *sourceArray =
-        dyn_cast<GlobalValue>(StoreGEP->getPointerOperand());
-
     if (!sourceArray)
       continue;
 
-    return sourceArray;*/
+    return sourceArray;
   }
 
   return nullptr;
@@ -251,62 +228,40 @@ ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
 ///   (%"struct.array1_real(kind=8)", %"struct.array1_real(kind=8)"*
 ///   @globalname, i64 0, i32 0), align 32, !tbaa !3
 ///
-///   2. %typedmem = bitcast i8* %rawmem to <memtype>*
+///   2. %mem = load double*, double** bitcast (%"struct.array1_real(kind=8)"*
+///   @__src_soil_MOD_xdzs to double**), align 32, !tbaa !5
 ///
 ///   3 is optional because if you are writing to the 0th index, you don't
 ///      need a GEP.
-///   3. [%gepmem = getelementptr inbounds i8, i8* %typedmem, i64 <index>]
+///   3. [%slot = getelementptr inbounds i8, i8* %mem, i64 <index>]
 ///
-///   4. store/load <memtype> <val>, <memtype>* %gepmem, align 8, !tbaa !5
+///   4.1 store/load <memtype> <val>, <memtype>* %slot, align 8, !tbaa !5
+///   4.2 store/load <memtype> <val>, <memtype>* %mem, align 8, !tbaa !5
 GlobalValue *
 ScopBuilder::findFortranArrayDescriptorForNonAllocArrayAccess(MemAccInst Inst) {
-  errs() << "\n\n$$$$$\n";
-
   // match: 4. store/load
   if (!isa<LoadInst>(Inst) && !isa<StoreInst>(Inst)) {
     return nullptr;
   }
+  Value *Slot = Inst.getPointerOperand();
 
-  errs() << "Inst: "; Inst->print(errs()); errs() << "\n";
-
-  Value *Address = Inst.getPointerOperand();
-  errs() << "Address: "; Address->print(errs()); errs() << "\n";
-
-  const BitCastInst *Bitcast = nullptr;
-  // match: 3
-  if (auto *GEP = dyn_cast<GetElementPtrInst>(Address)) {
-    Value *PointerDerefed = GEP->getPointerOperand();
-    errs() << "\tGEP: PointerDerefed: "; PointerDerefed->print(errs()); errs() << "\n";
-    // match: 2
-    Bitcast = dyn_cast<ConstantExpr>(PointerDerefed);
-
-    errs() << "\tBitcast: " << Bitcast << "\n";
+  LoadInst *MemLoad = nullptr;
+  if (auto *SlotGEP = dyn_cast<GetElementPtrInst>(Slot)) {
+    MemLoad = dyn_cast<LoadInst>(SlotGEP->getPointerOperand());
   } else {
-    // match: 2. %typedmem = bitcast i8* %rawmem to <memtype>*
-    Bitcast = dyn_cast<BitCastInst>(Address);
+    MemLoad = dyn_cast<LoadInst>(Slot);
   }
-
-  if (!Bitcast) {
-    return nullptr;
-  }
-  errs() << "\tBitcast: "; Bitcast->print(errs()); errs() << "\n";
-  // match: 2. %typedmem = bitcast i8* [[%rawmem]] to <memtype>*
-  Value *RawMem = Bitcast->getOperand(0);
-
-  // 1. load i8* %rawmem, i8** getelementptr inbounds
-  //   (%"struct.array1_real(kind=8)", %"struct.array1_real(kind=8)"*
-  //   @globalname, i64 0, i32 0), align 32, !tbaa !3
-  auto *RawMemLoad = dyn_cast<LoadInst>(RawMem);
-  if (!RawMemLoad)
+  if (!MemLoad)
     return nullptr;
 
-  auto *LoadOperand = dyn_cast<ConstantExpr>(RawMemLoad->getPointerOperand());
-  if (!LoadOperand)
+  auto *BitcastConstantExpr =
+      dyn_cast<ConstantExpr>(MemLoad->getPointerOperand());
+  if (!BitcastConstantExpr)
     return nullptr;
 
-  auto *LoadGEP = dyn_cast<GetElementPtrInst>(LoadOperand->getAsInstruction());
-
-  return findFortranArrayDescriptorFromGEP(LoadGEP);
+  GlobalValue *ArrayDescriptor = dyn_cast<GlobalValue>(
+      BitcastConstantExpr->getAsInstruction()->getOperand(0));
+  return ArrayDescriptor;
 };
 
 bool ScopBuilder::buildAccessMultiDimFixed(MemAccInst Inst, ScopStmt *Stmt) {
@@ -595,7 +550,6 @@ void ScopBuilder::buildMemoryAccess(MemAccInst Inst, ScopStmt *Stmt) {
   if (buildAccessCallInst(Inst, Stmt))
     return;
 
-
   if (buildAccessMultiDimFixed(Inst, Stmt))
     return;
 
@@ -740,13 +694,10 @@ void ScopBuilder::addArrayAccess(
   if (GlobalValue *desc =
           findFortranArrayDescriptorForAllocArrayAccess(MemAccInst)) {
     MemAccess->setFortranArrayDescriptor(desc);
-  }
-  else if (GlobalValue *desc =
-          findFortranArrayDescriptorForNonAllocArrayAccess(MemAccInst)) {
+  } else if (GlobalValue *desc =
+                 findFortranArrayDescriptorForNonAllocArrayAccess(MemAccInst)) {
     MemAccess->setFortranArrayDescriptor(desc);
   }
-
-
 }
 
 void ScopBuilder::ensureValueWrite(Instruction *Inst) {

@@ -1064,13 +1064,10 @@ void MemoryAccess::print(raw_ostream &OS) const {
 
   OS << "[Reduction Type: " << getReductionType() << "] ";
 
-  OS << "[Fortran array descriptor: ";
   if (FortranArrayDescriptor) {
-    OS << (*FortranArrayDescriptor)->getName();
-  } else {
-    OS << "NONE";
-  }
-  OS << "] ";
+    OS << "[Fortran array descriptor: " << (*FortranArrayDescriptor)->getName();
+    OS << "] ";
+  };
 
   OS << "[Scalar: " << isScalarKind() << "]\n";
   OS.indent(16) << getOriginalAccessRelationStr() << ";\n";
