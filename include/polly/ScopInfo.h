@@ -683,6 +683,7 @@ private:
   /// The Fortran description associated with the array
   /// of the memory access.
   llvm::WeakVH FortranArrayDescriptor;
+  Instruction *FortranArrayDescriptorOwningInstruction;
 
 public:
   /// Create a new MemoryAccess.
@@ -719,7 +720,7 @@ public:
   ///
   /// @param ArrayDescriptor The struct reference which is the array
   ///                                 descriptor.
-  void setFortranArrayDescriptor(GlobalValue *ArrayDescriptor);
+  void setFortranArrayDescriptor(GlobalValue *ArrayDescriptor, Instruction *OwningInstruction);
 
   ~MemoryAccess();
 
