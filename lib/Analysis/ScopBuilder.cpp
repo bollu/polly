@@ -135,8 +135,8 @@ void ScopBuilder::buildEscapingDependences(Instruction *Inst) {
 std::unique_ptr<FortranArrayDescriptor>
 ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
   // match: 4.1 & 4.2 store/load
-  if (!isa<LoadInst>(Inst) && !isa<StoreInst>(Inst)) return nullptr;
-  
+  if (!isa<LoadInst>(Inst) && !isa<StoreInst>(Inst))
+    return nullptr;
 
   Value *Address = Inst.getPointerOperand();
 
@@ -151,15 +151,15 @@ ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
     Bitcast = dyn_cast<BitCastInst>(Address);
   }
 
-  if (!Bitcast) return nullptr;
-  
+  if (!Bitcast)
+    return nullptr;
 
   auto *MallocMem = Bitcast->getOperand(0);
 
   // match: 1
   auto *MallocCall = dyn_cast<CallInst>(MallocMem);
-  if (!MallocCall) return nullptr;
-  
+  if (!MallocCall)
+    return nullptr;
 
   Function *MallocFn = MallocCall->getCalledFunction();
   if (!(MallocFn && MallocFn->hasName() && MallocFn->getName() == "malloc"))
@@ -239,24 +239,27 @@ ScopBuilder::findFortranArrayDescriptorForNonAllocArrayAccess(MemAccInst Inst) {
   LoadInst *MemLoad = nullptr;
   // [match: 2]
   if (auto *SlotGEP = dyn_cast<GetElementPtrInst>(Slot)) {
-    // match: 1 
+    // match: 1
     MemLoad = dyn_cast<LoadInst>(SlotGEP->getPointerOperand());
   } else {
     // match: 1
     MemLoad = dyn_cast<LoadInst>(Slot);
   }
 
-  if (!MemLoad) return nullptr;
+  if (!MemLoad)
+    return nullptr;
 
   auto *BitcastConstantExpr =
       dyn_cast<ConstantExpr>(MemLoad->getPointerOperand());
-  if (!BitcastConstantExpr) return nullptr;
+  if (!BitcastConstantExpr)
+    return nullptr;
   std::unique_ptr<Instruction> BitcastInstruction(
       BitcastConstantExpr->getAsInstruction());
 
   GlobalValue *ArrayDescriptor =
       dyn_cast<GlobalValue>(BitcastInstruction->getOperand(0));
-  if (!ArrayDescriptor) return nullptr;
+  if (!ArrayDescriptor)
+    return nullptr;
 
   return make_unique<FortranArrayDescriptor>(ArrayDescriptor,
                                              std::move(BitcastInstruction));

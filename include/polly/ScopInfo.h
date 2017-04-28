@@ -450,7 +450,7 @@ public:
 
     StructType *ty = dyn_cast<StructType>(Descriptor->getValueType());
     // Remove warning of unused variable
-    (void) ty;
+    (void)ty;
 
     assert(ty && "expected value of type Fortran array descriptor");
 
