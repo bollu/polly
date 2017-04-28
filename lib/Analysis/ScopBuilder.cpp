@@ -111,54 +111,49 @@ void ScopBuilder::buildEscapingDependences(Instruction *Inst) {
   }
 }
 
-/// Pattern match to find fortran arrays that have been created using Alloc
-/// 1. Arrays that are created using Allocate / malloc'd
-/// ----------------------------------------------------
-///   1. %mallocmem = tail call noalias i8* @malloc(i64 40) #1
+/// Pattern Match:
+/// 1. %mallocmem = tail call noalias i8* @malloc(i64 40) #1
 ///
-///   5. store i8* %mallocmem, i8** getelementptr inbounds
-///   (%"struct.array1_real(kind=8)", %"struct.array1_real(kind=8)"*
-///   @globalname, i64 0, i32 0), align 32, !tbaa !3
+/// 5. store i8* %mallocmem, i8** getelementptr inbounds
+/// (%"struct.array1_real(kind=8)", %"struct.array1_real(kind=8)"*
+/// @globalname, i64 0, i32 0), align 32, !tbaa !3
 ///
-///   2. %typedmem = bitcast i8* %mallocmem to <memtype>*
+/// 2. %typedmem = bitcast i8* %mallocmem to <memtype>*
 ///
-///   3 is optional because if you are writing to the 0th index, you don't
-//      need a GEP.
-///   3. [%slot = getelementptr inbounds i8, i8* %typedmem, i64 <index>]
+/// 3 is optional because if you are writing to the 0th index, you don't
+//    need a GEP.
+/// 3. [%slot = getelementptr inbounds i8, i8* %typedmem, i64 <index>]
 ///
-///   4.1 store/load <memtype> <val>, <memtype>* %typedmem, align 8, !tbaa !5
-///   4.2 store/load <memtype> <val>, <memtype>* %slot, align 8, !tbaa !5
+/// 4.1 store/load <memtype> <val>, <memtype>* %typedmem, align 8, !tbaa !5
+/// 4.2 store/load <memtype> <val>, <memtype>* %slot, align 8, !tbaa !5
 std::unique_ptr<FortranArrayDescriptor>
 ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
-  // match: 4. store/load
-  if (!isa<LoadInst>(Inst) && !isa<StoreInst>(Inst)) {
-    return nullptr;
-  }
+  // match: 4.1 & 4.2 store/load
+  if (!isa<LoadInst>(Inst) && !isa<StoreInst>(Inst)) return nullptr;
+  
 
   Value *Address = Inst.getPointerOperand();
 
   const BitCastInst *Bitcast = nullptr;
-  // match: 3
+  // [match: 3]
   if (auto *Slot = dyn_cast<GetElementPtrInst>(Address)) {
     Value *TypedMem = Slot->getPointerOperand();
     // match: 2
     Bitcast = dyn_cast<BitCastInst>(TypedMem);
   } else {
-    // match: 2. %typedmem = bitcast i8* %mallocmem to <memtype>*
+    // match: 2
     Bitcast = dyn_cast<BitCastInst>(Address);
   }
 
-  if (!Bitcast) {
-    return nullptr;
-  }
+  if (!Bitcast) return nullptr;
+  
 
   auto *MallocMem = Bitcast->getOperand(0);
 
-  // match 1: %mallocmem = tail call noalias i8* @malloc(i64 40) #1
+  // match: 1
   auto *MallocCall = dyn_cast<CallInst>(MallocMem);
-  if (!MallocCall) {
-    return nullptr;
-  }
+  if (!MallocCall) return nullptr;
+  
 
   Function *MallocFn = MallocCall->getCalledFunction();
   if (!(MallocFn && MallocFn->hasName() && MallocFn->getName() == "malloc"))
@@ -169,15 +164,11 @@ ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
   // descriptor type
   for (auto user : MallocMem->users()) {
 
-    /// match: [[store]] i8* %mallocmem, [[i8** getelementptr inbounds
-    /// (%"struct.array1_real(kind=8)", %"struct.array1_real(kind=8)"*
-    /// @globalname, i64 0, i32 0), align 32, !tbaa !3]] match: store
+    /// match: 5
     auto *MallocStore = dyn_cast<StoreInst>(user);
     if (!MallocStore)
       continue;
 
-    // this is actually a GetElementPtrConstantExpr, but we cannot cast it to
-    // that since it is internal to ConstantExpr.
     auto *DescriptorGEP =
         dyn_cast<ConstantExpr>(MallocStore->getPointerOperand());
     if (!DescriptorGEP)
@@ -197,8 +188,7 @@ ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
       continue;
     }
 
-    // match: %"struct.array3_real(kind=8).17" = type { i8*, i64, i64, [3 x
-    // %struct.descriptor_dimension] }
+    // match: 5
     auto DescriptorType =
         dyn_cast<StructType>(DescriptorGEPInst->getSourceElementType());
     if (!(DescriptorType && DescriptorType->hasName())) {
@@ -222,53 +212,45 @@ ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
   return nullptr;
 }
 
-/// Pattern match to find fortran arrays that have been created using Alloc
-/// 2. Arrays that are loaded from a global
-/// ----------------------------------------------------
+/// Pattern Match:
+///  1. %3 = load double*, double** bitcast (%"struct.array1_real(kind=8)"*
+///    @__src_soil_MOD_xdzs to double**), align 32, !tbaa !5
 ///
-///   1. load i8* %rawmem, i8** getelementptr inbounds
-///   (%"struct.array1_real(kind=8)", %"struct.array1_real(kind=8)"*
-///   @globalname, i64 0, i32 0), align 32, !tbaa !3
+///  2 is optional because if you are writing to the 0th index, you don't
+///     need a GEP.
+///  2. [%slot = getelementptr inbounds i8, i8* %mem, i64 <index>]
 ///
-///   2. %mem = load double*, double** bitcast (%"struct.array1_real(kind=8)"*
-///   @__src_soil_MOD_xdzs to double**), align 32, !tbaa !5
-///
-///   3 is optional because if you are writing to the 0th index, you don't
-///      need a GEP.
-///   3. [%slot = getelementptr inbounds i8, i8* %mem, i64 <index>]
-///
-///   4.1 store/load <memtype> <val>, <memtype>* %slot, align 8, !tbaa !5
-///   4.2 store/load <memtype> <val>, <memtype>* %mem, align 8, !tbaa !5
+///  3.1 store/load <memtype> <val>, <memtype>* %slot, align 8, !tbaa !5
+///  3.2 store/load <memtype> <val>, <memtype>* %mem, align 8, !tbaa !5
 std::unique_ptr<FortranArrayDescriptor>
 ScopBuilder::findFortranArrayDescriptorForNonAllocArrayAccess(MemAccInst Inst) {
-  // match: 4. store/load
+  // match: 3
   if (!isa<LoadInst>(Inst) && !isa<StoreInst>(Inst)) {
     return nullptr;
   }
   Value *Slot = Inst.getPointerOperand();
 
   LoadInst *MemLoad = nullptr;
+  // [match: 2]
   if (auto *SlotGEP = dyn_cast<GetElementPtrInst>(Slot)) {
+    // match: 1 
     MemLoad = dyn_cast<LoadInst>(SlotGEP->getPointerOperand());
   } else {
+    // match: 1
     MemLoad = dyn_cast<LoadInst>(Slot);
   }
 
-  if (!MemLoad)
-    return nullptr;
+  if (!MemLoad) return nullptr;
 
   auto *BitcastConstantExpr =
       dyn_cast<ConstantExpr>(MemLoad->getPointerOperand());
-  if (!BitcastConstantExpr)
-    return nullptr;
-
+  if (!BitcastConstantExpr) return nullptr;
   std::unique_ptr<Instruction> BitcastInstruction(
       BitcastConstantExpr->getAsInstruction());
 
   GlobalValue *ArrayDescriptor =
       dyn_cast<GlobalValue>(BitcastInstruction->getOperand(0));
-  if (!ArrayDescriptor)
-    return nullptr;
+  if (!ArrayDescriptor) return nullptr;
 
   return make_unique<FortranArrayDescriptor>(ArrayDescriptor,
                                              std::move(BitcastInstruction));

@@ -60,14 +60,14 @@ class ScopBuilder {
   /// Try to pattern match and find the array descriptor structure. Succeeds on
   /// load/store into a fortran array that has been allocated
   ///
-  /// NOTE: assumes -instcombine has been run
+  /// NOTE: assumes -polly-canonicalize has been run
   std::unique_ptr<FortranArrayDescriptor>
   findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst);
 
   /// Try to pattern match and find the array descriptor structure. Succeeds on
   /// load/store into a fortran array that is global and is being accessed.
   ///
-  /// NOTE: assumes -instcombine has been run
+  /// NOTE: assumes -polly-canonicalize has been run
   std::unique_ptr<FortranArrayDescriptor>
   findFortranArrayDescriptorForNonAllocArrayAccess(MemAccInst Inst);
 

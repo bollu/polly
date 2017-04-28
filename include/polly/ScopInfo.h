@@ -23,7 +23,6 @@
 
 #include "llvm/ADT/MapVector.h"
 #include "llvm/Analysis/RegionPass.h"
-#include "llvm/IR/ValueHandle.h"
 
 #include "isl/aff.h"
 #include "isl/ctx.h"
@@ -448,6 +447,8 @@ public:
     assert(Descriptor != nullptr && "given nullptr for Descriptor");
 
     StructType *ty = dyn_cast<StructType>(Descriptor->getValueType());
+    // Remove warning of unused variable
+    (void) ty;
 
     assert(ty && "expected value of type Fortran array descriptor");
 
@@ -456,6 +457,8 @@ public:
            "convention");
     assert(ty->getNumElements() == 4 &&
            "expected layout to be like Fortran array descriptor type");
+    // TODO: add more checks that this obeys the exact format that dragonegg
+    // generates so that we can be sure that we don't have false positives.
   };
 
   StringRef getName() { return Descriptor->getName(); }
@@ -767,8 +770,7 @@ public:
   /// Set the array descriptor corresponding to the Array on which the
   /// memory access is performed.
   ///
-  /// @param ArrayDescriptor The struct reference which is the array
-  ///                                 descriptor.
+  /// @param FAD Reference to array descriptor
   void setFortranArrayDescriptor(std::unique_ptr<FortranArrayDescriptor> &&FAD);
 
   ~MemoryAccess();
