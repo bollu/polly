@@ -412,7 +412,6 @@ private:
 };
 
 /// Hold Fortran Array related information.
-/// Meant to be a dumb struct.
 class FortranArrayDescriptor {
 private:
   /// Fortran arrays that are created using "Allocate" are stored in terms
@@ -428,9 +427,9 @@ private:
   /// So, maintain a reference to the Instruction that owns the Descriptor.
   /// We free the Instruction when the FortranArrayDescriptor
   /// finally goes out of scope.
+  ///
   /// @see ScopBuilder::findFortranArrayDescriptor*
   /// @see ConstantExpr::getAsInstruction
-  /// @see
   /// https://github.com/llvm-mirror/llvm/blob/93e6e5414ded14bcbb233baaaa5567132fee9a0c/unittests/IR/ConstantsTest.cpp#L186
   std::unique_ptr<Instruction> DescriptorOwningInstruction;
 
@@ -442,7 +441,7 @@ public:
   /// Create a new FortranArrayDescriptor
   ///
   /// @param Descriptor Reference to the descriptor value in the IR
-  /// @param DescriptorOwningInstruction The Instruction from which the
+  /// @param DescriptorOwningInstruction The llvm::Instruction from which the
   ///                                    descriptor was taken.
   FortranArrayDescriptor(
       GlobalValue *Descriptor,
@@ -451,6 +450,7 @@ public:
         DescriptorOwningInstruction(std::move(DescriptorOwningInstruction)) {
     assert(Descriptor != nullptr && "given nullptr for Descriptor");
 
+#ifdef NDEBUG
     StructType *ty = dyn_cast<StructType>(Descriptor->getValueType());
     // Remove warning of unused variable
     (void)ty;
@@ -462,12 +462,13 @@ public:
            "convention");
     assert(ty->getNumElements() == 4 &&
            "expected layout to be like Fortran array descriptor type");
-    // TODO: add more checks that this obeys the exact format that dragonegg
-    // generates so that we can be sure that we don't have false positives.
+// TODO: add more checks that this obeys the exact format that dragonegg
+// generates so that we can be sure that we don't have false positives.
+#endif
   };
 
   /// Return the name of the descriptor value
-  StringRef getName() { return Descriptor->getName(); }
+  StringRef getName() const { return Descriptor->getName(); }
 };
 
 /// Represent memory accesses in statements.
@@ -663,6 +664,11 @@ private:
 
   /// Updated access relation read from JSCOP file.
   isl_map *NewAccessRelation;
+
+  /// If this is a Fortran array, this will contain a descriptor of the
+  /// array.
+  /// @see FortranArrayDescriptor
+  std::unique_ptr<FortranArrayDescriptor> FAD;
   // @}
 
   __isl_give isl_basic_map *createBasicAccessMap(ScopStmt *Statement);
@@ -738,10 +744,6 @@ private:
   ///   float (*A)[4];
   ///   A[1][6] -> A[2][2]
   void wrapConstantDimensions();
-
-  /// If this is a Fortran array, this will contain a descriptor of the
-  /// array. @see FortranArrayDescriptor
-  std::unique_ptr<FortranArrayDescriptor> FAD;
 
 public:
   /// Create a new MemoryAccess.
