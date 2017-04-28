@@ -422,11 +422,10 @@ private:
   AssertingVH<GlobalValue> Descriptor;
 
   /// The creation of the Descriptor requires a copy to be made from a
-  /// ConstantExpr by using ConstantExpr::getAsInstruction()
-  /// I (Siddharth Bhat) think Polly has strange interactions with the
-  /// PassManager which does not allow this to be cleaned up neatly. So, we
-  /// maintain a reference to the Instruction that owns the Descriptor. This
-  /// makes sure the Instruction is freed when the FortranArrayDescriptor
+  /// ConstantExpr by using ConstantExpr::getAsInstruction(). This is
+  /// not freed by LLVM, since it is detached from any BB.
+  /// So, maintain a reference to the Instruction that owns the Descriptor.
+  /// We free the Instruction when the FortranArrayDescriptor
   /// finally goes out of scope.
   /// @see ScopBuilder::findFortranArrayDescriptor*
   /// @see ConstantExpr::getAsInstruction
@@ -439,6 +438,11 @@ private:
   operator=(const FortranArrayDescriptor &) = delete;
 
 public:
+  /// Create a new FortranArrayDescriptor
+  ///
+  /// @param Descriptor Reference to the descriptor value in the IR
+  /// @param DescriptorOwningInstruction The Instruction from which the
+  ///                                    descriptor was taken.
   FortranArrayDescriptor(
       GlobalValue *Descriptor,
       std::unique_ptr<Instruction> &&DescriptorOwningInstruction)
@@ -461,6 +465,7 @@ public:
     // generates so that we can be sure that we don't have false positives.
   };
 
+  /// Return the name of the descriptor value
   StringRef getName() { return Descriptor->getName(); }
 };
 
