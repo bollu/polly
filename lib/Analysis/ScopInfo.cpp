@@ -588,7 +588,6 @@ static MemoryAccess::ReductionType getReductionType(const BinaryOperator *BinOp,
 }
 
 MemoryAccess::~MemoryAccess() {
-  // NOTE: I am *not confident* about the correctness of this.
   isl_id_free(Id);
   isl_set_free(InvalidDomain);
   isl_map_free(AccessRelation);
