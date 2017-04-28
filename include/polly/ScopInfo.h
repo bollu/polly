@@ -468,7 +468,7 @@ public:
   };
 
   /// Return the name of the descriptor value
-  StringRef getName() const { return Descriptor->getName(); }
+  std::string getName() const { return Descriptor->getName(); }
 };
 
 /// Represent memory accesses in statements.
