@@ -1,4 +1,8 @@
-; RUN: opt -S -analyze -polly-process-unprofitable  -polly-remarks-minimal -polly-canonicalize  -polly-scops -polly-dependences -debug-only=polly-dependence -polly-canonicalize -polly-allow-nonaffine   -polly-ignore-aliasing   -polly-invariant-load-hoisting < %s| FileCheck %s
+; RUN: opt -S  -analyze -polly-process-unprofitable  -polly-remarks-minimal \
+; RUN: -polly-canonicalize -polly-scops -polly-dependences \
+; RUN: -debug-only=polly-dependence -polly-canonicalize -polly-allow-nonaffine \
+; RUN: -polly-ignore-aliasing   -polly-invariant-load-hoisting \
+; RUN: < %s| FileCheck %s
 ;
 ; MODULE src_soil
 ; USE data_parameters, ONLY :   &

@@ -57,7 +57,7 @@ class ScopBuilder {
   // Build the SCoP for Region @p R.
   void buildScop(Region &R, AssumptionCache &AC);
 
-  /// try to pattern match and find the array descriptor structure in case of a
+  /// Try to pattern match and find the array descriptor structure in case of a
   /// fortran array accesss. succeeds on load/store into a fortran array that
   /// has been allocated.
   /// @see fortranarraydescriptor
@@ -68,7 +68,7 @@ class ScopBuilder {
   std::unique_ptr<FortranArrayDescriptor>
   findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst);
 
-  /// try to pattern match and find the array descriptor structure in case of a
+  /// Try to pattern match and find the array descriptor structure in case of a
   /// fortran array accesss. succeeds on load/store into a fortran array that
   /// has been allocated.
   /// @see fortranarraydescriptor
