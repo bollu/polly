@@ -1,32 +1,23 @@
 ; RUN: opt -S  -analyze -polly-process-unprofitable  -polly-remarks-minimal -polly-canonicalize -polly-scops -polly-dependences -debug-only=polly-dependence -polly-canonicalize -polly-allow-nonaffine   -polly-ignore-aliasing   -polly-invariant-load-hoisting  < %s| FileCheck %s
-
-
-; CHECK: ReadAccess :=	[Reduction Type: NONE] [Fortran array descriptor: __src_soil_MOD_xdzs] [Scalar: 0]
-; CHECK: MustWriteAccess :=	[Reduction Type: NONE] [Fortran array descriptor: __src_soil_MOD_xdzs] [Scalar: 0]
-
+;
 ; MODULE src_soil
 ; USE data_parameters, ONLY :   &
 ;     wp,        & ! KIND-type parameter for real variables
 ;     iintegers    ! KIND-type parameter for standard integer variables
-
 ; IMPLICIT NONE
-
 ; REAL (KIND = wp),     ALLOCATABLE, PRIVATE  :: &
 ;   xdzs     (:)
 ; CONTAINS
 ; SUBROUTINE terra1(n)
 ;   INTEGER, intent(in) :: n
-
 ;   INTEGER (KIND=iintegers) ::  &
 ;     j
-
 ;   Allocate(xdzs(n));
 ;    DO j = 2, n
 ;         xdzs(j) = xdzs(j) * xdzs(j) + xdzs(j - 1)
 ;   END DO
 ; END SUBROUTINE terra1
 ; END MODULE src_soil
-
 
 target datalayout = "e-p:64:64:64-S128-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f16:16:16-f32:32:32-f64:64:64-f128:128:128-v64:64:64-v128:128:128-a0:0:64-s0:64:64-f80:128:128-n8:16:32:64"
 target triple = "x86_64-unknown-linux-gnu"
@@ -143,3 +134,6 @@ attributes #3 = { noreturn nounwind }
 !6 = !{!"alias set 3: void*", !2}
 !7 = !{!8, !8, i64 0}
 !8 = !{!"alias set 18: real(kind=8)", !2}
+
+; CHECK: ReadAccess :=	[Reduction Type: NONE] [Fortran array descriptor: __src_soil_MOD_xdzs] [Scalar: 0]
+; CHECK: MustWriteAccess :=	[Reduction Type: NONE] [Fortran array descriptor: __src_soil_MOD_xdzs] [Scalar: 0]

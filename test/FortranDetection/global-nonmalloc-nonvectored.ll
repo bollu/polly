@@ -1,13 +1,5 @@
 ; RUN: opt -S -analyze -polly-process-unprofitable  -polly-remarks-minimal -polly-canonicalize  -polly-scops -polly-dependences -debug-only=polly-dependence -polly-canonicalize -polly-allow-nonaffine   -polly-ignore-aliasing   -polly-invariant-load-hoisting < %s| FileCheck %s
-
-; -instcombine is a hard requirement. We style our pattern matches assuming that
-; instcombine has happened.
-
-
-; CHECK: ReadAccess :=	[Reduction Type: NONE] [Fortran array descriptor: __src_soil_MOD_xdzs] [Scalar: 0]
-; CHECK: ReadAccess :=	[Reduction Type: NONE] [Fortran array descriptor: __src_soil_MOD_xdzs] [Scalar: 0]
-; CHECK: MustWriteAccess :=	[Reduction Type: NONE] [Fortran array descriptor: __src_soil_MOD_xdzs] [Scalar: 0]
-
+;
 ; MODULE src_soil
 ; USE data_parameters, ONLY :   &
 ;     wp,        & ! KIND-type parameter for real variables
@@ -27,18 +19,8 @@
 ;         xdzs(j) = xdzs(j) * xdzs(j) + xdzs(j - 1)
 ;   END DO
 ; END SUBROUTINE terra1
-
-
-; !==============================================================================
-
-; !------------------------------------------------------------------------------
-; ! End of module src_soil
-; !------------------------------------------------------------------------------
-
 ; END MODULE src_soil
 
-; ModuleID = 'src_soil.o.bc'
-source_filename = "src_soil.o.bc"
 target datalayout = "e-p:64:64:64-S128-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f16:16:16-f32:32:32-f64:64:64-f128:128:128-v64:64:64-v128:128:128-a0:0:64-s0:64:64-f80:128:128-n8:16:32:64"
 target triple = "x86_64-unknown-linux-gnu"
 
@@ -95,3 +77,7 @@ attributes #0 = { nounwind uwtable }
 !6 = !{!"alias set 3: void*", !2}
 !7 = !{!8, !8, i64 0}
 !8 = !{!"alias set 18: real(kind=8)", !2}
+
+; CHECK: ReadAccess :=	[Reduction Type: NONE] [Fortran array descriptor: __src_soil_MOD_xdzs] [Scalar: 0]
+; CHECK: ReadAccess :=	[Reduction Type: NONE] [Fortran array descriptor: __src_soil_MOD_xdzs] [Scalar: 0]
+; CHECK: MustWriteAccess :=	[Reduction Type: NONE] [Fortran array descriptor: __src_soil_MOD_xdzs] [Scalar: 0]
