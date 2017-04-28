@@ -57,17 +57,25 @@ class ScopBuilder {
   // Build the SCoP for Region @p R.
   void buildScop(Region &R, AssumptionCache &AC);
 
-  /// Try to pattern match and find the array descriptor structure. Succeeds on
-  /// load/store into a fortran array that has been allocated
+  /// try to pattern match and find the array descriptor structure in case of a
+  /// fortran array accesss. succeeds on load/store into a fortran array that
+  /// has been allocated.
+  /// @see fortranarraydescriptor
   ///
-  /// NOTE: assumes -polly-canonicalize has been run
+  /// @param inst the load/store instruction that access the memory
+  ///
+  /// note: assumes -polly-canonicalize has been run
   std::unique_ptr<FortranArrayDescriptor>
   findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst);
 
-  /// Try to pattern match and find the array descriptor structure. Succeeds on
-  /// load/store into a fortran array that is global and is being accessed.
+  /// try to pattern match and find the array descriptor structure in case of a
+  /// fortran array accesss. succeeds on load/store into a fortran array that
+  /// has been allocated.
+  /// @see fortranarraydescriptor
   ///
-  /// NOTE: assumes -polly-canonicalize has been run
+  /// @param inst the load/store instruction that access the memory
+  ///
+  /// note: assumes -polly-canonicalize has been run
   std::unique_ptr<FortranArrayDescriptor>
   findFortranArrayDescriptorForNonAllocArrayAccess(MemAccInst Inst);
 
