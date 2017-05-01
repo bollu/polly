@@ -220,8 +220,8 @@ ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
     if (!Descriptor) {
       continue;
     }
-    return make_unique<FortranArrayDescriptor>(Descriptor,
-                                               std::move(DescriptorGEPRawInst));
+    return llvm::make_unique<FortranArrayDescriptor>(
+        Descriptor, std::move(DescriptorGEPRawInst));
   }
 
   return nullptr;
@@ -278,8 +278,8 @@ ScopBuilder::findFortranArrayDescriptorForNonAllocArrayAccess(MemAccInst Inst) {
   if (!ArrayDescriptor)
     return nullptr;
 
-  return make_unique<FortranArrayDescriptor>(ArrayDescriptor,
-                                             std::move(BitcastInstruction));
+  return llvm::make_unique<FortranArrayDescriptor>(
+      ArrayDescriptor, std::move(BitcastInstruction));
 };
 
 bool ScopBuilder::buildAccessMultiDimFixed(MemAccInst Inst, ScopStmt *Stmt) {
