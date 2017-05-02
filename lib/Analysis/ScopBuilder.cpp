@@ -184,28 +184,18 @@ ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
     if (!MallocStore)
       continue;
 
-    auto *DescriptorGEP =
+    auto *DescriptorGEPConstExpr =
         dyn_cast<ConstantExpr>(MallocStore->getPointerOperand());
+    if (!DescriptorGEPConstExpr)
+      continue;
+
+    auto *DescriptorGEP = dyn_cast<GEPOperator>(DescriptorGEPConstExpr);
     if (!DescriptorGEP)
       continue;
 
-    // this needs to be deleted, on the basis of:
-    // https://github.com/llvm-mirror/llvm/blob/93e6e5414ded14bcbb233baaaa5567132fee9a0c/unittests/IR/ConstantsTest.cpp#L186
-    std::unique_ptr<Instruction> DescriptorGEPRawInst(
-        DescriptorGEP->getAsInstruction());
-
-    // We want an instruction and not a ConstantExpr since this should
-    // give us more flexibility to inspect the GEP.
-    auto *DescriptorGEPInst =
-        dyn_cast<GetElementPtrInst>(DescriptorGEPRawInst.get());
-
-    if (!(DescriptorGEPInst && DescriptorGEPInst->hasAllConstantIndices())) {
-      continue;
-    }
-
     // match: 5
     auto DescriptorType =
-        dyn_cast<StructType>(DescriptorGEPInst->getSourceElementType());
+        dyn_cast<StructType>(DescriptorGEP->getSourceElementType());
     if (!(DescriptorType && DescriptorType->hasName())) {
       continue;
     }
@@ -215,13 +205,12 @@ ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
       continue;
     }
     GlobalValue *Descriptor =
-        dyn_cast<GlobalValue>(DescriptorGEPInst->getPointerOperand());
+        dyn_cast<GlobalValue>(DescriptorGEP->getPointerOperand());
 
     if (!Descriptor) {
       continue;
     }
-    return llvm::make_unique<FortranArrayDescriptor>(
-        Descriptor, std::move(DescriptorGEPRawInst));
+    return llvm::make_unique<FortranArrayDescriptor>(Descriptor);
   }
 
   return nullptr;
@@ -270,16 +259,15 @@ ScopBuilder::findFortranArrayDescriptorForNonAllocArrayAccess(MemAccInst Inst) {
       dyn_cast<ConstantExpr>(MemLoad->getPointerOperand());
   if (!BitcastConstantExpr)
     return nullptr;
-  std::unique_ptr<Instruction> BitcastInstruction(
-      BitcastConstantExpr->getAsInstruction());
 
-  GlobalValue *ArrayDescriptor =
-      dyn_cast<GlobalValue>(BitcastInstruction->getOperand(0));
-  if (!ArrayDescriptor)
+  auto *BitcastOperator = dyn_cast<BitCastOperator>(BitcastConstantExpr);
+
+  GlobalValue *Descriptor =
+      dyn_cast<GlobalValue>(BitcastOperator->getOperand(0));
+  if (!Descriptor)
     return nullptr;
 
-  return llvm::make_unique<FortranArrayDescriptor>(
-      ArrayDescriptor, std::move(BitcastInstruction));
+  return llvm::make_unique<FortranArrayDescriptor>(Descriptor);
 };
 
 bool ScopBuilder::buildAccessMultiDimFixed(MemAccInst Inst, ScopStmt *Stmt) {

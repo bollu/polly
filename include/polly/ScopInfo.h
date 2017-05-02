@@ -421,18 +421,6 @@ private:
   /// into a Fortran array
   AssertingVH<GlobalValue> Descriptor;
 
-  /// The creation of the Descriptor requires a copy to be made from a
-  /// ConstantExpr by using ConstantExpr::getAsInstruction(). This is
-  /// not freed by LLVM, since it is detached from any BB.
-  /// So, maintain a reference to the Instruction that owns the Descriptor.
-  /// We free the Instruction when the FortranArrayDescriptor
-  /// finally goes out of scope.
-  ///
-  /// @see ScopBuilder::findFortranArrayDescriptor*
-  /// @see ConstantExpr::getAsInstruction
-  /// https://github.com/llvm-mirror/llvm/blob/93e6e5414ded14bcbb233baaaa5567132fee9a0c/unittests/IR/ConstantsTest.cpp#L186
-  std::unique_ptr<Instruction> DescriptorOwningInstruction;
-
   FortranArrayDescriptor(const FortranArrayDescriptor &) = delete;
   const FortranArrayDescriptor &
   operator=(const FortranArrayDescriptor &) = delete;
@@ -443,11 +431,7 @@ public:
   /// @param Descriptor Reference to the descriptor value in the IR
   /// @param DescriptorOwningInstruction The llvm::Instruction from which the
   ///                                    descriptor was taken.
-  FortranArrayDescriptor(
-      GlobalValue *Descriptor,
-      std::unique_ptr<Instruction> &&DescriptorOwningInstruction)
-      : Descriptor(Descriptor),
-        DescriptorOwningInstruction(std::move(DescriptorOwningInstruction)) {
+  FortranArrayDescriptor(GlobalValue *Descriptor) : Descriptor(Descriptor) {
     assert(Descriptor != nullptr && "given nullptr for Descriptor");
 
 #ifdef NDEBUG
