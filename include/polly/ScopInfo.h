@@ -611,6 +611,7 @@ private:
   /// We hold a reference to the descriptor corresponding to a MemoryAccess
   /// into a Fortran array. FAD for "Fortran Array Descriptor"
   AssertingVH<GlobalValue> FAD;
+  // @}
 
   __isl_give isl_basic_map *createBasicAccessMap(ScopStmt *Statement);
 
@@ -714,10 +715,6 @@ public:
   /// @param AccType    Whether read or write access.
   /// @param AccRel     The access relation that describes the memory access.
   MemoryAccess(ScopStmt *Stmt, AccessType AccType, __isl_take isl_map *AccRel);
-
-  /// Set the array descriptor corresponding to the Array on which the
-  /// memory access is performed.
-  void setFortranArrayDescriptor(GlobalValue *FAD);
 
   ~MemoryAccess();
 
@@ -1017,6 +1014,10 @@ public:
 
   /// Get the reduction type of this access
   ReductionType getReductionType() const { return RedType; }
+
+  /// Set the array descriptor corresponding to the Array on which the
+  /// memory access is performed.
+  void setFortranArrayDescriptor(GlobalValue *FAD);
 
   /// Update the original access relation.
   ///

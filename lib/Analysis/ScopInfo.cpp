@@ -1027,18 +1027,12 @@ void MemoryAccess::setFortranArrayDescriptor(GlobalValue *FAD) {
 // descriptor
 #ifdef NDEBUG
   StructType *ty = dyn_cast<StructType>(Descriptor->getValueType());
-  // Remove warning of unused variable
-  (void)ty;
-
   assert(ty && "expected value of type Fortran array descriptor");
-
   assert(ty->hasName() && ty->getName().startswith("struct.array") &&
          "expected global to follow Fortran array descriptor type naming "
          "convention");
   assert(ty->getNumElements() == 4 &&
          "expected layout to be like Fortran array descriptor type");
-// TODO: add more checks that this obeys the exact format that dragonegg
-// generates so that we can be sure that we don't have false positives.
 #endif
 }
 
