@@ -192,20 +192,19 @@ ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
     // match: 5
     auto DescriptorType =
         dyn_cast<StructType>(DescriptorGEP->getSourceElementType());
-    if (!(DescriptorType && DescriptorType->hasName())) {
+    if (!(DescriptorType && DescriptorType->hasName()))
       continue;
-    }
 
     // name does not match expected name
-    if (!DescriptorType->getName().startswith("struct.array")) {
+    if (!DescriptorType->getName().startswith("struct.array"))
       continue;
-    }
+
     GlobalValue *Descriptor =
         dyn_cast<GlobalValue>(DescriptorGEP->getPointerOperand());
 
-    if (!Descriptor) {
+    if (!Descriptor)
       continue;
-    }
+
     return Descriptor;
   }
 
