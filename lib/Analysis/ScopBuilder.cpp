@@ -135,9 +135,9 @@ void ScopBuilder::buildEscapingDependences(Instruction *Inst) {
 ///
 /// 2. %typedmem = bitcast i8* %mallocmem to <memtype>*
 ///
-/// 3 is optional because if you are writing to the 0th index, you don't
-//    need a GEP.
 /// 3. [%slot = getelementptr inbounds i8, i8* %typedmem, i64 <index>]
+/// 3 is optional because if you are writing to the 0th index, you don't
+///    need a GEP.
 ///
 /// 4.1 store/load <memtype> <val>, <memtype>* %typedmem, align 8
 /// 4.2 store/load <memtype> <val>, <memtype>* %slot, align 8
@@ -227,9 +227,9 @@ ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
 ///  1. %mem = load double*, double** bitcast (%"struct.array1_real(kind=8)"*
 ///    @globaldescriptor to double**), align 32
 ///
+///  2. [%slot = getelementptr inbounds i8, i8* %mem, i64 <index>]
 ///  2 is optional because if you are writing to the 0th index, you don't
 ///     need a GEP.
-///  2. [%slot = getelementptr inbounds i8, i8* %mem, i64 <index>]
 ///
 ///  3.1 store/load <memtype> <val>, <memtype>* %slot, align 8
 ///  3.2 store/load <memtype> <val>, <memtype>* %mem, align 8
