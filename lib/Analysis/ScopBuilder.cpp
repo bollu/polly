@@ -141,7 +141,7 @@ void ScopBuilder::buildEscapingDependences(Instruction *Inst) {
 ///
 /// 4.1 store/load <memtype> <val>, <memtype>* %typedmem, align 8
 /// 4.2 store/load <memtype> <val>, <memtype>* %slot, align 8
-std::unique_ptr<FortranArrayDescriptor>
+GlobalValue *
 ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
   // match: 4.1 & 4.2 store/load
   if (!isa<LoadInst>(Inst) && !isa<StoreInst>(Inst))
@@ -184,12 +184,8 @@ ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
     if (!MallocStore)
       continue;
 
-    auto *DescriptorGEPConstExpr =
-        dyn_cast<ConstantExpr>(MallocStore->getPointerOperand());
-    if (!DescriptorGEPConstExpr)
-      continue;
-
-    auto *DescriptorGEP = dyn_cast<GEPOperator>(DescriptorGEPConstExpr);
+    auto *DescriptorGEP =
+        dyn_cast<GEPOperator>(MallocStore->getPointerOperand());
     if (!DescriptorGEP)
       continue;
 
@@ -210,7 +206,7 @@ ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
     if (!Descriptor) {
       continue;
     }
-    return llvm::make_unique<FortranArrayDescriptor>(Descriptor);
+    return Descriptor;
   }
 
   return nullptr;
@@ -234,7 +230,7 @@ ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
 ///
 ///  3.1 store/load <memtype> <val>, <memtype>* %slot, align 8
 ///  3.2 store/load <memtype> <val>, <memtype>* %mem, align 8
-std::unique_ptr<FortranArrayDescriptor>
+GlobalValue *
 ScopBuilder::findFortranArrayDescriptorForNonAllocArrayAccess(MemAccInst Inst) {
   // match: 3
   if (!isa<LoadInst>(Inst) && !isa<StoreInst>(Inst)) {
@@ -255,20 +251,18 @@ ScopBuilder::findFortranArrayDescriptorForNonAllocArrayAccess(MemAccInst Inst) {
   if (!MemLoad)
     return nullptr;
 
-  auto *BitcastConstantExpr =
-      dyn_cast<ConstantExpr>(MemLoad->getPointerOperand());
-  if (!BitcastConstantExpr)
+  auto *BitcastOperator =
+      dyn_cast<BitCastOperator>(MemLoad->getPointerOperand());
+  if (!BitcastOperator)
     return nullptr;
-
-  auto *BitcastOperator = dyn_cast<BitCastOperator>(BitcastConstantExpr);
 
   GlobalValue *Descriptor =
       dyn_cast<GlobalValue>(BitcastOperator->getOperand(0));
   if (!Descriptor)
     return nullptr;
 
-  return llvm::make_unique<FortranArrayDescriptor>(Descriptor);
-};
+  return Descriptor;
+}
 
 bool ScopBuilder::buildAccessMultiDimFixed(MemAccInst Inst, ScopStmt *Stmt) {
   Value *Val = Inst.getValueOperand();
@@ -694,13 +688,12 @@ void ScopBuilder::addArrayAccess(
       IsAffine, AccessValue, Subscripts, Sizes, MemoryKind::Array);
 
   // TODO: change to loop of function pointers?
-  if (std::unique_ptr<FortranArrayDescriptor> FAD =
-          findFortranArrayDescriptorForAllocArrayAccess(MemAccInst)) {
-    MemAccess->setFortranArrayDescriptor(std::move(FAD));
-  } else if (std::unique_ptr<FortranArrayDescriptor> FAD =
-                 findFortranArrayDescriptorForNonAllocArrayAccess(MemAccInst)) {
-    MemAccess->setFortranArrayDescriptor(std::move(FAD));
-  }
+  if (GlobalValue *FAD =
+          findFortranArrayDescriptorForAllocArrayAccess(MemAccInst))
+    MemAccess->setFortranArrayDescriptor(FAD);
+  else if (GlobalValue *FAD =
+               findFortranArrayDescriptorForNonAllocArrayAccess(MemAccInst))
+    MemAccess->setFortranArrayDescriptor(FAD);
 }
 
 void ScopBuilder::ensureValueWrite(Instruction *Inst) {

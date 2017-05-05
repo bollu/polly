@@ -66,8 +66,7 @@ class ScopBuilder {
   /// @param Inst The load/store instruction that access the memory.
   ///
   /// @note assumes -polly-canonicalize has been run.
-  std::unique_ptr<FortranArrayDescriptor>
-  findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst);
+  GlobalValue *findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst);
 
   /// Try to pattern match and find the array descriptor structure in case of a
   /// fortran array accesss. succeeds on load/store into a fortran array that
@@ -78,7 +77,7 @@ class ScopBuilder {
   /// @param Inst The load/store instruction that access the memory.
   ///
   /// @note assumes -polly-canonicalize has been run.
-  std::unique_ptr<FortranArrayDescriptor>
+  GlobalValue *
   findFortranArrayDescriptorForNonAllocArrayAccess(MemAccInst Inst);
   // @}
 

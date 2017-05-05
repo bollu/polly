@@ -1020,13 +1020,27 @@ raw_ostream &polly::operator<<(raw_ostream &OS,
   return OS;
 }
 
-void MemoryAccess::setFortranArrayDescriptor(
-    std::unique_ptr<FortranArrayDescriptor> &&FAD) {
-  this->FAD = std::move(FAD);
+void MemoryAccess::setFortranArrayDescriptor(GlobalValue *FAD) {
+  this->FAD = FAD;
 
-  // TODO: write checks to make sure it looks _exactly_ like a Fortran array
-  // descriptor
-};
+// TODO: write checks to make sure it looks _exactly_ like a Fortran array
+// descriptor
+#ifdef NDEBUG
+  StructType *ty = dyn_cast<StructType>(Descriptor->getValueType());
+  // Remove warning of unused variable
+  (void)ty;
+
+  assert(ty && "expected value of type Fortran array descriptor");
+
+  assert(ty->hasName() && ty->getName().startswith("struct.array") &&
+         "expected global to follow Fortran array descriptor type naming "
+         "convention");
+  assert(ty->getNumElements() == 4 &&
+         "expected layout to be like Fortran array descriptor type");
+// TODO: add more checks that this obeys the exact format that dragonegg
+// generates so that we can be sure that we don't have false positives.
+#endif
+}
 
 void MemoryAccess::print(raw_ostream &OS) const {
   switch (AccType) {

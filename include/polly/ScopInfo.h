@@ -411,50 +411,6 @@ private:
   Scop &S;
 };
 
-/// Hold Fortran Array related information.
-class FortranArrayDescriptor {
-private:
-  /// Fortran arrays that are created using "Allocate" are stored in terms
-  /// of a descriptor struct. This maintains a raw pointer to the memory,
-  /// along with auxiliary fields with information such as dimensions.
-  /// We hold a reference to the descriptor corresponding to a MemoryAccess
-  /// into a Fortran array
-  AssertingVH<GlobalValue> Descriptor;
-
-  FortranArrayDescriptor(const FortranArrayDescriptor &) = delete;
-  const FortranArrayDescriptor &
-  operator=(const FortranArrayDescriptor &) = delete;
-
-public:
-  /// Create a new FortranArrayDescriptor
-  ///
-  /// @param Descriptor Reference to the descriptor value in the IR
-  /// @param DescriptorOwningInstruction The llvm::Instruction from which the
-  ///                                    descriptor was taken.
-  FortranArrayDescriptor(GlobalValue *Descriptor) : Descriptor(Descriptor) {
-    assert(Descriptor != nullptr && "given nullptr for Descriptor");
-
-#ifdef NDEBUG
-    StructType *ty = dyn_cast<StructType>(Descriptor->getValueType());
-    // Remove warning of unused variable
-    (void)ty;
-
-    assert(ty && "expected value of type Fortran array descriptor");
-
-    assert(ty->hasName() && ty->getName().startswith("struct.array") &&
-           "expected global to follow Fortran array descriptor type naming "
-           "convention");
-    assert(ty->getNumElements() == 4 &&
-           "expected layout to be like Fortran array descriptor type");
-// TODO: add more checks that this obeys the exact format that dragonegg
-// generates so that we can be sure that we don't have false positives.
-#endif
-  };
-
-  /// Return the name of the descriptor value
-  std::string getName() const { return Descriptor->getName(); }
-};
-
 /// Represent memory accesses in statements.
 class MemoryAccess {
   friend class Scop;
@@ -649,11 +605,12 @@ private:
   /// Updated access relation read from JSCOP file.
   isl_map *NewAccessRelation;
 
-  /// If this is a Fortran array, this will contain a descriptor of the
-  /// array.
-  /// @see FortranArrayDescriptor
-  std::unique_ptr<FortranArrayDescriptor> FAD;
-  // @}
+  /// Fortran arrays that are created using "Allocate" are stored in terms
+  /// of a descriptor struct. This maintains a raw pointer to the memory,
+  /// along with auxiliary fields with information such as dimensions.
+  /// We hold a reference to the descriptor corresponding to a MemoryAccess
+  /// into a Fortran array. FAD for "Fortran Array Descriptor"
+  AssertingVH<GlobalValue> FAD;
 
   __isl_give isl_basic_map *createBasicAccessMap(ScopStmt *Statement);
 
@@ -760,9 +717,7 @@ public:
 
   /// Set the array descriptor corresponding to the Array on which the
   /// memory access is performed.
-  ///
-  /// @param FAD Reference to array descriptor
-  void setFortranArrayDescriptor(std::unique_ptr<FortranArrayDescriptor> &&FAD);
+  void setFortranArrayDescriptor(GlobalValue *FAD);
 
   ~MemoryAccess();
 
