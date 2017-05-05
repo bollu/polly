@@ -124,7 +124,7 @@ void ScopBuilder::buildEscapingDependences(Instruction *Inst) {
 /// This is trying to match against "@globaldescriptor", the descriptor
 /// of the Fortran array that is being accessed at load/store. This style
 /// of code is generated for arrays that have been allocated using "Allocate"
-/// in the same module
+/// in the same module.
 ///
 /// Pattern Match:
 /// 1. %mallocmem = i8* @malloc(i64 40)
@@ -221,7 +221,7 @@ ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
 /// This is trying to match against "@globaldescriptor", the descriptor
 /// of the Fortran array that is being accessed at load/store. This style
 /// of code is generated for arrays that have been declared global, and
-/// are being accessed across modules
+/// are being accessed across modules.
 ///
 /// Pattern Match:
 ///  1. %mem = load double*, double** bitcast (%"struct.array1_real(kind=8)"*
