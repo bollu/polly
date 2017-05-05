@@ -147,6 +147,10 @@ ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
   if (!isa<LoadInst>(Inst) && !isa<StoreInst>(Inst))
     return nullptr;
 
+  // match: 4
+  if (Inst.getAlignment() != 8)
+    return nullptr;
+
   Value *Address = Inst.getPointerOperand();
 
   const BitCastInst *Bitcast = nullptr;
@@ -232,9 +236,13 @@ ScopBuilder::findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst) {
 GlobalValue *
 ScopBuilder::findFortranArrayDescriptorForNonAllocArrayAccess(MemAccInst Inst) {
   // match: 3
-  if (!isa<LoadInst>(Inst) && !isa<StoreInst>(Inst)) {
+  if (!isa<LoadInst>(Inst) && !isa<StoreInst>(Inst))
     return nullptr;
-  }
+
+  // match: 3
+  if (Inst.getAlignment() != 8)
+    return nullptr;
+
   Value *Slot = Inst.getPointerOperand();
 
   LoadInst *MemLoad = nullptr;
