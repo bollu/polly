@@ -42,6 +42,11 @@ static cl::opt<bool> UnprofitableScalarAccs(
     cl::desc("Count statements with scalar accesses as not optimizable"),
     cl::Hidden, cl::init(false), cl::cat(PollyCategory));
 
+static cl::opt<bool> detectFortranArrays(
+    "polly-detect-fortran-arrays",
+    cl::desc("Detect Fortran arrays and use this for code generation"),
+    cl::Hidden, cl::init(false), cl::cat(PollyCategory));
+
 void ScopBuilder::buildPHIAccesses(PHINode *PHI, Region *NonAffineSubRegion,
                                    bool IsExitBlock) {
 
@@ -765,6 +770,9 @@ void ScopBuilder::addArrayAccess(
   auto *MemAccess = addMemoryAccess(
       MemAccInst->getParent(), MemAccInst, AccType, BaseAddress, ElementType,
       IsAffine, AccessValue, Subscripts, Sizes, MemoryKind::Array);
+
+  if (!detectFortranArrays)
+    return;
 
   // TODO: change to loop of function pointers?
   if (GlobalValue *FAD =
