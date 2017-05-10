@@ -59,26 +59,36 @@ class ScopBuilder {
 
   /// Try to pattern match and find the array descriptor structure in case of a
   /// fortran array accesss. succeeds on load/store into a fortran array that
-  /// has been allocated.
+  /// is a global and has been allocated.
   ///
-  /// @see polly::FortranArrayDescriptor
+  /// @see polly::MemoryAccess, polly::ScopArrayInfo
   ///
   /// @param Inst The load/store instruction that access the memory.
   ///
   /// @note assumes -polly-canonicalize has been run.
-  GlobalValue *findFortranArrayDescriptorForAllocArrayAccess(MemAccInst Inst);
+  Value *findFADGlobalAlloc(MemAccInst Inst);
 
   /// Try to pattern match and find the array descriptor structure in case of a
   /// fortran array accesss. succeeds on load/store into a fortran array that
-  /// has been allocated.
+  /// is a global has been allocated.
   ///
-  /// @see polly::FortranArrayDescriptor
+  /// @see polly::MemoryAccess, polly::ScopArrayInfo
   ///
   /// @param Inst The load/store instruction that access the memory.
   ///
   /// @note assumes -polly-canonicalize has been run.
-  GlobalValue *
-  findFortranArrayDescriptorForNonAllocArrayAccess(MemAccInst Inst);
+  Value *findFADGlobalNonAlloc(MemAccInst Inst);
+
+  /// Try to pattern match and find the array descriptor structure in case of a
+  /// fortran array accesss. succeeds on load/store into a fortran array that
+  /// is a local and has been allocation
+  ///
+  /// @see polly::MemoryAccess, polly::ScopArrayInfo
+  ///
+  /// @param Inst The load/store instruction that access the memory.
+  ///
+  /// @note assumes -polly-canonicalize has been run.
+  Value *findFADLocalNonAlloc(MemAccInst Inst);
   // @}
 
   // Build the SCoP for Region @p R.
