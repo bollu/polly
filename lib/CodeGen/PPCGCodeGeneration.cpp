@@ -130,11 +130,13 @@ static __isl_give isl_id_to_ast_expr *pollyBuildAstExprForStmt(
     isl_map *AddrFunc = Acc->getAccessRelation();
     AddrFunc = isl_map_intersect_domain(AddrFunc, Stmt->getDomain());
 
-    errs() << "StmtDom: ";
+    errs() << "@@@@@ StmtDom: ";
     isl_set_dump(Stmt->getDomain());
-    errs() << " | Acc: ";
+    errs() << "\n\tAcc: ";
     Acc->dump();
-    errs() << "AddrFunc: ";
+    errs() << "\n";
+
+    errs() << "@@@@@ AddrFunc: ";
     isl_map_dump(AddrFunc);
     errs() << "\n";
 
@@ -153,6 +155,8 @@ static __isl_give isl_id_to_ast_expr *pollyBuildAstExprForStmt(
     Access = FunctionExpr(Access, RefId, UserExpr);
     RefToExpr = isl_id_to_ast_expr_set(RefToExpr, RefId, Access);
   }
+
+  errs() << "@@@@ -- Done with pollyBuildAstExprForStmt--";
 
   return RefToExpr;
 }
@@ -2193,9 +2197,9 @@ public:
 
       // pwAff can be NULL for zero dimension. only in the case of a fortran
       // array will we have a legitimate dimension
-      if (!PwAff) {
+      if (PwAff == nullptr) {
         if (i != 0)
-          assert(false && "invalid dimension pwAff for nonzero dimension");
+          llvm_unreachable("invalid dimension pwAff for nonzero dimension");
         continue;
       }
 
