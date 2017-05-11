@@ -264,7 +264,7 @@ public:
   bool updateSizes(ArrayRef<const SCEV *> Sizes, bool CheckConsistency = true);
 
   /// Make the ScopArrayInfo model a Fortran Array
-  void makeFortranArray(GlobalValue *FAD);
+  void makeFortranArray(Value *FAD);
 
   /// Destructor to free the isl id of the base pointer.
   ~ScopArrayInfo();
@@ -425,7 +425,7 @@ private:
 
   /// If this arrays models a Fortran array, contains a pointer
   /// to the Fortran array descriptor
-  const GlobalValue *FAD;
+  Value *FAD;
 };
 
 /// Represent memory accesses in statements.
@@ -904,7 +904,7 @@ public:
 
   /// Get the FortranArrayDescriptor corresponding to this memory access if
   /// it exists, and nullptr otherwise.
-  GlobalValue *getFortranArrayDescriptor() const { return this->FAD; };
+  Value *getFortranArrayDescriptor() const { return this->FAD; };
 
   /// Is the stride of the access equal to a certain width? Schedule is a map
   /// from the statement to a schedule where the innermost dimension is the

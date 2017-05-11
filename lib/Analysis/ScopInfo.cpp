@@ -313,7 +313,7 @@ void ScopArrayInfo::updateElementType(Type *NewElementType) {
 }
 
 /// Make the ScopArrayInfo model a Fortran Array
-void ScopArrayInfo::makeFortranArray(GlobalValue *FAD) {
+void ScopArrayInfo::makeFortranArray(Value *FAD) {
   assert(FAD != nullptr && "got invalid FortranArraydescriptor");
   if (this->FAD != nullptr) {
     assert(this->FAD == FAD &&
@@ -3441,7 +3441,7 @@ void Scop::foldSizeConstantsToRight() {
 void Scop::markFortranArrays() {
   for (ScopStmt &Stmt : this->Stmts) {
     for (MemoryAccess *memAccess : Stmt) {
-      GlobalValue *FAD = memAccess->getFortranArrayDescriptor();
+      Value *FAD = memAccess->getFortranArrayDescriptor();
       if (!FAD)
         continue;
       // HACK: const_cast ing to edit

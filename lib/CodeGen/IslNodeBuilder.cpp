@@ -1048,8 +1048,7 @@ bool IslNodeBuilder::materializeFortranArrayOutermostDimensionParameters() {
       if (Array->getNumberOfDimensions() == 0)
         continue;
 
-      GlobalValue *FAD =
-          const_cast<GlobalValue *>(Access->getFortranArrayDescriptor());
+      Value *FAD = const_cast<Value *>(Access->getFortranArrayDescriptor());
       if (FAD == nullptr)
         continue;
 
