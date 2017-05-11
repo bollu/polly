@@ -127,8 +127,9 @@ static __isl_give isl_id_to_ast_expr *pollyBuildAstExprForStmt(
   isl_id_to_ast_expr *RefToExpr = isl_id_to_ast_expr_alloc(Ctx, 0);
 
   for (MemoryAccess *Acc : *Stmt) {
-    isl_map *AddrFunc = Acc->getAddressFunction();
+    isl_map *AddrFunc = Acc->getAccessRelation();
     AddrFunc = isl_map_intersect_domain(AddrFunc, Stmt->getDomain());
+    AddrFunc = isl_map_lexmin(AddrFunc);
     isl_id *RefId = Acc->getId();
     isl_pw_multi_aff *PMA = isl_pw_multi_aff_from_map(AddrFunc);
     isl_multi_pw_aff *MPA = isl_multi_pw_aff_from_pw_multi_aff(PMA);
