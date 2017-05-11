@@ -240,7 +240,8 @@ ScopArrayInfo::ScopArrayInfo(Value *BasePtr, Type *ElementType, isl_ctx *Ctx,
                              ArrayRef<const SCEV *> Sizes, MemoryKind Kind,
                              const DataLayout &DL, Scop *S,
                              const char *BaseName)
-    : BasePtr(BasePtr), ElementType(ElementType), Kind(Kind), DL(DL), S(*S) {
+    : BasePtr(BasePtr), ElementType(ElementType), Kind(Kind), DL(DL), S(*S),
+      FAD(nullptr) {
   std::string BasePtrName =
       BaseName ? BaseName
                : getIslCompatibleName("MemRef", BasePtr, S->getNextArrayIdx(),
@@ -311,6 +312,36 @@ void ScopArrayInfo::updateElementType(Type *NewElementType) {
   }
 }
 
+/// Make the ScopArrayInfo model a Fortran Array
+void ScopArrayInfo::makeFortranArray(GlobalValue *FAD) {
+  assert(FAD != nullptr && "got invalid FortranArraydescriptor");
+  if (this->FAD != nullptr) {
+    assert(this->FAD == FAD &&
+           "receiving different array descriptors for same array");
+    return;
+  }
+
+  assert(DimensionSizesPw.size() > 0 && DimensionSizesPw[0] == nullptr);
+  assert(this->FAD == nullptr);
+  this->FAD = FAD;
+
+  isl_space *space = isl_space_set_alloc(S.getIslCtx(), 1, 0);
+
+  std::string param_name = this->getName();
+  param_name += "_fortranarr_size";
+  isl_id *id_for_pa = isl_id_alloc(S.getIslCtx(), param_name.c_str(), nullptr);
+
+  space = isl_space_set_dim_id(space, isl_dim_param, 0, id_for_pa);
+  isl_basic_set *identity = isl_basic_set_universe(space);
+  isl_local_space *ls = isl_basic_set_get_local_space(identity);
+  isl_basic_set_free(identity);
+
+  isl_aff *aff = isl_aff_var_on_domain(ls, isl_dim_param, 0);
+  isl_pw_aff *pa = isl_pw_aff_from_aff(aff);
+
+  DimensionSizesPw[0] = pa;
+}
+
 bool ScopArrayInfo::updateSizes(ArrayRef<const SCEV *> NewSizes,
                                 bool CheckConsistency) {
   int SharedDims = std::min(NewSizes.size(), DimensionSizes.size());
@@ -367,7 +398,12 @@ void ScopArrayInfo::dump() const { print(errs()); }
 void ScopArrayInfo::print(raw_ostream &OS, bool SizeAsPwAff) const {
   OS.indent(8) << *getElementType() << " " << getName();
   unsigned u = 0;
-  if (getNumberOfDimensions() > 0 && !getDimensionSize(0)) {
+  // If this is a Fortran array, then we can print the outermost dimension
+  // as a pwAff even though there is no SCEV information.
+  const bool shouldPrintOutermostDim = SizeAsPwAff && FAD != nullptr;
+
+  if (!shouldPrintOutermostDim && getNumberOfDimensions() > 0 &&
+      !getDimensionSize(0)) {
     OS << "[*]";
     u++;
   }
@@ -2168,7 +2204,30 @@ void Scop::realignParams() {
     Stmt.realignParams();
 
   // Simplify the schedule according to the context too.
-  Schedule = isl_schedule_gist_domain_params(Schedule, getContext());
+  // Add fortran arrays into the context
+  auto Context = getContext();
+  int ContextNParams = isl_set_dim(Context, isl_dim_param);
+  for (auto arr : arrays()) {
+    // is a fortran array
+    // HACK: actually need to check if it has a FAD, but for now this works
+    if (arr->getNumberOfDimensions() > 0) {
+      isl_pw_aff *pwaff = arr->getDimensionSizePw(0);
+      if (pwaff == nullptr)
+        continue;
+      isl_id *id_for_pa = isl_pw_aff_get_dim_id(pwaff, isl_dim_param, 0);
+
+      assert(id_for_pa != nullptr);
+
+      Context = isl_set_add_dims(Context, isl_dim_param, 1);
+      Context =
+          isl_set_set_dim_id(Context, isl_dim_param, ContextNParams, id_for_pa);
+      ContextNParams++;
+
+      isl_pw_aff_free(pwaff);
+    }
+  }
+
+  Schedule = isl_schedule_gist_domain_params(Schedule, Context);
 }
 
 static __isl_give isl_set *
@@ -3393,11 +3452,28 @@ void Scop::foldSizeConstantsToRight() {
   return;
 }
 
+void Scop::markFortranArrays() {
+  for (ScopStmt &Stmt : this->Stmts) {
+    for (MemoryAccess *memAccess : Stmt) {
+      GlobalValue *FAD = memAccess->getFortranArrayDescriptor();
+      if (!FAD)
+        continue;
+      // HACK: const_cast ing to edit
+      ScopArrayInfo *SAI =
+          const_cast<ScopArrayInfo *>(memAccess->getLatestScopArrayInfo());
+      assert(SAI != nullptr && "memory access into a fortran array does not "
+                               "have an associated ScopArrayInfo");
+      SAI->makeFortranArray(FAD);
+    }
+  }
+}
+
 void Scop::finalizeAccesses() {
   updateAccessDimensionality();
   foldSizeConstantsToRight();
   foldAccessRelations();
   assumeNoOutOfBounds();
+  markFortranArrays();
 }
 
 Scop::~Scop() {

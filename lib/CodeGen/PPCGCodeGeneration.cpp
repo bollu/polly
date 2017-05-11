@@ -2163,9 +2163,18 @@ public:
     for (unsigned i = 1; i < NumDims; ++i)
       Extent = isl_set_lower_bound_si(Extent, isl_dim_set, i, 0);
 
-    for (unsigned i = 1; i < NumDims; ++i) {
+    for (unsigned i = 0; i < NumDims; ++i) {
       isl_pw_aff *PwAff =
           const_cast<isl_pw_aff *>(Array->getDimensionSizePw(i));
+
+      // pwAff can be NULL for zero dimension. only in the case of a fortran
+      // array will we have a legitimate dimension
+      if (!PwAff) {
+        if (i != 0)
+          assert(false && "invalid dimension pwAff for nonzero dimension");
+        continue;
+      }
+
       isl_pw_aff *Val = isl_pw_aff_from_aff(isl_aff_var_on_domain(
           isl_local_space_from_space(Array->getSpace()), isl_dim_set, i));
       PwAff = isl_pw_aff_add_dims(PwAff, isl_dim_in,

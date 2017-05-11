@@ -75,6 +75,12 @@ public:
 
   void addParameters(__isl_take isl_set *Context);
 
+  /// Materialize all fortran array parameters in the current scop.
+  ///
+  /// @returns False, iff a problem occurred and a fortran array was not
+  /// materialized.
+  bool materializeFortranArrayOutermostDimensionParameters();
+
   /// Generate code that evaluates @p Condition at run-time.
   ///
   /// This function is typically called to generate the LLVM-IR for the

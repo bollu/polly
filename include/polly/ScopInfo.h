@@ -263,6 +263,9 @@ public:
   ///                          with old sizes
   bool updateSizes(ArrayRef<const SCEV *> Sizes, bool CheckConsistency = true);
 
+  /// Make the ScopArrayInfo model a Fortran Array
+  void makeFortranArray(GlobalValue *FAD);
+
   /// Destructor to free the isl id of the base pointer.
   ~ScopArrayInfo();
 
@@ -419,6 +422,10 @@ private:
 
   /// The scop this SAI object belongs to.
   Scop &S;
+
+  /// If this arrays models a Fortran array, contains a pointer
+  /// to the Fortran array descriptor
+  const GlobalValue *FAD;
 };
 
 /// Represent memory accesses in statements.
@@ -894,6 +901,10 @@ public:
   /// is a map from the statement to a schedule where the innermost dimension is
   /// the dimension of the innermost loop containing the statement.
   __isl_give isl_set *getStride(__isl_take const isl_map *Schedule) const;
+
+  /// Get the FortranArrayDescriptor corresponding to this memory access if
+  /// it exists, and nullptr otherwise.
+  GlobalValue *getFortranArrayDescriptor() const { return this->FAD; };
 
   /// Is the stride of the access equal to a certain width? Schedule is a map
   /// from the statement to a schedule where the innermost dimension is the
@@ -2034,6 +2045,10 @@ private:
   /// accesses always remain within bounds. We do this as last step, after
   /// all memory accesses have been modeled and canonicalized.
   void assumeNoOutOfBounds();
+
+  /// Mark Arrays that have memory accesses with FortranArrayDescriptor
+  /// as fortran arrays
+  void markFortranArrays();
 
   /// Finalize all access relations.
   ///
