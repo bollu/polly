@@ -129,8 +129,22 @@ static __isl_give isl_id_to_ast_expr *pollyBuildAstExprForStmt(
   for (MemoryAccess *Acc : *Stmt) {
     isl_map *AddrFunc = Acc->getAccessRelation();
     AddrFunc = isl_map_intersect_domain(AddrFunc, Stmt->getDomain());
-    AddrFunc = isl_map_lexmin(AddrFunc);
+
+    errs() << "StmtDom: ";
+    isl_set_dump(Stmt->getDomain());
+    errs() << " | Acc: ";
+    Acc->dump();
+    errs() << "AddrFunc: ";
+    isl_map_dump(AddrFunc);
+    errs() << "\n";
+
     isl_id *RefId = Acc->getId();
+    
+    if (Acc->getFortranArrayDescriptor() != nullptr) {
+      AddrFunc = isl_map_lower_bound_si(AddrFunc, isl_dim_out, 0, 0);
+    }    
+
+    AddrFunc = isl_map_lexmin(AddrFunc);
     isl_pw_multi_aff *PMA = isl_pw_multi_aff_from_map(AddrFunc);
     isl_multi_pw_aff *MPA = isl_multi_pw_aff_from_pw_multi_aff(PMA);
     MPA = isl_multi_pw_aff_coalesce(MPA);
@@ -2116,7 +2130,9 @@ public:
   ///
   /// @returns An isl_set describing the extent of the array.
   __isl_give isl_set *getExtent(ScopArrayInfo *Array) {
-    errs() << "@@@@@ getExtent: Array: "; Array->print(errs(), true); errs() << "\n";
+    errs() << "@@@@@ getExtent: Array: ";
+    Array->print(errs(), true);
+    errs() << "\n";
     unsigned NumDims = Array->getNumberOfDimensions();
     isl_union_map *Accesses = S->getAccesses();
     Accesses = isl_union_map_intersect_domain(Accesses, S->getDomains());
