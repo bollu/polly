@@ -266,6 +266,8 @@ public:
   /// Make the ScopArrayInfo model a Fortran Array
   void makeFortranArray(Value *FAD);
 
+  bool isFortranArray() const { return this->FAD != nullptr; };
+
   /// Destructor to free the isl id of the base pointer.
   ~ScopArrayInfo();
 

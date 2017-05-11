@@ -2115,6 +2115,7 @@ public:
   ///
   /// @returns An isl_set describing the extent of the array.
   __isl_give isl_set *getExtent(ScopArrayInfo *Array) {
+    errs() << "@@@@@ getExtent: Array: "; Array->print(errs(), true); errs() << "\n";
     unsigned NumDims = Array->getNumberOfDimensions();
     isl_union_map *Accesses = S->getAccesses();
     Accesses = isl_union_map_intersect_domain(Accesses, S->getDomains());
@@ -2134,33 +2135,39 @@ public:
       return isl_set_universe(Array->getSpace());
     }
 
-    isl_set *AccessSet =
-        isl_union_set_extract_set(AccessUSet, Array->getSpace());
-
-    isl_union_set_free(AccessUSet);
-    isl_local_space *LS = isl_local_space_from_space(Array->getSpace());
-
-    isl_pw_aff *Val =
-        isl_pw_aff_from_aff(isl_aff_var_on_domain(LS, isl_dim_set, 0));
-
-    isl_pw_aff *OuterMin = isl_set_dim_min(isl_set_copy(AccessSet), 0);
-    isl_pw_aff *OuterMax = isl_set_dim_max(AccessSet, 0);
-    OuterMin = isl_pw_aff_add_dims(OuterMin, isl_dim_in,
-                                   isl_pw_aff_dim(Val, isl_dim_in));
-    OuterMax = isl_pw_aff_add_dims(OuterMax, isl_dim_in,
-                                   isl_pw_aff_dim(Val, isl_dim_in));
-    OuterMin =
-        isl_pw_aff_set_tuple_id(OuterMin, isl_dim_in, Array->getBasePtrId());
-    OuterMax =
-        isl_pw_aff_set_tuple_id(OuterMax, isl_dim_in, Array->getBasePtrId());
-
     isl_set *Extent = isl_set_universe(Array->getSpace());
 
-    Extent = isl_set_intersect(
-        Extent, isl_pw_aff_le_set(OuterMin, isl_pw_aff_copy(Val)));
-    Extent = isl_set_intersect(Extent, isl_pw_aff_ge_set(OuterMax, Val));
+    if (!Array->isFortranArray()) {
+      isl_set *AccessSet =
+          isl_union_set_extract_set(AccessUSet, Array->getSpace());
+      isl_union_set_free(AccessUSet);
 
-    for (unsigned i = 1; i < NumDims; ++i)
+      isl_local_space *LS = isl_local_space_from_space(Array->getSpace());
+
+      isl_pw_aff *Val =
+          isl_pw_aff_from_aff(isl_aff_var_on_domain(LS, isl_dim_set, 0));
+
+      isl_pw_aff *OuterMin = isl_set_dim_min(isl_set_copy(AccessSet), 0);
+      isl_pw_aff *OuterMax = isl_set_dim_max(AccessSet, 0);
+      OuterMin = isl_pw_aff_add_dims(OuterMin, isl_dim_in,
+                                     isl_pw_aff_dim(Val, isl_dim_in));
+      OuterMax = isl_pw_aff_add_dims(OuterMax, isl_dim_in,
+                                     isl_pw_aff_dim(Val, isl_dim_in));
+      OuterMin =
+          isl_pw_aff_set_tuple_id(OuterMin, isl_dim_in, Array->getBasePtrId());
+      OuterMax =
+          isl_pw_aff_set_tuple_id(OuterMax, isl_dim_in, Array->getBasePtrId());
+
+      Extent = isl_set_intersect(
+          Extent, isl_pw_aff_le_set(OuterMin, isl_pw_aff_copy(Val)));
+      Extent = isl_set_intersect(Extent, isl_pw_aff_ge_set(OuterMax, Val));
+    } else {
+      isl_union_set_free(AccessUSet);
+    }
+
+    const int startLowerBoundDim = Array->isFortranArray() ? 0 : 1;
+
+    for (unsigned i = startLowerBoundDim; i < NumDims; ++i)
       Extent = isl_set_lower_bound_si(Extent, isl_dim_set, i, 0);
 
     for (unsigned i = 0; i < NumDims; ++i) {
@@ -2452,11 +2459,15 @@ public:
     int has_permutable = has_any_permutable_node(Schedule);
 
     if (!has_permutable || has_permutable < 0) {
-      Schedule = isl_schedule_free(Schedule);
-    } else {
-      Schedule = map_to_device(PPCGGen, Schedule);
-      PPCGGen->tree = generate_code(PPCGGen, isl_schedule_copy(Schedule));
-    }
+      // Schedule = isl_schedule_free(Schedule);
+      errs() << "@@@@@ Scop does not have permutable bands\n";
+      errs() << "@@@@@ Scop: ";
+      S->print(errs());
+      errs() << "\n";
+    } // else {
+    Schedule = map_to_device(PPCGGen, Schedule);
+    PPCGGen->tree = generate_code(PPCGGen, isl_schedule_copy(Schedule));
+    //}
 
     if (DumpSchedule) {
       isl_printer *P = isl_printer_to_str(S->getIslCtx());
@@ -2679,8 +2690,12 @@ public:
     RI = &getAnalysis<RegionInfoPass>().getRegionInfo();
 
     // We currently do not support scops with invariant loads.
-    if (S->hasInvariantAccesses())
-      return false;
+    if (S->hasInvariantAccesses()) {
+      errs() << "@@@@@ S has invariant accesses!\n";
+      errs() << "@@@@@ Scop: ";
+      S->print(errs());
+      errs() << "\n";
+    }
 
     auto PPCGScop = createPPCGScop();
     auto PPCGProg = createPPCGProg(PPCGScop);
