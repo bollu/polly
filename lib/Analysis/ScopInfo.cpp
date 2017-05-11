@@ -2167,6 +2167,33 @@ void Scop::addParameterBounds() {
   }
 }
 
+isl_set *getContextWithFortranArrays(__isl_keep isl_set *ScopContext,
+                                     Scop::array_range arrays) {
+  isl_set *FortranContext = isl_set_copy(ScopContext);
+  int ContextNParams = isl_set_dim(FortranContext, isl_dim_param);
+  for (auto arr : arrays) {
+    // is a fortran array
+    // HACK: actually need to check if it has a FAD, but for now this works
+    if (arr->getNumberOfDimensions() > 0) {
+      isl_pw_aff *pwaff = arr->getDimensionSizePw(0);
+      if (pwaff == nullptr)
+        continue;
+      isl_id *id_for_pa = isl_pw_aff_get_dim_id(pwaff, isl_dim_param, 0);
+
+      assert(id_for_pa != nullptr);
+
+      FortranContext = isl_set_add_dims(FortranContext, isl_dim_param, 1);
+      FortranContext = isl_set_set_dim_id(FortranContext, isl_dim_param,
+                                          ContextNParams, id_for_pa);
+      ContextNParams++;
+
+      isl_pw_aff_free(pwaff);
+    }
+  }
+
+  return FortranContext;
+}
+
 void Scop::realignParams() {
   if (PollyIgnoreParamBounds)
     return;
@@ -2189,31 +2216,9 @@ void Scop::realignParams() {
   for (ScopStmt &Stmt : *this)
     Stmt.realignParams();
 
-  // Simplify the schedule according to the context too.
-  // Add fortran arrays into the context
-  auto Context = getContext();
-  int ContextNParams = isl_set_dim(Context, isl_dim_param);
-  for (auto arr : arrays()) {
-    // is a fortran array
-    // HACK: actually need to check if it has a FAD, but for now this works
-    if (arr->getNumberOfDimensions() > 0) {
-      isl_pw_aff *pwaff = arr->getDimensionSizePw(0);
-      if (pwaff == nullptr)
-        continue;
-      isl_id *id_for_pa = isl_pw_aff_get_dim_id(pwaff, isl_dim_param, 0);
-
-      assert(id_for_pa != nullptr);
-
-      Context = isl_set_add_dims(Context, isl_dim_param, 1);
-      Context =
-          isl_set_set_dim_id(Context, isl_dim_param, ContextNParams, id_for_pa);
-      ContextNParams++;
-
-      isl_pw_aff_free(pwaff);
-    }
-  }
-
-  Schedule = isl_schedule_gist_domain_params(Schedule, Context);
+  isl_set *FortranArraysContext =
+      getContextWithFortranArrays(Context, arrays());
+  Schedule = isl_schedule_gist_domain_params(Schedule, FortranArraysContext);
 }
 
 static __isl_give isl_set *
@@ -2223,7 +2228,7 @@ simplifyAssumptionContext(__isl_take isl_set *AssumptionContext,
   // simplify the context with the constraints that are needed for anything to
   // be executed at all. However, if we have error blocks in the SCoP we already
   // assumed some parameter combinations cannot occur and removed them from the
-  // domains, thus we cannot use the remaining domain to simplify the
+  // domains, thus we cannot use the remaining domain to simplify thearr
   // assumptions.
   if (!S.hasErrorBlock()) {
     isl_set *DomainParameters = isl_union_set_params(S.getDomains());
