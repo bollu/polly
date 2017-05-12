@@ -123,25 +123,28 @@ void ScopBuilder::buildEscapingDependences(Instruction *Inst) {
   }
 }
 
-/// Check that a value has a type resembling:
+/// Check that a value is a Fortran Array descriptor
+///
+/// We check if V has the following structure:
 /// %"struct.array1_real(kind=8)" = type { i8*, i<zz>, i<zz>,
 ///                                   [<num> x %struct.descriptor_dimension] }
 ///
 ///
 /// %struct.descriptor_dimension = type { i<zz>, i<zz>, i<zz> }
 ///
-/// This function checks that:
-/// 1. value has a type name starting with "struct.array"
-/// 2. value type has layout as shown
-/// 3. Final member of value type has name "struct.descriptor_dimension"
-/// 4. "struct.descriptor_dimension" has layout as shown
-/// 5. Consistent use of i<zz> where <zz> is some fixed integer number
+/// 1. V's type name starts with "struct.array"
+/// 2. V's type has layout as shown.
+/// 3. Final member of V's type has name "struct.descriptor_dimension",
+/// 4. "struct.descriptor_dimension" has layout as shown.
+/// 5. Consistent use of i<zz> where <zz> is some fixed integer number.
 ///
 /// We are interested in such types since this is the code that dragonegg
-/// generates for Fortran arrays.
+/// generates for Fortran Array descriptors.
 ///
-/// @param value the global variable believed to be a Fortran array
-bool isFortranArray(Value *V) {
+/// @param V the Value to be checked.
+///
+/// @returns  
+bool isFortranArrayDescriptor(Value *V) {
   PointerType *PTy = dyn_cast<PointerType>(V->getType());
 
   if (!PTy)
@@ -260,7 +263,7 @@ Value *ScopBuilder::findFADGlobalNonAlloc(MemAccInst Inst) {
     if (!Descriptor)
       continue;
 
-    if (!isFortranArray(Descriptor))
+    if (!isFortranArrayDescriptor(Descriptor))
       continue;
 
     return Descriptor;
@@ -302,7 +305,7 @@ Value *ScopBuilder::findFADGlobalAlloc(MemAccInst Inst) {
   if (!Descriptor)
     return nullptr;
 
-  if (!isFortranArray(Descriptor))
+  if (!isFortranArrayDescriptor(Descriptor))
     return nullptr;
 
   return Descriptor;
@@ -336,7 +339,7 @@ Value *ScopBuilder::findFADLocalNonAlloc(MemAccInst Inst) {
   if (!Descriptor)
     return nullptr;
 
-  if (!isFortranArray(Descriptor))
+  if (!isFortranArrayDescriptor(Descriptor))
     return nullptr;
 
   return Descriptor;
