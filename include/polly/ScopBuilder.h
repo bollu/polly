@@ -60,18 +60,18 @@ class ScopBuilder {
   /// Try to match for the descriptor of a Fortran Array that has been declared
   /// global, and is allocated in this module.
   ///
-  /// "@globaldescriptor" is the descriptor of the Fortran Array.
+  /// "@descriptor" is the descriptor of the Fortran Array.
   ///
-  /// Pattern match for "@globaldescriptor":
+  /// Pattern match for "@descriptor":
   ///  1. %mem = load double*, double** bitcast (%"struct.array1_real(kind=8)"*
-  ///    @globaldescriptor to double**), align 32
+  ///    @descriptor to double**), align 32
   ///
   ///  2. [%slot = getelementptr inbounds i8, i8* %mem, i64 <index>]
   ///  2 is optional because if you are writing to the 0th index, you don't
   ///     need a GEP.
   ///
-  ///  3.1 store/load <memtype> <val>, <memtype>* %slot, align 8
-  ///  3.2 store/load <memtype> <val>, <memtype>* %mem, align 8
+  ///  3.1 store/load <memtype> <val>, <memtype>* %slot
+  ///  3.2 store/load <memtype> <val>, <memtype>* %mem
   ///
   /// @see polly::MemoryAccess, polly::ScopArrayInfo
   ///
@@ -79,15 +79,14 @@ class ScopBuilder {
   ///
   /// @param Inst The LoadInst/StoreInst that accesses the memory.
   ///
-  /// @returns Reference to @globaldescriptor on success, nullptr on failure.
-  Value *findFADGlobalAlloc(MemAccInst Inst);
+  /// @returns Reference to @descriptor on success, nullptr on failure.
+  Value *findFADAllocationInvisible(MemAccInst Inst);
 
-  /// Try to match for the descriptor of a Fortran Array that has been declared
-  /// global, and is being accessed across modules.
-  ///
-  /// Pattern match for "@globaldescriptor":
+  /// Try to match for the descriptor of a Fortran Array whose allocation
+  /// call is visible.
+  /// Pattern match for "@descr":
   ///  1. %mem = load double*, double** bitcast (%"struct.array1_real(kind=8)"*
-  ///    @globaldescriptor to double**), align 32
+  ///    @descr to double**), align 32
   ///
   ///  2. [%slot = getelementptr inbounds i8, i8* %mem, i64 <index>]
   ///  2 is optional because if you are writing to the 0th index, you don't
@@ -102,30 +101,9 @@ class ScopBuilder {
   ///
   /// @param Inst The LoadInst/StoreInst that accesses the memory.
   ///
-  /// @returns Reference to @globaldescriptor on success, nullptr on failure.
-  Value *findFADGlobalNonAlloc(MemAccInst Inst);
+  /// @returns Reference to @descr on success, nullptr on failure.
+  Value *findFADAllocationVisible(MemAccInst Inst);
 
-  /// Try to match for the descriptor of a Fortran array that is a parameter
-  /// to a function, and has not been allocated.
-  ///
-  /// Pattern match for "%param":
-  ///  1. %mem =  bitcast %"struct.array1_integer(kind=4)"* %param to i32**
-  ///
-  ///  2. [%slot = getelementptr inbounds i8, i8* %mem, i64 <index>]
-  ///  2 is optional because if you are writing to the 0th index, you don't
-  ///     need a GEP.
-  ///
-  ///  3.1 store/load <memtype> <val>, <memtype>* %slot, align 8
-  ///  3.2 store/load <memtype> <val>, <memtype>* %mem, align 8
-  ///
-  /// @see polly::MemoryAccess, polly::ScopArrayInfo
-  ///
-  /// @note assumes -polly-canonicalize has been run.
-  ///
-  /// @param Inst The LoadInst/StoreInst that accesses the memory.
-  ///
-  /// @returns Reference to "%param" on success, nullptr on failure.
-  Value *findFADLocalNonAlloc(MemAccInst Inst);
   // @}
 
   // Build the SCoP for Region @p R.
