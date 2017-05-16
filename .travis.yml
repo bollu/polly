@@ -3,6 +3,10 @@ dist: trusty
 
 addons:
   apt:
+    sources:
+    - ubuntu-toolchain-r-test
+    - george-edison55-precise-backports # more recent CMake
+
     packages:
     - gdb
     - gcc-4.9
