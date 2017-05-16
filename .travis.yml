@@ -30,8 +30,8 @@ before_install:
   - git clone https://github.com/llvm-mirror/polly.git
   - cd ../../
   
-  mkdir llvm_build
-  cd llvm_build
+  - mkdir llvm_build
+  - cd llvm_build
 
 script:
   - cmake --version
