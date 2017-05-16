@@ -1,0 +1,40 @@
+language: c++
+dist: trusty
+
+addons:
+  apt:
+    sources:
+    - ubuntu-toolchain-r-test
+    - george-edison55-precise-backports # more recent CMake
+
+    packages:
+    - gdb
+    - gcc-4.9
+    - g++-4.9
+    - gcc-4.9-multilib
+    - g++-4.9-multilib
+    - gcc-multilib
+    - g++-multilib
+    - libedit2
+    - libedit-dev
+    - libcurl3:i386
+    - cmake
+    - cmake-data
+    - ninja-build
+
+
+
+before_install:
+  - git clone https://github.com/llvm-mirror/llvm.git
+  - cd llvm/tools
+  - git clone https://github.com/llvm-mirror/polly.git
+  - cd ../../
+  
+  mkdir llvm_build
+  cd llvm_build
+
+script:
+  - cmake --version
+  - cmake ../llvm -GNinja -DPOLLY_ENABLE_GPGPU_CODEGEN=ON -DBUILD_SHARED_LIBS=ON
+  - ninja checkpolly
+  
