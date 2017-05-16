@@ -60,5 +60,5 @@ before_install:
 script:
   - cmake --version
   - cmake ../llvm -GNinja -DPOLLY_ENABLE_GPGPU_CODEGEN=ON -DBUILD_SHARED_LIBS=ON
-  - ninja check-polly -j1
+  - ninja check-polly -j2
   
