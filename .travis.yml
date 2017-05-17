@@ -3,8 +3,8 @@ dist: trusty
 cache:
   ccache: true
   # directories:
-  #   - cmake-3.8.1
-  #  - /usr/local/cmake
+  # - cmake
+  # - cmake-3.8.1
 
 
 addons:
@@ -35,6 +35,9 @@ before_install:
   #    tar xf cmake-3.8.1.tar.gz
   #  fi
 
+  - export PATH=$HOME/cmake/bin:$PATH
+  - echo $PATH
+
   # make directory for cmake to store stuff
   - mkdir $HOME/cmake
   # clone and install cmake
@@ -44,8 +47,6 @@ before_install:
   - cmake -DCMAKE_INSTALL_PREFIX=$HOME/cmake .
   - make -j4
   - make -j4 install
-  - export PATH=$HOME/cmake/bin:$PATH
-  - echo $PATH
   - cmake --version
 
   # LLVM + Polly clone
@@ -60,5 +61,10 @@ before_install:
 script:
   - cmake --version
   - cmake ../llvm -GNinja -DPOLLY_ENABLE_GPGPU_CODEGEN=ON -DBUILD_SHARED_LIBS=ON
-  - ninja check-polly -j2
+  - ninja opt
+  - ninja check-polly
   
+
+# NOTES:
+# 1. spends more time `cmake`ing than anything else for the cmake bootstrap process
+# 2. ccache = awesome
