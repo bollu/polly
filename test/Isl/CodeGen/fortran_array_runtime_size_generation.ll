@@ -1,5 +1,12 @@
 ; Check that the runtime size computation is generated for Fortran arrays.
 
+; REQUIRES=pollyacc
+
+; PPCG code generation backend:
+; RUN: opt %loadPolly -S -polly-detect-fortran-arrays \
+; RUN: -polly-target=gpu  -polly-acc-mincompute=0 \
+; RUN: -polly-codegen-ppcg < %s | FileCheck %s 
+
 ; Regular code generation backend:
 ; RUN: opt %loadPolly -S -polly-detect-fortran-arrays \
 ; RUN: -polly-codegen < %s | FileCheck %s
