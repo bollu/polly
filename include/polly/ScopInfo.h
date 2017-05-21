@@ -282,6 +282,9 @@ public:
   /// For indirect accesses return the origin SAI of the BP, else null.
   const ScopArrayInfo *getBasePtrOriginSAI() const { return BasePtrOriginSAI; }
 
+  /// Return whether the ScopArrayInfo models a Fortran array
+  bool isFortranArray() const { return FAD != nullptr; }
+
   /// The set of derived indirect SAIs for this origin SAI.
   const SmallSetVector<ScopArrayInfo *, 2> &getDerivedSAIs() const {
     return DerivedSAIs;
@@ -2717,6 +2720,15 @@ public:
   ///        that has name @p Name.
   ScopArrayInfo *getArrayInfoByName(const std::string BaseName);
 
+  bool hasFortranArrays() const {
+    for (auto &S : *this) {
+      for (auto MemAcc : S) {
+        if (MemAcc->getLatestScopArrayInfo()->isFortranArray())
+          return true;
+      }
+    }
+    return false;
+  }
   /// Check whether @p Schedule contains extension nodes.
   ///
   /// @return true if @p Schedule contains extension nodes.

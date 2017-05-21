@@ -1399,7 +1399,7 @@ void IslNodeBuilder::addParameters(__isl_take isl_set *Context) {
   // Materialize values for the parameters of the SCoP.
   materializeParameters();
 
-  // materialize the outermost dimension parameters for a Fortran array.
+  // Materialize the outermost dimension parameters for a Fortran array.
   // NOTE: materializeParameters() does not work since it looks through
   // the SCEVs. We don't have a corresponding SCEV for the array size
   // parameter
