@@ -127,35 +127,28 @@ static __isl_give isl_id_to_ast_expr *pollyBuildAstExprForStmt(
   isl_id_to_ast_expr *RefToExpr = isl_id_to_ast_expr_alloc(Ctx, 0);
 
   for (MemoryAccess *Acc : *Stmt) {
-    if (Acc->getLatestScopArrayInfo()->isFortranArray()) {
-      isl_id *RefId = Acc->getId();
+    isl_map *AddrFunc = nullptr;
 
-      isl_map *AddrFunc = Acc->getAccessRelation();
+    if (Acc->getLatestScopArrayInfo()->isFortranArray()) {
+      AddrFunc = Acc->getAccessRelation();
       AddrFunc = isl_map_intersect_domain(AddrFunc, Stmt->getDomain());
       AddrFunc = isl_map_lower_bound_si(AddrFunc, isl_dim_out, 0, 0);
       AddrFunc = isl_map_lexmin(AddrFunc);
-      isl_pw_multi_aff *PMA = isl_pw_multi_aff_from_map(AddrFunc);
-      isl_multi_pw_aff *MPA = isl_multi_pw_aff_from_pw_multi_aff(PMA);
-      MPA = isl_multi_pw_aff_coalesce(MPA);
-      MPA = FunctionIndex(MPA, RefId, UserIndex);
-      isl_ast_expr *Access = isl_ast_build_access_from_multi_pw_aff(Build, MPA);
-      Access = FunctionExpr(Access, RefId, UserExpr);
-      RefToExpr = isl_id_to_ast_expr_set(RefToExpr, RefId, Access);
-
     } else {
-      isl_map *AddrFunc = Acc->getAddressFunction();
+      AddrFunc = Acc->getAddressFunction();
       AddrFunc = isl_map_intersect_domain(AddrFunc, Stmt->getDomain());
-      isl_id *RefId = Acc->getId();
-      isl_pw_multi_aff *PMA = isl_pw_multi_aff_from_map(AddrFunc);
-      isl_multi_pw_aff *MPA = isl_multi_pw_aff_from_pw_multi_aff(PMA);
-      MPA = isl_multi_pw_aff_coalesce(MPA);
-      MPA = FunctionIndex(MPA, RefId, UserIndex);
-      isl_ast_expr *Access = isl_ast_build_access_from_multi_pw_aff(Build, MPA);
-      Access = FunctionExpr(Access, RefId, UserExpr);
-      RefToExpr = isl_id_to_ast_expr_set(RefToExpr, RefId, Access);
     }
-  }
 
+    assert(AddrFunc && "expected AddrFunc to be initialized.");
+    isl_id *RefId = Acc->getId();
+    isl_pw_multi_aff *PMA = isl_pw_multi_aff_from_map(AddrFunc);
+    isl_multi_pw_aff *MPA = isl_multi_pw_aff_from_pw_multi_aff(PMA);
+    MPA = isl_multi_pw_aff_coalesce(MPA);
+    MPA = FunctionIndex(MPA, RefId, UserIndex);
+    isl_ast_expr *Access = isl_ast_build_access_from_multi_pw_aff(Build, MPA);
+    Access = FunctionExpr(Access, RefId, UserExpr);
+    RefToExpr = isl_id_to_ast_expr_set(RefToExpr, RefId, Access);
+  }
   return RefToExpr;
 }
 
@@ -2156,8 +2149,8 @@ public:
     if (!Array->isFortranArray()) {
       isl_set *AccessSet =
           isl_union_set_extract_set(AccessUSet, Array->getSpace());
-      isl_union_set_free(AccessUSet);
 
+      isl_union_set_free(AccessUSet);
       isl_local_space *LS = isl_local_space_from_space(Array->getSpace());
 
       isl_pw_aff *Val =
@@ -2181,9 +2174,9 @@ public:
       isl_union_set_free(AccessUSet);
     }
 
-    const int startLowerBoundDim = Array->isFortranArray() ? 0 : 1;
+    const int StartLowerBoundDim = Array->isFortranArray() ? 0 : 1;
 
-    for (unsigned i = startLowerBoundDim; i < NumDims; ++i)
+    for (unsigned i = StartLowerBoundDim; i < NumDims; ++i)
       Extent = isl_set_lower_bound_si(Extent, isl_dim_set, i, 0);
 
     for (unsigned i = 0; i < NumDims; ++i) {
@@ -2447,7 +2440,7 @@ public:
   // We do not use here the Polly ScheduleOptimizer, as the schedule optimizer
   // is mostly CPU specific. Instead, we use PPCG's GPU code generation
   // strategy directly from this pass.
-  gpu_gen *generateGPU(Scop &currentScop, ppcg_scop *PPCGScop,
+  gpu_gen *generateGPU(bool hasFortranArrays, ppcg_scop *PPCGScop,
                        gpu_prog *PPCGProg) {
 
     auto PPCGGen = isl_calloc_type(S->getIslCtx(), struct gpu_gen);
@@ -2476,8 +2469,7 @@ public:
 
     // TODO: I've simply allowed this to test out the codegen, is this a bad
     // idea?
-    if ((!has_permutable || has_permutable < 0) &&
-        !currentScop.hasFortranArrays()) {
+    if ((!has_permutable || has_permutable < 0) && !hasFortranArrays) {
       Schedule = isl_schedule_free(Schedule);
     } else {
       Schedule = map_to_device(PPCGGen, Schedule);
@@ -2748,7 +2740,8 @@ public:
 
     auto PPCGScop = createPPCGScop();
     auto PPCGProg = createPPCGProg(PPCGScop);
-    auto PPCGGen = generateGPU(CurrentScop, PPCGScop, PPCGProg);
+    auto PPCGGen =
+        generateGPU(CurrentScop.hasFortranArrays(), PPCGScop, PPCGProg);
 
     if (PPCGGen->tree)
       generateCode(isl_ast_node_copy(PPCGGen->tree), PPCGProg);
