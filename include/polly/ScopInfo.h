@@ -282,7 +282,7 @@ public:
   /// For indirect accesses return the origin SAI of the BP, else null.
   const ScopArrayInfo *getBasePtrOriginSAI() const { return BasePtrOriginSAI; }
 
-  /// Return whether the ScopArrayInfo models a Fortran array
+  /// Return whether the ScopArrayInfo models a Fortran array.
   bool isFortranArray() const { return FAD != nullptr; }
 
   /// The set of derived indirect SAIs for this origin SAI.
@@ -2720,6 +2720,7 @@ public:
   ///        that has name @p Name.
   ScopArrayInfo *getArrayInfoByName(const std::string BaseName);
 
+  // Return whether this Scop contains a Fortran array.
   bool hasFortranArrays() const {
     for (auto &S : *this) {
       for (auto MemAcc : S) {
