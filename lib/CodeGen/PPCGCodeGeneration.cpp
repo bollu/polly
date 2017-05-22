@@ -1109,6 +1109,14 @@ isl_bool collectReferencesInGPUStmt(__isl_keep isl_ast_node *Node, void *User) {
   return isl_bool_true;
 }
 
+// Check that this is a Value that is actually legal to be copied.
+// If this check does not exist, then we could try to offload function
+// pointers to LLVM intrinsics.
+static bool IsValidSubtreeValue(Value *V) {
+  auto F = dyn_cast<Function>(V);
+  return !(F && F->isIntrinsic());
+}
+
 SetVector<Value *> GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
   SetVector<Value *> SubtreeValues;
   SetVector<const SCEV *> SCEVs;
@@ -1146,7 +1154,8 @@ SetVector<Value *> GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
     isl_id_free(Id);
   }
 
-  return SubtreeValues;
+  auto It = make_filter_range(SubtreeValues, IsValidSubtreeValue);
+  return SetVector<Value *>(It.begin(), It.end());
 }
 
 void GPUNodeBuilder::clearDominators(Function *F) {
