@@ -1156,7 +1156,24 @@ SetVector<Value *> GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
     isl_id_free(Id);
   }
 
-  return SubtreeValues;
+  // HACK: just checking if this works.
+  SetVector<Value *> NewSubtreeValues;
+  for (auto Val : SubtreeValues) {
+    if (isa<Instruction>(Val) || isa<GlobalValue>(Val))
+      continue;
+    auto F = dyn_cast<Function>(Val);
+    if (F) {
+      errs() << "Function: ";
+      F->print(errs());
+      errs() << "\n";
+      if (F->isIntrinsic())
+        continue;
+    }
+
+    NewSubtreeValues.insert(Val);
+  }
+
+  return NewSubtreeValues;
 }
 
 void GPUNodeBuilder::clearDominators(Function *F) {
@@ -1381,6 +1398,11 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
 
   SetVector<Value *> SubtreeValues = getReferencesInKernel(Kernel);
 
+  for (auto Val : SubtreeValues) {
+    errs() << "@@ Val: ";
+    Val->print(errs());
+    errs() << "\n";
+  }
   assert(Kernel->tree && "Device AST of kernel node is empty");
 
   Instruction &HostInsertPoint = *Builder.GetInsertPoint();
@@ -2133,6 +2155,14 @@ public:
     AccessUSet = isl_union_set_coalesce(AccessUSet);
     AccessUSet = isl_union_set_detect_equalities(AccessUSet);
     AccessUSet = isl_union_set_coalesce(AccessUSet);
+
+    errs() << "@@@getExtent: Array: ";
+    Array->print(errs(), true);
+    errs() << "\n";
+    errs() << "\tisFortran: " << Array->isFortranArray() << "\n";
+    errs() << "\tbasePtr: ";
+    Array->getBasePtr()->print(errs());
+    errs() << "\n";
 
     if (isl_union_set_is_empty(AccessUSet)) {
       isl_union_set_free(AccessUSet);
