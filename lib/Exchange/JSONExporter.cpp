@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Export the Scops build by ScopInfo pass as a JSON file.
+// Export the Scops built by the ScopInfo pass as a JSON file.
 //
 //===----------------------------------------------------------------------===//
 
