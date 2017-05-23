@@ -1,16 +1,12 @@
-; TODO: split up the different CHECK into separate CHECK calls
 ; RUN: opt -analyze %loadPolly -polly-allow-nonaffine -polly-ignore-aliasing -polly-scops -polly-detect-fortran-arrays \
-; RUN:  < %s | \
-; RUN: FileCheck  %s -check-prefix=SCOPS
+; RUN:  < %s | FileCheck  %s -check-prefix=SCOPS
 
 ; RUN: opt %loadPolly -polly-allow-nonaffine -polly-ignore-aliasing -polly-detect-fortran-arrays -polly-codegen-ppcg -polly-acc-dump-code \
-; RUN: -disable-output < %s | \
-; RUN: FileCheck -check-prefix=CODE %s
-
+; RUN: -disable-output < %s | FileCheck -check-prefix=CODE %s
 
 ; REQUIRES: pollyacc
 
-; Check that fortran arrays are generated
+; Check that Fortran arrays are detected.
 ; SCOPS:      ReadAccess :=	[Reduction Type: NONE] [Fortran array descriptor: xs] [Scalar: 0]
 ; SCOPS-NEXT:     [p_0_loaded_from_n, MemRef0_fortranarr_size, MemRef1_fortranarr_size] -> { Stmt_9[i0] -> MemRef0[o0] };
 ; SCOPS-NEXT: MayWriteAccess :=	[Reduction Type: NONE] [Fortran array descriptor: ys] [Scalar: 0]
