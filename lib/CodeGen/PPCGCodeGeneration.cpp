@@ -130,6 +130,11 @@ static __isl_give isl_id_to_ast_expr *pollyBuildAstExprForStmt(
     isl_map *AddrFunc = nullptr;
 
     if (Acc->getLatestScopArrayInfo()->isFortranArray()) {
+      // If we have a Fortran array, then the access relation could
+      // be unbounded in the outermost dimension. However, `getAccessFunction`
+      // directly calls `lexmin` on the access relation which will naturally
+      // fail. Hence, we choose to lower bound the outermost dimension manually
+      // and then invoke lexmin.
       AddrFunc = Acc->getAccessRelation();
       AddrFunc = isl_map_intersect_domain(AddrFunc, Stmt->getDomain());
       AddrFunc = isl_map_lower_bound_si(AddrFunc, isl_dim_out, 0, 0);
@@ -2174,7 +2179,7 @@ public:
       isl_union_set_free(AccessUSet);
     }
 
-    const int StartLowerBoundDim = Array->isFortranArray() ? 0 : 1;
+    int StartLowerBoundDim = Array->isFortranArray() ? 0 : 1;
 
     for (unsigned i = StartLowerBoundDim; i < NumDims; ++i)
       Extent = isl_set_lower_bound_si(Extent, isl_dim_set, i, 0);
@@ -2440,7 +2445,7 @@ public:
   // We do not use here the Polly ScheduleOptimizer, as the schedule optimizer
   // is mostly CPU specific. Instead, we use PPCG's GPU code generation
   // strategy directly from this pass.
-  gpu_gen *generateGPU(bool hasFortranArrays, ppcg_scop *PPCGScop,
+  gpu_gen *generateGPU(bool HasFortranArrays, ppcg_scop *PPCGScop,
                        gpu_prog *PPCGProg) {
 
     auto PPCGGen = isl_calloc_type(S->getIslCtx(), struct gpu_gen);
@@ -2469,7 +2474,7 @@ public:
 
     // TODO: I've simply allowed this to test out the codegen, is this a bad
     // idea?
-    if ((!has_permutable || has_permutable < 0) && !hasFortranArrays) {
+    if ((!has_permutable || has_permutable < 0) && !HasFortranArrays) {
       Schedule = isl_schedule_free(Schedule);
     } else {
       Schedule = map_to_device(PPCGGen, Schedule);
