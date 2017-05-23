@@ -77,8 +77,7 @@ module asm "\09.ident\09\22GCC: (GNU) 4.6.4 LLVM: 3.3.1\22"
 @0 = internal constant i32 10
 @options.14.1603 = internal constant [8 x i32] [i32 68, i32 511, i32 0, i32 0, i32 0, i32 1, i32 0, i32 1], align 32
 
-; Function Attrs: nounwind uwtable
-define internal void @copy.1550(%"struct.array1_integer(kind=4)"* noalias %xs, %"struct.array1_integer(kind=4).0"* noalias %ys, i32* noalias %n) #0 {
+define internal void @copy.1550(%"struct.array1_integer(kind=4)"* noalias %xs, %"struct.array1_integer(kind=4).0"* noalias %ys, i32* noalias %n) {
 entry:
   br label %entry.split
 
@@ -125,125 +124,6 @@ return:                                           ; preds = %return.loopexit, %e
   ret void
 }
 
-; Function Attrs: nounwind uwtable
-define internal void @MAIN__() #0 {
-entry:
-  %xs = alloca [10 x i32], align 4
-  %ys = alloca [10 x i32], align 4
-  %dt_parm.8 = alloca %struct.__st_parameter_dt, align 8
-  %parm.9 = alloca %"struct.array1_integer(kind=4).1", align 8
-  %parm.11 = alloca %"struct.array1_integer(kind=4).2", align 8
-  %parm.10 = alloca %"struct.array1_integer(kind=4).3", align 8
-  %dt_parm.12 = alloca %struct.__st_parameter_dt, align 8
-  %parm.13 = alloca %"struct.array1_integer(kind=4).4", align 8
-  br label %entry.split
-
-entry.split:                                      ; preds = %entry
-  %0 = getelementptr inbounds %struct.__st_parameter_dt, %struct.__st_parameter_dt* %dt_parm.8, i64 0, i32 0, i32 2
-  store i8* getelementptr inbounds ([12 x i8], [12 x i8]* @.cst, i64 0, i64 0), i8** %0, align 8
-  %1 = getelementptr inbounds %struct.__st_parameter_dt, %struct.__st_parameter_dt* %dt_parm.8, i64 0, i32 0, i32 3
-  store i32 5, i32* %1, align 8
-  %2 = getelementptr inbounds %struct.__st_parameter_dt, %struct.__st_parameter_dt* %dt_parm.8, i64 0, i32 0, i32 0
-  store i32 128, i32* %2, align 8
-  %3 = getelementptr inbounds %struct.__st_parameter_dt, %struct.__st_parameter_dt* %dt_parm.8, i64 0, i32 0, i32 1
-  store i32 5, i32* %3, align 4
-  call void @_gfortran_st_read(%struct.__st_parameter_dt* nonnull %dt_parm.8) #1
-  %4 = getelementptr inbounds %"struct.array1_integer(kind=4).1", %"struct.array1_integer(kind=4).1"* %parm.9, i64 0, i32 2
-  store i64 265, i64* %4, align 8
-  %5 = getelementptr inbounds %"struct.array1_integer(kind=4).1", %"struct.array1_integer(kind=4).1"* %parm.9, i64 0, i32 3, i64 0, i32 1
-  store i64 1, i64* %5, align 8
-  %6 = getelementptr inbounds %"struct.array1_integer(kind=4).1", %"struct.array1_integer(kind=4).1"* %parm.9, i64 0, i32 3, i64 0, i32 2
-  store i64 10, i64* %6, align 8
-  %7 = getelementptr inbounds %"struct.array1_integer(kind=4).1", %"struct.array1_integer(kind=4).1"* %parm.9, i64 0, i32 3, i64 0, i32 0
-  store i64 1, i64* %7, align 8
-  %8 = bitcast %"struct.array1_integer(kind=4).1"* %parm.9 to [10 x i32]**
-  store [10 x i32]* %xs, [10 x i32]** %8, align 8
-  %9 = getelementptr inbounds %"struct.array1_integer(kind=4).1", %"struct.array1_integer(kind=4).1"* %parm.9, i64 0, i32 1
-  store i64 -1, i64* %9, align 8
-  %10 = bitcast %"struct.array1_integer(kind=4).1"* %parm.9 to i8*
-  call void @_gfortran_transfer_array(%struct.__st_parameter_dt* nonnull %dt_parm.8, i8* nonnull %10, i32 4, i32 0) #1
-  call void @_gfortran_st_read_done(%struct.__st_parameter_dt* nonnull %dt_parm.8) #1
-  %11 = getelementptr inbounds %"struct.array1_integer(kind=4).3", %"struct.array1_integer(kind=4).3"* %parm.10, i64 0, i32 2
-  store i64 265, i64* %11, align 8
-  %12 = getelementptr inbounds %"struct.array1_integer(kind=4).3", %"struct.array1_integer(kind=4).3"* %parm.10, i64 0, i32 3, i64 0, i32 1
-  store i64 1, i64* %12, align 8
-  %13 = getelementptr inbounds %"struct.array1_integer(kind=4).3", %"struct.array1_integer(kind=4).3"* %parm.10, i64 0, i32 3, i64 0, i32 2
-  store i64 10, i64* %13, align 8
-  %14 = getelementptr inbounds %"struct.array1_integer(kind=4).3", %"struct.array1_integer(kind=4).3"* %parm.10, i64 0, i32 3, i64 0, i32 0
-  store i64 1, i64* %14, align 8
-  %15 = bitcast %"struct.array1_integer(kind=4).3"* %parm.10 to [10 x i32]**
-  store [10 x i32]* %xs, [10 x i32]** %15, align 8
-  %16 = getelementptr inbounds %"struct.array1_integer(kind=4).3", %"struct.array1_integer(kind=4).3"* %parm.10, i64 0, i32 1
-  store i64 -1, i64* %16, align 8
-  %17 = getelementptr inbounds %"struct.array1_integer(kind=4).2", %"struct.array1_integer(kind=4).2"* %parm.11, i64 0, i32 2
-  store i64 265, i64* %17, align 8
-  %18 = getelementptr inbounds %"struct.array1_integer(kind=4).2", %"struct.array1_integer(kind=4).2"* %parm.11, i64 0, i32 3, i64 0, i32 1
-  store i64 1, i64* %18, align 8
-  %19 = getelementptr inbounds %"struct.array1_integer(kind=4).2", %"struct.array1_integer(kind=4).2"* %parm.11, i64 0, i32 3, i64 0, i32 2
-  store i64 10, i64* %19, align 8
-  %20 = getelementptr inbounds %"struct.array1_integer(kind=4).2", %"struct.array1_integer(kind=4).2"* %parm.11, i64 0, i32 3, i64 0, i32 0
-  store i64 1, i64* %20, align 8
-  %21 = bitcast %"struct.array1_integer(kind=4).2"* %parm.11 to [10 x i32]**
-  store [10 x i32]* %ys, [10 x i32]** %21, align 8
-  %22 = getelementptr inbounds %"struct.array1_integer(kind=4).2", %"struct.array1_integer(kind=4).2"* %parm.11, i64 0, i32 1
-  store i64 -1, i64* %22, align 8
-  %23 = bitcast %"struct.array1_integer(kind=4).3"* %parm.10 to %"struct.array1_integer(kind=4)"*
-  %24 = bitcast %"struct.array1_integer(kind=4).2"* %parm.11 to %"struct.array1_integer(kind=4).0"*
-  call void @copy.1550(%"struct.array1_integer(kind=4)"* nonnull %23, %"struct.array1_integer(kind=4).0"* nonnull %24, i32* nonnull @0) #1
-  %25 = getelementptr inbounds %struct.__st_parameter_dt, %struct.__st_parameter_dt* %dt_parm.12, i64 0, i32 0, i32 2
-  store i8* getelementptr inbounds ([12 x i8], [12 x i8]* @.cst, i64 0, i64 0), i8** %25, align 8
-  %26 = getelementptr inbounds %struct.__st_parameter_dt, %struct.__st_parameter_dt* %dt_parm.12, i64 0, i32 0, i32 3
-  store i32 9, i32* %26, align 8
-  %27 = getelementptr inbounds %struct.__st_parameter_dt, %struct.__st_parameter_dt* %dt_parm.12, i64 0, i32 0, i32 0
-  store i32 128, i32* %27, align 8
-  %28 = getelementptr inbounds %struct.__st_parameter_dt, %struct.__st_parameter_dt* %dt_parm.12, i64 0, i32 0, i32 1
-  store i32 6, i32* %28, align 4
-  call void @_gfortran_st_write(%struct.__st_parameter_dt* nonnull %dt_parm.12) #1
-  %29 = getelementptr inbounds %"struct.array1_integer(kind=4).4", %"struct.array1_integer(kind=4).4"* %parm.13, i64 0, i32 2
-  store i64 265, i64* %29, align 8
-  %30 = getelementptr inbounds %"struct.array1_integer(kind=4).4", %"struct.array1_integer(kind=4).4"* %parm.13, i64 0, i32 3, i64 0, i32 1
-  store i64 1, i64* %30, align 8
-  %31 = getelementptr inbounds %"struct.array1_integer(kind=4).4", %"struct.array1_integer(kind=4).4"* %parm.13, i64 0, i32 3, i64 0, i32 2
-  store i64 10, i64* %31, align 8
-  %32 = getelementptr inbounds %"struct.array1_integer(kind=4).4", %"struct.array1_integer(kind=4).4"* %parm.13, i64 0, i32 3, i64 0, i32 0
-  store i64 1, i64* %32, align 8
-  %33 = bitcast %"struct.array1_integer(kind=4).4"* %parm.13 to [10 x i32]**
-  store [10 x i32]* %ys, [10 x i32]** %33, align 8
-  %34 = getelementptr inbounds %"struct.array1_integer(kind=4).4", %"struct.array1_integer(kind=4).4"* %parm.13, i64 0, i32 1
-  store i64 -1, i64* %34, align 8
-  %35 = bitcast %"struct.array1_integer(kind=4).4"* %parm.13 to i8*
-  call void @_gfortran_transfer_array_write(%struct.__st_parameter_dt* nonnull %dt_parm.12, i8* nonnull %35, i32 4, i32 0) #1
-  call void @_gfortran_st_write_done(%struct.__st_parameter_dt* nonnull %dt_parm.12) #1
-  ret void
-}
-
-declare void @_gfortran_st_read(%struct.__st_parameter_dt*)
-
-declare void @_gfortran_transfer_array(%struct.__st_parameter_dt*, i8*, i32, i32)
-
-declare void @_gfortran_st_read_done(%struct.__st_parameter_dt*)
-
-declare void @_gfortran_st_write(%struct.__st_parameter_dt*)
-
-declare void @_gfortran_transfer_array_write(%struct.__st_parameter_dt*, i8*, i32, i32)
-
-declare void @_gfortran_st_write_done(%struct.__st_parameter_dt*)
-
-; Function Attrs: nounwind uwtable
-define i32 @main(i32 %argc, i8** %argv) unnamed_addr #0 {
-entry:
-  br label %entry.split
-
-entry.split:                                      ; preds = %entry
-  tail call void @_gfortran_set_args(i32 %argc, i8** %argv) #1
-  tail call void @_gfortran_set_options(i32 8, i32* getelementptr inbounds ([8 x i32], [8 x i32]* @options.14.1603, i64 0, i64 0)) #1
-  tail call void @MAIN__() #0
-  ret i32 0
-}
-
 declare void @_gfortran_set_args(i32, i8**)
 
 declare void @_gfortran_set_options(i32, i32*)
-
-attributes #0 = { nounwind uwtable }
-attributes #1 = { nounwind }
