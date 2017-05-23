@@ -774,6 +774,94 @@ bool Dependences::isValidSchedule(Scop &S,
   return IsValid;
 }
 
+// Find the maximum number of input or output dimensions among all isl_maps
+// in a isl_union_map. Used as a callback for isl_union_map_foreach_map.
+// @see unifyDepsMap
+static isl_stat findMaxDimsCount(__isl_take isl_map *map, void *user) {
+  assert(user && "Expected valid pointer to store max dimension count.");
+  unsigned *Maxdims = (unsigned *)user;
+
+  unsigned NInDims = isl_map_dim(map, isl_dim_in);
+  unsigned NOutDims = isl_map_dim(map, isl_dim_out);
+  isl_map_free(map);
+
+  *Maxdims = std::max(*Maxdims, NInDims);
+  *Maxdims = std::max(*Maxdims, NOutDims);
+
+  return isl_stat_ok;
+}
+
+// Helper struct used to store information used by
+// appendInputDimsAndUnion.
+// @see appendInputDimsAndUnion
+struct AlignInputsMapInfo {
+  // Number of input & dimensions that is expected for an isl_map;
+  unsigned NExpectedDims;
+
+  // Final isl_union_map that is a concatenation of all the isl_maps
+  // appendInputDimsAndUnion is run on.
+  isl_union_map *out;
+
+  AlignInputsMapInfo() : NExpectedDims(0), out(nullptr){};
+};
+
+// Pad each isl_map with dimensions such that they all have the
+// same number of input & output dimensions. Used as callback for
+// isl_union_map_foreach_map.
+// @see unifyDepsMap
+static isl_stat appendInputDimsAndUnion(__isl_take isl_map *map, void *user) {
+  AlignInputsMapInfo *info = (AlignInputsMapInfo *)(user);
+  assert(info && "expected valid user pointer");
+
+  unsigned InN = isl_map_dim(map, isl_dim_in);
+  unsigned OutN = isl_map_dim(map, isl_dim_out);
+
+  assert(
+      InN <= info->NExpectedDims &&
+      "Found map with more than maximum number of expected input dimensions.");
+
+  assert(
+      OutN <= info->NExpectedDims &&
+      "Found map with more than maximum number of expected output dimensions.");
+
+  // TODO: I don't fully understand the implications of doing this,
+  // since isl_map_add_dims flattens the map. However, I believe that it
+  // is okay to flatten dependences over a schedule.
+  map = isl_map_add_dims(map, isl_dim_in, info->NExpectedDims - InN);
+  map = isl_map_add_dims(map, isl_dim_out, info->NExpectedDims - OutN);
+
+  if (!info->out)
+    info->out = isl_union_map_from_map(map);
+  else
+    info->out = isl_union_map_union(info->out, isl_union_map_from_map(map));
+
+  return isl_stat_ok;
+}
+
+// The isl_maps that comprise of the Deps may have different dimensions
+// per isl_map. We need to force them to have the same number of dimensions
+// since we wish to unify this into an isl_map. So, we figure out what
+// the maximum number of dimensions are, and we pad each isl_map's input
+// and output dimensions to be the same number throughout the isl_union_map.
+//
+// We expect that the number of input and output dimensions for each map in Deps
+// to be equal, since they represent dependences.
+//
+// Postcondition:
+//    forall m, n \in out,
+//      dim_in(n) = dim_in(m) = dim_out(n) = dim_out(m)
+// @see Dependences::isParallel
+static isl_map *unifyDepsMap(isl_union_map *Deps) {
+  AlignInputsMapInfo info;
+  isl_union_map_foreach_map(Deps, &findMaxDimsCount, &info.NExpectedDims);
+
+  isl_union_map_foreach_map(Deps, &appendInputDimsAndUnion, &info);
+  isl_union_map_free(Deps);
+  Deps = info.out;
+
+  return isl_map_from_union_map(Deps);
+}
+
 // Check if the current scheduling dimension is parallel.
 //
 // We check for parallelism by verifying that the loop does not carry any
@@ -802,7 +890,7 @@ bool Dependences::isParallel(isl_union_map *Schedule, isl_union_map *Deps,
     return true;
   }
 
-  ScheduleDeps = isl_map_from_union_map(Deps);
+  ScheduleDeps = unifyDepsMap(Deps);
   Dimension = isl_map_dim(ScheduleDeps, isl_dim_out) - 1;
 
   for (unsigned i = 0; i < Dimension; i++)
