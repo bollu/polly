@@ -4638,7 +4638,7 @@ ScalarEvolution *Scop::getSE() const { return SE; }
 static isl::multi_union_pw_aff mapToDimension(isl::union_set USet, int N) {
   assert(N >= 0);
   assert(USet);
-  assert(!USet.is_empty());
+  assert(!bool(USet.is_empty()));
 
   auto Result = isl::union_pw_multi_aff::empty(USet.get_space());
 

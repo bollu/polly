@@ -7,31 +7,33 @@
 ; REQUIRES: pollyacc
 
 ; Check that Fortran arrays are detected.
-; SCOPS:      ReadAccess :=	[Reduction Type: NONE] [Fortran array descriptor: xs] [Scalar: 0]
-; SCOPS-NEXT:     [p_0_loaded_from_n, MemRef0_fortranarr_size, MemRef1_fortranarr_size] -> { Stmt_9[i0] -> MemRef0[o0] };
-; SCOPS-NEXT: MayWriteAccess :=	[Reduction Type: NONE] [Fortran array descriptor: ys] [Scalar: 0]
-; SCOPS-NEXT:     [p_0_loaded_from_n, MemRef0_fortranarr_size, MemRef1_fortranarr_size] -> { Stmt_9[i0] -> MemRef1[o0] };
+; SCOPS:       ReadAccess :=	[Reduction Type: NONE] [Fortran array descriptor: xs] [Scalar: 0]
+; SCOPS-NEXT:     [tmp11, tmp7, p_2, tmp1, p_4, MemRef_tmp10_fortranarr_size, MemRef_tmp5_fortranarr_size] -> { Stmt_9[i0] -> MemRef_tmp10[1 + i0, -p_2] };
+; SCOPS-NEXT: MustWriteAccess :=	[Reduction Type: NONE] [Fortran array descriptor: ys] [Scalar: 0]
+; SCOPS-NEXT:     [tmp11, tmp7, p_2, tmp1, p_4, MemRef_tmp10_fortranarr_size, MemRef_tmp5_fortranarr_size] -> { Stmt_9[i0] -> MemRef_tmp5[1 + i0, -p_4] };
 
 ; Check that we generate CUDA calls
 ; CODE:      Code
 ; CODE-NEXT: ====
 ; CODE-NEXT: # host
-; CODE-NEXT: {
-; CODE-NEXT:   if (MemRef0_fortranarr_size >= 1)
-; CODE-NEXT:     cudaCheckReturn(cudaMemcpy(dev_MemRef0, MemRef0, (MemRef0_fortranarr_size) * sizeof(i32), cudaMemcpyHostToDevice));
-; CODE-NEXT:   if (MemRef1_fortranarr_size >= 1)
-; CODE-NEXT:     cudaCheckReturn(cudaMemcpy(dev_MemRef1, MemRef1, (MemRef1_fortranarr_size) * sizeof(i32), cudaMemcpyHostToDevice));
-; CODE-NEXT:   for (int c0 = 0; c0 < p_0_loaded_from_n; c0 += 1)
-; CODE-NEXT:     {
-; CODE-NEXT:       dim3 k0_dimBlock;
-; CODE-NEXT:       dim3 k0_dimGrid;
-; CODE-NEXT:       kernel0 <<<k0_dimGrid, k0_dimBlock>>> (dev_MemRef0, dev_MemRef1, p_0_loaded_from_n, MemRef0_fortranarr_size, MemRef1_fortranarr_size, c0);
-; CODE-NEXT:       cudaCheckKernel();
-; CODE-NEXT:     }
-; CODE:        if (MemRef1_fortranarr_size >= 1)
-; CODE-NEXT:     cudaCheckReturn(cudaMemcpy(MemRef1, dev_MemRef1, (MemRef1_fortranarr_size) * sizeof(i32), cudaMemcpyDeviceToHost));
-; CODE-NEXT: }
+; CODE-NEXT: if (tmp11 >= 1) {
+; CODE-NEXT:   if (tmp7 >= 1 && MemRef_tmp10_fortranarr_size >= 2)
+; CODE-NEXT:     cudaCheckReturn(cudaMemcpy(dev_MemRef_tmp10, MemRef_tmp10, (MemRef_tmp10_fortranarr_size >= tmp11 + 1 ? tmp11 + 1 : MemRef_tmp10_fortranarr_size) * (tmp7) * sizeof(i32), cudaMemcpyHostToDevice));
+; CODE-NEXT:   if (tmp1 >= 1 && MemRef_tmp5_fortranarr_size >= 2)
+; CODE-NEXT:     cudaCheckReturn(cudaMemcpy(dev_MemRef_tmp5, MemRef_tmp5, (MemRef_tmp5_fortranarr_size >= tmp11 + 1 ? tmp11 + 1 : MemRef_tmp5_fortranarr_size) * (tmp1) * sizeof(i32), cudaMemcpyHostToDevice));
+; CODE-NEXT:   {
+; CODE-NEXT:     dim3 k0_dimBlock(32);
+; CODE-NEXT:     dim3 k0_dimGrid(tmp11 >= 1048546 ? 32768 : floord(tmp11 + 31, 32));
+; CODE-NEXT:     kernel0 <<<k0_dimGrid, k0_dimBlock>>> (dev_MemRef_tmp10, dev_MemRef_tmp5, tmp11, tmp7, p_2, tmp1, p_4, MemRef_tmp10_fortranarr_size, MemRef_tmp5_fortranarr_size);
+; CODE-NEXT:     cudaCheckKernel();
+; CODE-NEXT:   }
 
+; CODE:        if (tmp1 >= 1 && MemRef_tmp5_fortranarr_size >= 2)
+; CODE-NEXT:     cudaCheckReturn(cudaMemcpy(MemRef_tmp5, dev_MemRef_tmp5, (MemRef_tmp5_fortranarr_size >= tmp11 + 1 ? tmp11 + 1 : MemRef_tmp5_fortranarr_size) * (tmp1) * sizeof(i32), cudaMemcpyDeviceToHost));
+; CODE-NEXT: }
+; This is not the exact code that is generated from dragonegg. A non-affine access that is
+; created due to error checking is manually made linear.
+;
 ; PROGRAM main
 ;     INTEGER, DIMENSION(100) :: xs
 ;     INTEGER, DIMENSION(100) :: ys
@@ -52,12 +54,15 @@
 ;         INTEGER :: i
 ; 
 ;         DO i = 1, n
-;             ys(i * i) = xs(i * i)
+;             ys(i) = xs(i)
 ;         END DO
 ; 
 ;     END SUBROUTINE copy
 ; END PROGRAM
 
+
+; ModuleID = 'test/GPGPU/fortran-copy-kernel-affine.ll'
+source_filename = "test/GPGPU/fortran-copy-kernel-affine.ll"
 target datalayout = "e-p:64:64:64-S128-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f16:16:16-f32:32:32-f64:64:64-f128:128:128-v64:64:64-v128:128:128-a0:0:64-s0:64:64-f80:128:128-n8:16:32:64"
 target triple = "x86_64-unknown-linux-gnu"
 
@@ -66,12 +71,6 @@ module asm "\09.ident\09\22GCC: (GNU) 4.6.4 LLVM: 3.3.1\22"
 %"struct.array1_integer(kind=4)" = type { i8*, i64, i64, [1 x %struct.descriptor_dimension] }
 %struct.descriptor_dimension = type { i64, i64, i64 }
 %"struct.array1_integer(kind=4).0" = type { i8*, i64, i64, [1 x %struct.descriptor_dimension] }
-%struct.__st_parameter_dt = type { %struct.__st_parameter_common, i64, i64*, i64*, i8*, i8*, i32, i32, i8*, i8*, i32, i32, i8*, [256 x i8], i32*, i64, i8*, i32, i32, i8*, i8*, i32, i32, i8*, i8*, i32, i32, i8*, i8*, i32, [4 x i8] }
-%struct.__st_parameter_common = type { i32, i32, i8*, i32, i32, i8*, i32* }
-%"struct.array1_integer(kind=4).1" = type { i8*, i64, i64, [1 x %struct.descriptor_dimension] }
-%"struct.array1_integer(kind=4).2" = type { i8*, i64, i64, [1 x %struct.descriptor_dimension] }
-%"struct.array1_integer(kind=4).3" = type { i8*, i64, i64, [1 x %struct.descriptor_dimension] }
-%"struct.array1_integer(kind=4).4" = type { i8*, i64, i64, [1 x %struct.descriptor_dimension] }
 
 @.cst = private constant [12 x i8] c"program.f90\00", align 8
 @0 = internal constant i32 10
@@ -82,40 +81,46 @@ entry:
   br label %entry.split
 
 entry.split:                                      ; preds = %entry
-  %0 = getelementptr inbounds %"struct.array1_integer(kind=4).0", %"struct.array1_integer(kind=4).0"* %ys, i64 0, i32 3, i64 0, i32 0
-  %1 = load i64, i64* %0, align 8
-  %2 = icmp eq i64 %1, 0
-  %3 = select i1 %2, i64 1, i64 %1
-  %4 = bitcast %"struct.array1_integer(kind=4).0"* %ys to i32**
-  %5 = load i32*, i32** %4, align 8
-  %6 = getelementptr inbounds %"struct.array1_integer(kind=4)", %"struct.array1_integer(kind=4)"* %xs, i64 0, i32 3, i64 0, i32 0
-  %7 = load i64, i64* %6, align 8
-  %8 = icmp eq i64 %7, 0
-  %. = select i1 %8, i64 1, i64 %7
-  %9 = bitcast %"struct.array1_integer(kind=4)"* %xs to i32**
-  %10 = load i32*, i32** %9, align 8
-  %11 = load i32, i32* %n, align 4
-  %12 = icmp sgt i32 %11, 0
-  br i1 %12, label %"9.preheader", label %return
+  %tmp = getelementptr inbounds %"struct.array1_integer(kind=4).0", %"struct.array1_integer(kind=4).0"* %ys, i64 0, i32 3, i64 0, i32 0
+  %tmp1 = load i64, i64* %tmp, align 8
+  %tmp2 = icmp eq i64 %tmp1, 0
+  %tmp3 = select i1 %tmp2, i64 1, i64 %tmp1
+  %tmp4 = bitcast %"struct.array1_integer(kind=4).0"* %ys to i32**
+  %tmp5 = load i32*, i32** %tmp4, align 8
+  %tmp6 = getelementptr inbounds %"struct.array1_integer(kind=4)", %"struct.array1_integer(kind=4)"* %xs, i64 0, i32 3, i64 0, i32 0
+  %tmp7 = load i64, i64* %tmp6, align 8
+  %tmp8 = icmp eq i64 %tmp7, 0
+  %. = select i1 %tmp8, i64 1, i64 %tmp7
+  %tmp9 = bitcast %"struct.array1_integer(kind=4)"* %xs to i32**
+  %tmp10 = load i32*, i32** %tmp9, align 8
+  %tmp11 = load i32, i32* %n, align 4
+  %tmp12 = icmp sgt i32 %tmp11, 0
+  br i1 %tmp12, label %"9.preheader", label %return
 
 "9.preheader":                                    ; preds = %entry.split
   br label %"9"
 
-"9":                                              ; preds = %"9.preheader", %"9"
-  %13 = phi i32 [ %24, %"9" ], [ 1, %"9.preheader" ]
-  %14 = sext i32 %13 to i64
-  %15 = mul i64 %3, %14
-  %16 = sub i64 %15, %3
-  %17 = sext i32 %13 to i64
-  %18 = mul i64 %., %17
-  %19 = sub i64 %18, %.
-  %20 = getelementptr i32, i32* %10, i64 %19
-  %21 = load i32, i32* %20, align 4
-  %22 = getelementptr i32, i32* %5, i64 %16
-  store i32 %21, i32* %22, align 4
-  %23 = icmp eq i32 %13, %11
-  %24 = add i32 %13, 1
-  br i1 %23, label %return.loopexit, label %"9"
+"9":                                              ; preds = %"9", %"9.preheader"
+  %tmp13 = phi i32 [ %tmp24, %"9" ], [ 1, %"9.preheader" ]
+  %tmp14 = sext i32 %tmp13 to i64
+  ; replace %tmp3 with % tmp1
+  ; %tmp15 = mul i64 %tmp3, %tmp14
+  %tmp15 = mul i64 %tmp1, %tmp14
+  
+  %tmp16 = sub i64 %tmp15, %tmp3
+  %tmp17 = sext i32 %tmp13 to i64
+  ; replace %. with %tmp7
+  ; %tmp18 = mul i64 %., %tmp17
+  %tmp18 = mul i64 %tmp7, %tmp17
+  
+  %tmp19 = sub i64 %tmp18, %.
+  %tmp20 = getelementptr i32, i32* %tmp10, i64 %tmp19
+  %tmp21 = load i32, i32* %tmp20, align 4
+  %tmp22 = getelementptr i32, i32* %tmp5, i64 %tmp16
+  store i32 %tmp21, i32* %tmp22, align 4
+  %tmp23 = icmp eq i32 %tmp13, %tmp11
+  %tmp24 = add i32 %tmp13, 1
+  br i1 %tmp23, label %return.loopexit, label %"9"
 
 return.loopexit:                                  ; preds = %"9"
   br label %return
