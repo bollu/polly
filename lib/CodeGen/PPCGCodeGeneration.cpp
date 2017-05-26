@@ -1109,12 +1109,13 @@ isl_bool collectReferencesInGPUStmt(__isl_keep isl_ast_node *Node, void *User) {
   return isl_bool_true;
 }
 
-// Check that this is a Value that is  legal to be copied.
+// Check that this is a Value that is legal to be copied.
 // If this check does not exist, then we could try to offload function
-// pointers to LLVM intrinsics.
+// pointers to a kernel. 
+// This is invalid since we would be trying to call a host function
+// from the device kernel. 
 static bool isValidSubtreeValue(Value *V) {
-  auto F = dyn_cast<Function>(V);
-  return !(F && F->isIntrinsic());
+  return !isa<Function>(V);
 }
 
 SetVector<Value *> GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
