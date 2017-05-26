@@ -129,19 +129,15 @@ static __isl_give isl_id_to_ast_expr *pollyBuildAstExprForStmt(
   for (MemoryAccess *Acc : *Stmt) {
     isl_map *AddrFunc = nullptr;
 
-    if (Acc->getLatestScopArrayInfo()->isFortranArray()) {
-      // If we have a Fortran array, then the access relation could
-      // be unbounded in the outermost dimension. However, `getAccessFunction`
-      // directly calls `lexmin` on the access relation which will naturally
-      // fail. Hence, we choose to lower bound the outermost dimension manually
-      // and then invoke lexmin.
-      AddrFunc = Acc->getAccessRelation();
-      AddrFunc = isl_map_intersect_domain(AddrFunc, Stmt->getDomain());
-      AddrFunc = isl_map_lower_bound_si(AddrFunc, isl_dim_out, 0, 0);
-      AddrFunc = isl_map_lexmin(AddrFunc);
-    } else {
+    if (Acc->isAffine()) {
       AddrFunc = Acc->getAddressFunction();
       AddrFunc = isl_map_intersect_domain(AddrFunc, Stmt->getDomain());
+
+    } else {
+      errs() << "@@Access: ";
+      Acc->dump();
+      llvm_unreachable("Cannot codegen for GPU backend with non-affine access");
+      return nullptr;
     }
 
     assert(AddrFunc && "expected AddrFunc to be initialized.");
