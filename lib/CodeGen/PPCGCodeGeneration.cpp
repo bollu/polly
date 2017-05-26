@@ -2150,16 +2150,23 @@ public:
     }
 
     isl_set *Extent = isl_set_universe(Array->getSpace());
+    isl_set *AccessSet =
+        isl_union_set_extract_set(AccessUSet, Array->getSpace());
 
-    if (!Array->isFortranArray()) {
-      isl_set *AccessSet =
-          isl_union_set_extract_set(AccessUSet, Array->getSpace());
+    isl_union_set_free(AccessUSet);
+    isl_local_space *LS = isl_local_space_from_space(Array->getSpace());
 
-      isl_union_set_free(AccessUSet);
-      isl_local_space *LS = isl_local_space_from_space(Array->getSpace());
+    isl_pw_aff *Val =
+        isl_pw_aff_from_aff(isl_aff_var_on_domain(LS, isl_dim_set, 0));
 
-      isl_pw_aff *Val =
-          isl_pw_aff_from_aff(isl_aff_var_on_domain(LS, isl_dim_set, 0));
+    // In case the array is a Fortran array, we allow unbounded
+    // outermost dimensions, since we can load the outermost dimension
+    // information at runtime.
+    if (Array->isFortranArray() &&
+        !isl_set_dim_is_bounded(AccessSet, isl_dim_set, 0)) {
+      isl_set_free(AccessSet);
+      isl_pw_aff_free(Val);
+    } else {
 
       isl_pw_aff *OuterMin = isl_set_dim_min(isl_set_copy(AccessSet), 0);
       isl_pw_aff *OuterMax = isl_set_dim_max(AccessSet, 0);
@@ -2175,8 +2182,6 @@ public:
       Extent = isl_set_intersect(
           Extent, isl_pw_aff_le_set(OuterMin, isl_pw_aff_copy(Val)));
       Extent = isl_set_intersect(Extent, isl_pw_aff_ge_set(OuterMax, Val));
-    } else {
-      isl_union_set_free(AccessUSet);
     }
 
     int StartLowerBoundDim = Array->isFortranArray() ? 0 : 1;
