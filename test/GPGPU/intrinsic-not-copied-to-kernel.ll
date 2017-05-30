@@ -1,4 +1,8 @@
-; RUN: opt %loadPolly -polly-codegen-ppcg -disable-output < %s | FileCheck %s
+; RUN: opt %loadPolly -S -polly-codegen-ppcg < %s | FileCheck %s
+
+;CHECK:       %conv = fpext float %0 to double
+;CHECK-NEXT:  %1 = tail call double @llvm.pow.f64(double %conv, double 3.000000e+00)
+;CHECK-NEXT:  %conv6 = fptrunc double %1 to float
 
 ; REQUIRES: pollyacc
 
