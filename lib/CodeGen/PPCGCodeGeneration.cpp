@@ -1109,13 +1109,6 @@ isl_bool collectReferencesInGPUStmt(__isl_keep isl_ast_node *Node, void *User) {
   return isl_bool_true;
 }
 
-// Check that this is a Value that is legal to be copied.
-// If this check does not exist, then we could try to offload function
-// pointers to a kernel.
-// This is invalid since we would be trying to call a host function
-// from the device kernel.
-static bool isValidSubtreeValue(Value *V) { return !isa<Function>(V); }
-
 SetVector<Value *> GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
   SetVector<Value *> SubtreeValues;
   SetVector<const SCEV *> SCEVs;
@@ -1123,54 +1116,14 @@ SetVector<Value *> GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
   SubtreeReferences References = {
       LI, SE, S, ValueMap, SubtreeValues, SCEVs, getBlockGenerator()};
 
-  /*errs() << "@@@@@ " << __LINE__ << " SubtreeValues:\n"; for (auto it :
-  SubtreeValues) { errs() << "\t"; it->dump(); errs() << "\n"; }; for (const
-  auto &I : IDToValue) SubtreeValues.insert(I.second);
-  */
+  for (const auto &I : IDToValue)
+    SubtreeValues.insert(I.second);
 
-  errs() << "@@@@@ " << __LINE__ << " SCEVs:\n";
-  for (auto it : SCEVs) {
-    errs() << "\t";
-    it->dump();
-    errs() << "\n";
-  };
-  errs() << "@@@@@ " << __LINE__ << " SubtreeValues:\n";
-  for (auto it : SubtreeValues) {
-    errs() << "\t";
-    it->dump();
-    errs() << "\n";
-  };
   isl_ast_node_foreach_descendant_top_down(
       Kernel->tree, collectReferencesInGPUStmt, &References);
 
-  errs() << "@@@@@ " << __LINE__ << " SCEVs:\n";
-  for (auto it : SCEVs) {
-    errs() << "\t";
-    it->dump();
-    errs() << "\n";
-  };
-  errs() << "@@@@@ " << __LINE__ << " SubtreeValues:\n";
-  for (auto it : SubtreeValues) {
-    errs() << "\t";
-    it->dump();
-    errs() << "\n";
-  };
-
   for (const SCEV *Expr : SCEVs)
     findValues(Expr, SE, SubtreeValues);
-
-  errs() << "@@@@@ " << __LINE__ << " SCEVs:\n";
-  for (auto it : SCEVs) {
-    errs() << "\t";
-    it->dump();
-    errs() << "\n";
-  };
-  errs() << "@@@@@ " << __LINE__ << " SubtreeValues:\n";
-  for (auto it : SubtreeValues) {
-    errs() << "\t";
-    it->dump();
-    errs() << "\n";
-  };
 
   for (auto &SAI : S.arrays())
     SubtreeValues.remove(SAI->getBasePtr());
@@ -1193,14 +1146,7 @@ SetVector<Value *> GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
     isl_id_free(Id);
   }
 
-  errs() << "@@@@@ " << __LINE__ << " SubtreeValues:\n";
-  for (auto it : SubtreeValues) {
-    errs() << "\t";
-    it->dump();
-    errs() << "\n";
-  };
-  auto Filtered = make_filter_range(SubtreeValues, isValidSubtreeValue);
-  return SetVector<Value *>(Filtered.begin(), Filtered.end());
+  return SubtreeValues;
 }
 
 void GPUNodeBuilder::clearDominators(Function *F) {
@@ -2665,26 +2611,30 @@ public:
     return isl_ast_expr_ge(Iterations, MinComputeExpr);
   }
 
-  /// Extract the values and SCEVs needed to generate code for a block.
-  bool TakesFunctionPointersInBlock(const ScopStmt *Stmt,
-                                    const BasicBlock *BB) {
+  /// Check whether the Block contains any Function value.
+  bool ContainsFnPtrValInBlock(const BasicBlock *BB) {
     for (const Instruction &Inst : *BB)
-      for (Value *SrcVal : Inst.operands())
-        if (isa<FunctionType>(SrcVal->getType()))
+      for (Value *SrcVal : Inst.operands()) {
+        PointerType *p = dyn_cast<PointerType>(SrcVal->getType());
+        if (!p)
+          continue;
+        if (isa<FunctionType>(p->getElementType()))
           return true;
+      }
     return false;
   }
 
-  bool TakesFunctionPointers(const Scop &S) {
+  /// Return whether the Scop S has functions.
+  bool ContainsFnPtr(const Scop &S) {
     for (auto &Stmt : S) {
       if (Stmt.isBlockStmt()) {
-        if (TakesFunctionPointersInBlock(&Stmt, Stmt.getBasicBlock()))
+        if (ContainsFnPtrValInBlock(Stmt.getBasicBlock()))
           return true;
       } else {
         assert(Stmt.isRegionStmt() &&
                "Stmt was neither block nor region statement");
         for (const BasicBlock *BB : Stmt.getRegion()->blocks())
-          if (TakesFunctionPointersInBlock(&Stmt, BB))
+          if (ContainsFnPtrValInBlock(BB))
             return true;
       }
     }
@@ -2761,9 +2711,12 @@ public:
     if (S->hasInvariantAccesses())
       return false;
 
-    // We currently do not support trying to create function pointers
-    // inside code.
-    if (TakesFunctionPointers(CurrentScop))
+    // We currently do not support functions inside kernels, as code
+    // generation will need to offload function calls to the kernel.
+    // This may lead to a kernel try to call a function on the host.
+    // This also allows us to prevent codegen from trying to take the
+    // address of an intrinsic function to send to the kernel.
+    if (ContainsFnPtr(CurrentScop))
       return false;
 
     auto PPCGScop = createPPCGScop();
