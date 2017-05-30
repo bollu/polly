@@ -1,4 +1,4 @@
-; RUN: opt %loadPolly -polly-codegen-ppcg -disable-output < %s
+; RUN: opt %loadPolly -polly-codegen-ppcg -disable-output < %s | FileCheck %s
 
 ; REQUIRES: pollyacc
 

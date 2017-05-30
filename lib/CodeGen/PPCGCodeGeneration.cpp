@@ -1111,12 +1111,10 @@ isl_bool collectReferencesInGPUStmt(__isl_keep isl_ast_node *Node, void *User) {
 
 // Check that this is a Value that is legal to be copied.
 // If this check does not exist, then we could try to offload function
-// pointers to a kernel. 
+// pointers to a kernel.
 // This is invalid since we would be trying to call a host function
-// from the device kernel. 
-static bool isValidSubtreeValue(Value *V) {
-  return !isa<Function>(V);
-}
+// from the device kernel.
+static bool isValidSubtreeValue(Value *V) { return !isa<Function>(V); }
 
 SetVector<Value *> GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
   SetVector<Value *> SubtreeValues;
@@ -1125,14 +1123,54 @@ SetVector<Value *> GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
   SubtreeReferences References = {
       LI, SE, S, ValueMap, SubtreeValues, SCEVs, getBlockGenerator()};
 
-  for (const auto &I : IDToValue)
-    SubtreeValues.insert(I.second);
+  /*errs() << "@@@@@ " << __LINE__ << " SubtreeValues:\n"; for (auto it :
+  SubtreeValues) { errs() << "\t"; it->dump(); errs() << "\n"; }; for (const
+  auto &I : IDToValue) SubtreeValues.insert(I.second);
+  */
 
+  errs() << "@@@@@ " << __LINE__ << " SCEVs:\n";
+  for (auto it : SCEVs) {
+    errs() << "\t";
+    it->dump();
+    errs() << "\n";
+  };
+  errs() << "@@@@@ " << __LINE__ << " SubtreeValues:\n";
+  for (auto it : SubtreeValues) {
+    errs() << "\t";
+    it->dump();
+    errs() << "\n";
+  };
   isl_ast_node_foreach_descendant_top_down(
       Kernel->tree, collectReferencesInGPUStmt, &References);
 
+  errs() << "@@@@@ " << __LINE__ << " SCEVs:\n";
+  for (auto it : SCEVs) {
+    errs() << "\t";
+    it->dump();
+    errs() << "\n";
+  };
+  errs() << "@@@@@ " << __LINE__ << " SubtreeValues:\n";
+  for (auto it : SubtreeValues) {
+    errs() << "\t";
+    it->dump();
+    errs() << "\n";
+  };
+
   for (const SCEV *Expr : SCEVs)
     findValues(Expr, SE, SubtreeValues);
+
+  errs() << "@@@@@ " << __LINE__ << " SCEVs:\n";
+  for (auto it : SCEVs) {
+    errs() << "\t";
+    it->dump();
+    errs() << "\n";
+  };
+  errs() << "@@@@@ " << __LINE__ << " SubtreeValues:\n";
+  for (auto it : SubtreeValues) {
+    errs() << "\t";
+    it->dump();
+    errs() << "\n";
+  };
 
   for (auto &SAI : S.arrays())
     SubtreeValues.remove(SAI->getBasePtr());
@@ -1155,6 +1193,12 @@ SetVector<Value *> GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
     isl_id_free(Id);
   }
 
+  errs() << "@@@@@ " << __LINE__ << " SubtreeValues:\n";
+  for (auto it : SubtreeValues) {
+    errs() << "\t";
+    it->dump();
+    errs() << "\n";
+  };
   auto Filtered = make_filter_range(SubtreeValues, isValidSubtreeValue);
   return SetVector<Value *>(Filtered.begin(), Filtered.end());
 }
@@ -2621,6 +2665,32 @@ public:
     return isl_ast_expr_ge(Iterations, MinComputeExpr);
   }
 
+  /// Extract the values and SCEVs needed to generate code for a block.
+  bool TakesFunctionPointersInBlock(const ScopStmt *Stmt,
+                                    const BasicBlock *BB) {
+    for (const Instruction &Inst : *BB)
+      for (Value *SrcVal : Inst.operands())
+        if (isa<FunctionType>(SrcVal->getType()))
+          return true;
+    return false;
+  }
+
+  bool TakesFunctionPointers(const Scop &S) {
+    for (auto &Stmt : S) {
+      if (Stmt.isBlockStmt()) {
+        if (TakesFunctionPointersInBlock(&Stmt, Stmt.getBasicBlock()))
+          return true;
+      } else {
+        assert(Stmt.isRegionStmt() &&
+               "Stmt was neither block nor region statement");
+        for (const BasicBlock *BB : Stmt.getRegion()->blocks())
+          if (TakesFunctionPointersInBlock(&Stmt, BB))
+            return true;
+      }
+    }
+    return false;
+  }
+
   /// Generate code for a given GPU AST described by @p Root.
   ///
   /// @param Root An isl_ast_node pointing to the root of the GPU AST.
@@ -2689,6 +2759,11 @@ public:
 
     // We currently do not support scops with invariant loads.
     if (S->hasInvariantAccesses())
+      return false;
+
+    // We currently do not support trying to create function pointers
+    // inside code.
+    if (TakesFunctionPointers(CurrentScop))
       return false;
 
     auto PPCGScop = createPPCGScop();
