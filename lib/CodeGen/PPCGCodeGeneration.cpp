@@ -2643,8 +2643,15 @@ public:
         PointerType *p = dyn_cast<PointerType>(SrcVal->getType());
         if (!p)
           continue;
-        if (isa<FunctionType>(p->getElementType()))
-          return true;
+        if (isa<FunctionType>(p->getElementType())) {
+        
+          dbgs() << "@@@@";
+          Inst.dump();
+          dbgs() << "\t"; SrcVal->dump(); dbgs() << "\thas function type.\n";
+          dbgs() << "\treturning false since we wish to continue and see how many function pointers exist...\n";
+          //return true;
+          return false;
+        }
       }
     return false;
   }
@@ -2732,17 +2739,23 @@ public:
     DL = &S->getRegion().getEntry()->getModule()->getDataLayout();
     RI = &getAnalysis<RegionInfoPass>().getRegionInfo();
 
+    dbgs() << "PPCGCodeGeneration running on :"<< S->getName() << "\n";
+
     // We currently do not support scops with invariant loads.
-    if (S->hasInvariantAccesses())
+    if (S->hasInvariantAccesses()) {
+      dbgs() << S->getName() << " has invariant accesses. Not supported yet\n";
       return false;
+    }
 
     // We currently do not support functions inside kernels, as code
     // generation will need to offload function calls to the kernel.
     // This may lead to a kernel try to call a function on the host.
     // This also allows us to prevent codegen from trying to take the
     // address of an intrinsic function to send to the kernel.
-    if (ContainsFnPtr(CurrentScop))
+    if (ContainsFnPtr(CurrentScop)) {
+      dbgs() << S->getName() << " contains a function pointer. Not supported yet\n";
       return false;
+    }
 
     auto PPCGScop = createPPCGScop();
     auto PPCGProg = createPPCGProg(PPCGScop);
