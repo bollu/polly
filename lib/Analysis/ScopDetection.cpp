@@ -90,11 +90,10 @@ static cl::opt<bool, true> XPollyProcessUnprofitable(
     cl::location(PollyProcessUnprofitable), cl::init(false), cl::ZeroOrMore,
     cl::cat(PollyCategory));
 
-static cl::opt<std::string> OnlyFunction(
+static cl::list<std::string> OnlyFunction(
     "polly-only-func",
     cl::desc("Only run on functions that contain a certain string"),
-    cl::value_desc("string"), cl::ValueRequired, cl::init(""),
-    cl::cat(PollyCategory));
+    cl::ZeroOrMore, cl::CommaSeparated, cl::cat(PollyCategory));
 
 static cl::opt<bool>
     AllowFullFunction("polly-detect-full-functions",
@@ -271,6 +270,12 @@ void DiagnosticScopFound::print(DiagnosticPrinter &DP) const {
   DP << FileName << ":" << ExitLine << ": End of scop";
 }
 
+static bool IsFnNameListedInOnlyFunction(StringRef FnName) {
+  for (auto Name : OnlyFunction)
+    if (FnName.count(Name) > 0)
+      return true;
+  return false;
+}
 //===----------------------------------------------------------------------===//
 // ScopDetection.
 
@@ -284,7 +289,7 @@ ScopDetection::ScopDetection(Function &F, const DominatorTree &DT,
 
   Region *TopRegion = RI.getTopLevelRegion();
 
-  if (OnlyFunction != "" && !F.getName().count(OnlyFunction))
+  if (OnlyFunction.size() > 0 && !IsFnNameListedInOnlyFunction(F.getName()))
     return;
 
   if (!isValidFunction(F))
