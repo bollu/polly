@@ -2701,48 +2701,44 @@ public:
         // ^ how to replace a call with another call.
         //   def int_nvvm_fabs_f : GCCBuiltin<"__nvvm_fabs_f">,
         //   Function name taken from `IntrinsicsNNVM.td`
-        if (CalledFn->isIntrinsic()) {
-            if (CalledFn->getName() == "llvm.fabs.f32") {
-                /*
-                Value *NVPTXfabs;
-                TryRegisterGlobal(BB->getModule(), "int.nvptx.fabs.f", CalledFn->getType(), nullptr, &NVPTXfabs);
-                */
-                static Function *NVPTXfabs = nullptr;
+        if (CalledFn->getName() == "llvm.fabs.f32") {
+            static Function *NVPTXfabs = nullptr;
 
-                if (NVPTXfabs == nullptr) {
-                    FunctionType *FnTy = dyn_cast<FunctionType>(CalledFn->getType()->getElementType());
-                    assert(FnTy != nullptr && "unable to retreive type of function");
-                    // Value *NVPTXfabs = Function::Create(FnTy, GlobalValue::LinkageTypes::ExternalLinkage, "int.nvptx.fabs");
-                    NVPTXfabs = Function::Create(FnTy, GlobalValue::LinkageTypes::InternalLinkage,  "int.nvptx.fabs", BB->getModule());
-                    createFabsBody(*NVPTXfabs, BB->getContext());
+            if (NVPTXfabs == nullptr) {
+                FunctionType *FnTy = dyn_cast<FunctionType>(CalledFn->getType()->getElementType());
+                assert(FnTy != nullptr && "unable to retreive type of function");
+                // Value *NVPTXfabs = Function::Create(FnTy, GlobalValue::LinkageTypes::ExternalLinkage, "int.nvptx.fabs");
+                NVPTXfabs = Function::Create(FnTy, GlobalValue::LinkageTypes::InternalLinkage,  "int.nvptx.fabs", BB->getModule());
+                createFabsBody(*NVPTXfabs, BB->getContext());
 
-                    errs() << "@@@ Function: "; NVPTXfabs->print(errs()); errs() << "\n";
-                }
-                assert (NVPTXfabs != nullptr && "expected NVPTXfabs to be set!");
-                Call->setCalledFunction(NVPTXfabs);
-                errs() << " \n @@@ Modified call: "; Call->print(errs()); errs() << "\n";
+                errs() << "@@@ Function: "; NVPTXfabs->print(errs()); errs() << "\n";
             }
+            assert (NVPTXfabs != nullptr && "expected NVPTXfabs to be set!");
+            Call->setCalledFunction(NVPTXfabs);
+            errs() << " \n@@@ Modified call: "; Call->print(errs()); errs() << "\n";
             continue;
         }
-
         // what happens to copysign? need to see
-        if (CalledFn->isIntrinsic() || CalledFn->getName() == "sqrt" ||
+        else if (CalledFn->isIntrinsic() || CalledFn->getName() == "sqrt" ||
             CalledFn->getName() == "exp" || CalledFn->getName() == "copysign") {
           errs() << "\t*** allowing this function call\n";
           continue;
         }
       }
+      // not a callinst
+      else {
 
-      for (Value *SrcVal : Inst.operands()) {
-        // it's some instruction that's not a call which is trying to do
-        // things to a function type. bail out
-        auto OperandPtrTy = dyn_cast<PointerType>(SrcVal->getType());
-        if (OperandPtrTy && isa<FunctionType>(OperandPtrTy->getElementType())) {
-          errs() << "@@@ Call inst that was non-analysable or non call: ";
-          Inst.print(errs());
-          errs() << "\t Contains weird use of function pointer.\n";
-          return true;
-        }
+          for (Value *SrcVal : Inst.operands()) {
+            // it's some instruction that's not a call which is trying to do
+            // things to a function type. bail out
+            auto OperandPtrTy = dyn_cast<PointerType>(SrcVal->getType());
+            if (OperandPtrTy && isa<FunctionType>(OperandPtrTy->getElementType())) {
+              errs() << "@@@ Call inst that was non-analysable or non call: ";
+              Inst.print(errs());
+              errs() << "\t Contains weird use of function pointer.\n";
+              return true;
+            }
+          }
       }
     }
     return false;
