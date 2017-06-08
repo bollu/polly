@@ -2613,15 +2613,32 @@ public:
 
   /// Check whether the Block contains any Function value.
   bool ContainsFnPtrValInBlock(const BasicBlock *BB) {
-    for (const Instruction &Inst : *BB)
-      for (Value *SrcVal : Inst.operands()) {
-        PointerType *p = dyn_cast<PointerType>(SrcVal->getType());
-        if (!p)
-          continue;
-        if (isa<FunctionType>(p->getElementType()))
-          return true;
+      for (const Instruction &Inst : *BB) {
+          const CallInst *Call = dyn_cast<CallInst>(&Inst);
+          // allow calls to intrinsics
+          if (Call) {
+              errs() << "CallInst: ";
+              Inst.print(errs());
+
+              const Function *CalledFn = Call->getCalledFunction();
+              if(CalledFn->isIntrinsic() || CalledFn->getName() == "sqrt" || CalledFn->getName() == "exp") {
+                  continue;
+              }
+          }
+
+          for (Value *SrcVal : Inst.operands()) {
+              // it's some instruction that's not a call which is trying to do
+              // things to a function type. bail out
+              auto OperandPtrTy = dyn_cast<PointerType>(SrcVal->getType());
+              if (OperandPtrTy && isa<FunctionType>(OperandPtrTy->getElementType())) {
+                  Inst.print(errs());
+                  errs() << "contains weird use of function pointer.\n";
+                  return true;
+              }
+
+          }
       }
-    return false;
+      return false;
   }
 
   /// Return whether the Scop S has functions.
