@@ -2673,50 +2673,18 @@ public:
                   nullptr, Name);
   }
 
-  static void createFabsBody(Function &F, LLVMContext &Ctx) {
-      BasicBlock* BB = BasicBlock::Create(Ctx, "fabs.entry", &F);
-      IRBuilder<> Builder(BB);
-      auto args = F.arg_begin();
-      auto Arg = args++;
-
-      Builder.CreateRet(Arg);
-
-  }
-
   /// Check whether the Block contains any Function value.
   bool ContainsFnPtrValInBlock(BasicBlock *BB) {
     for (Instruction &Inst : *BB) {
       CallInst *Call = dyn_cast<CallInst>(&Inst);
       // allow calls to intrinsics
       if (Call) {
-        errs() << "@@@ CallInst: ";
-        Inst.print(errs());
-
         const Function *CalledFn = Call->getCalledFunction();
-        errs() << "\t Isintrinsic: " << (CalledFn->isIntrinsic() ? "True" : "False") << "\n";
+        errs() << __LINE__ << "@@Call: "; Call->print(errs()); errs() << "\n";
+        errs() << __LINE__ << "@@CalledFn: "; CalledFn->print(errs()); errs() << "\n";
 
-        // HACK: we are trying to replace intrinsics here, let's see how well this works out
-        // replace intrinsics here
-        // http://lists.llvm.org/pipermail/llvm-dev/2016-June/101315.html
-        // ^ how to replace a call with another call.
-        //   def int_nvvm_fabs_f : GCCBuiltin<"__nvvm_fabs_f">,
-        //   Function name taken from `IntrinsicsNNVM.td`
         if (CalledFn->getName() == "llvm.fabs.f32") {
-            static Function *NVPTXfabs = nullptr;
-
-            if (NVPTXfabs == nullptr) {
-                FunctionType *FnTy = dyn_cast<FunctionType>(CalledFn->getType()->getElementType());
-                assert(FnTy != nullptr && "unable to retreive type of function");
-                // Value *NVPTXfabs = Function::Create(FnTy, GlobalValue::LinkageTypes::ExternalLinkage, "int.nvptx.fabs");
-                NVPTXfabs = Function::Create(FnTy, GlobalValue::LinkageTypes::InternalLinkage,  "int.nvptx.fabs", BB->getModule());
-                createFabsBody(*NVPTXfabs, BB->getContext());
-
-                errs() << "@@@ Function: "; NVPTXfabs->print(errs()); errs() << "\n";
-            }
-            assert (NVPTXfabs != nullptr && "expected NVPTXfabs to be set!");
-            Call->setCalledFunction(NVPTXfabs);
-            errs() << " \n@@@ Modified call: "; Call->print(errs()); errs() << "\n";
-            continue;
+            assert(false && "this should have been replaced!");
         }
         // what happens to copysign? need to see
         else if (CalledFn->isIntrinsic() || CalledFn->getName() == "sqrt" ||
@@ -2743,6 +2711,70 @@ public:
     }
     return false;
   }
+
+  void ReplaceFnPtrsInBlock(BasicBlock *BB) {
+      errs() << __LINE__ << "@@@ ReplaceFnPtrsInBlock called.\n";
+      SmallVector<Instruction *, 4> Insts;
+
+      for (Instruction &Inst : *BB) {
+          CallInst *Call = dyn_cast<CallInst>(&Inst);
+          // allow calls to intrinsics
+          if (Call) {
+              errs() << "@@@ CallInst: ";
+              Inst.print(errs());
+
+              const Function *CalledFn = Call->getCalledFunction();
+              errs() << "\t Isintrinsic: " << (CalledFn->isIntrinsic() ? "True" : "False") << "\n";
+
+              // HACK: we are trying to replace intrinsics here, let's see how well this works out
+              // replace intrinsics here
+              // http://lists.llvm.org/pipermail/llvm-dev/2016-June/101315.html
+              // ^ how to replace a call with another call.
+              //   def int_nvvm_fabs_f : GCCBuiltin<"__nvvm_fabs_f">,
+              //   Function name taken from `IntrinsicsNNVM.td`
+              if (CalledFn->getName() == "llvm.fabs.f32") {
+                  Insts.push_back(&Inst);
+
+              }
+          }
+      }
+
+      for(Instruction *Inst : Insts) {
+            errs() << __LINE__ << "@@Old call inst:"; Inst->print(errs()); errs() << "\n";
+            auto New = ConstantFP::get(Type::getFloatTy(BB->getContext()), -42);
+            errs() << __LINE__ << "@@New: "; New->print(errs()); errs() << "\n";
+            SE->forgetValue(Inst);
+            Inst->replaceAllUsesWith(New);
+            // deleteFromParent should work, but it looks like something is holding onto it.
+            // Ask tobias^
+
+            errs() << __LINE__ << "@@Inst: " << *Inst << "\n";
+            Inst->eraseFromParent();
+
+            /*
+            BasicBlock::iterator ii(Inst);
+            ReplaceInstWithValue(Inst->getParent()->getInstList(), ii, New);
+
+            */
+            errs() << "@@ BB after replacement:\n";
+            Inst->getParent()->print(errs());
+            errs() << "======\n";
+      }
+  }
+  void ReplaceFnPtrs(Scop &S) {
+    for (auto &Stmt : S) {
+      if (Stmt.isBlockStmt()) {
+        ReplaceFnPtrsInBlock(Stmt.getBasicBlock());
+      } else {
+        assert(Stmt.isRegionStmt() &&
+               "Stmt was neither block nor region statement");
+        for (BasicBlock *BB : Stmt.getRegion()->blocks())
+          ReplaceFnPtrsInBlock(BB);
+      }
+    }
+  }
+
+
 
   /// Return whether the Scop S has functions.
   bool ContainsFnPtr(Scop &S) {
@@ -2848,17 +2880,8 @@ public:
       return false;
     }
 
-    // We currently do not support functions inside kernels, as code
-    // generation will need to offload function calls to the kernel.
-    // This may lead to a kernel try to call a function on the host.
-    // This also allows us to prevent codegen from trying to take the
-    // address of an intrinsic function to send to the kernel.
-    if (ContainsFnPtr(CurrentScop)) {
-      dbgs() << S->getName()
-             << " contains a function pointer. Not supported yet\n";
-      return false;
-    }
-
+    
+    ReplaceFnPtrs(CurrentScop);
     // We currently do not support functions inside kernels, as code
     // generation will need to offload function calls to the kernel.
     // This may lead to a kernel try to call a function on the host.
