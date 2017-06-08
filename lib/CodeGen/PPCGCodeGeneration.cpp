@@ -1840,7 +1840,7 @@ std::string GPUNodeBuilder::finalizeKernelFunction() {
         verifyModule(*GPUModule, new raw_os_ostream(std::cout));
         errs() << "\n";
         errs() << "@@@ failed module: ========\n";
-        GPUModule->print(errs());
+        GPUModule->print(errs(), nullptr, false, true);
         errs() << "==========\n";
         errs() << "Continuing anyway to see what happens\n";
         // BuildSuccessful = false;
@@ -2662,17 +2662,68 @@ public:
     return isl_ast_expr_ge(isl_ast_expr_copy(One), One);
   }
 
+  // Taken from PerfMonitor.cpp
+  static void TryRegisterGlobal(Module *M, const char *Name, Type *Ty,
+          Constant *InitialValue, Value **Location) {
+      *Location = M->getGlobalVariable(Name);
+
+      if (!*Location)
+          *Location = new GlobalVariable(
+                  *M, Ty, false, GlobalValue::CommonLinkage,
+                  nullptr, Name);
+  }
+
+  static void createFabsBody(Function &F, LLVMContext &Ctx) {
+      BasicBlock* BB = BasicBlock::Create(Ctx, "fabs.entry", &F);
+      IRBuilder<> Builder(BB);
+      auto args = F.arg_begin();
+      auto Arg = args++;
+
+      Builder.CreateRet(Arg);
+
+  }
+
   /// Check whether the Block contains any Function value.
-  bool ContainsFnPtrValInBlock(const BasicBlock *BB) {
-    for (const Instruction &Inst : *BB) {
-      const CallInst *Call = dyn_cast<CallInst>(&Inst);
+  bool ContainsFnPtrValInBlock(BasicBlock *BB) {
+    for (Instruction &Inst : *BB) {
+      CallInst *Call = dyn_cast<CallInst>(&Inst);
       // allow calls to intrinsics
       if (Call) {
         errs() << "@@@ CallInst: ";
         Inst.print(errs());
 
         const Function *CalledFn = Call->getCalledFunction();
-        errs() << "\t Isintrinsic: " << (CalledFn->isIntrinsic() ? "True" : "False");
+        errs() << "\t Isintrinsic: " << (CalledFn->isIntrinsic() ? "True" : "False") << "\n";
+
+        // HACK: we are trying to replace intrinsics here, let's see how well this works out
+        // replace intrinsics here
+        // http://lists.llvm.org/pipermail/llvm-dev/2016-June/101315.html
+        // ^ how to replace a call with another call.
+        //   def int_nvvm_fabs_f : GCCBuiltin<"__nvvm_fabs_f">,
+        //   Function name taken from `IntrinsicsNNVM.td`
+        if (CalledFn->isIntrinsic()) {
+            if (CalledFn->getName() == "llvm.fabs.f32") {
+                /*
+                Value *NVPTXfabs;
+                TryRegisterGlobal(BB->getModule(), "int.nvptx.fabs.f", CalledFn->getType(), nullptr, &NVPTXfabs);
+                */
+                static Function *NVPTXfabs = nullptr;
+
+                if (NVPTXfabs == nullptr) {
+                    FunctionType *FnTy = dyn_cast<FunctionType>(CalledFn->getType()->getElementType());
+                    assert(FnTy != nullptr && "unable to retreive type of function");
+                    // Value *NVPTXfabs = Function::Create(FnTy, GlobalValue::LinkageTypes::ExternalLinkage, "int.nvptx.fabs");
+                    NVPTXfabs = Function::Create(FnTy, GlobalValue::LinkageTypes::InternalLinkage,  "int.nvptx.fabs", BB->getModule());
+                    createFabsBody(*NVPTXfabs, BB->getContext());
+
+                    errs() << "@@@ Function: "; NVPTXfabs->print(errs()); errs() << "\n";
+                }
+                assert (NVPTXfabs != nullptr && "expected NVPTXfabs to be set!");
+                Call->setCalledFunction(NVPTXfabs);
+                errs() << " \n @@@ Modified call: "; Call->print(errs()); errs() << "\n";
+            }
+            continue;
+        }
 
         // what happens to copysign? need to see
         if (CalledFn->isIntrinsic() || CalledFn->getName() == "sqrt" ||
@@ -2698,7 +2749,7 @@ public:
   }
 
   /// Return whether the Scop S has functions.
-  bool ContainsFnPtr(const Scop &S) {
+  bool ContainsFnPtr(Scop &S) {
     for (auto &Stmt : S) {
       if (Stmt.isBlockStmt()) {
         if (ContainsFnPtrValInBlock(Stmt.getBasicBlock()))
@@ -2706,7 +2757,7 @@ public:
       } else {
         assert(Stmt.isRegionStmt() &&
                "Stmt was neither block nor region statement");
-        for (const BasicBlock *BB : Stmt.getRegion()->blocks())
+        for (BasicBlock *BB : Stmt.getRegion()->blocks())
           if (ContainsFnPtrValInBlock(BB))
             return true;
       }
@@ -2820,7 +2871,8 @@ public:
     if (ContainsFnPtr(CurrentScop)) {
       errs() << "@@@ Scop contains function pointer, not code-generating this.";
       errs() << "S: "; CurrentScop.print(errs());
-      return false;
+      errs() <<"===== STILL CONTINUING ON ERROR " << __FILE__ << ":" << __LINE__ << " =====\n";
+      // return false;
     }
 
     auto PPCGScop = createPPCGScop();
