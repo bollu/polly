@@ -1119,6 +1119,10 @@ isl_bool collectReferencesInGPUStmt(__isl_keep isl_ast_node *Node, void *User) {
 
   return isl_bool_true;
 }
+static bool IsValidSubtreeValue(Value *V) {
+  auto F = dyn_cast<Function>(V);
+  return !(F && F->isIntrinsic());
+}
 
 SetVector<Value *> GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
   SetVector<Value *> SubtreeValues;
@@ -1157,7 +1161,8 @@ SetVector<Value *> GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
     isl_id_free(Id);
   }
 
-  return SubtreeValues;
+  auto It = make_filter_range(SubtreeValues, IsValidSubtreeValue);
+  return SetVector<Value *>(It.begin(), It.end());
 }
 
 void GPUNodeBuilder::clearDominators(Function *F) {
@@ -2638,21 +2643,31 @@ public:
 
   /// Check whether the Block contains any Function value.
   bool ContainsFnPtrValInBlock(const BasicBlock *BB) {
-    for (const Instruction &Inst : *BB)
-      for (Value *SrcVal : Inst.operands()) {
-        PointerType *p = dyn_cast<PointerType>(SrcVal->getType());
-        if (!p)
+    for (const Instruction &Inst : *BB) {
+      const CallInst *Call = dyn_cast<CallInst>(&Inst);
+      // allow calls to intrinsics
+      if (Call) {
+        errs() << "CallInst: ";
+        Inst.print(errs());
+
+        const Function *CalledFn = Call->getCalledFunction();
+        if (CalledFn->isIntrinsic() || CalledFn->getName() == "sqrt" ||
+            CalledFn->getName() == "exp") {
           continue;
-        if (isa<FunctionType>(p->getElementType())) {
-        
-          dbgs() << "@@@@";
-          Inst.dump();
-          dbgs() << "\t"; SrcVal->dump(); dbgs() << "\thas function type.\n";
-          dbgs() << "\treturning false since we wish to continue and see how many function pointers exist...\n";
-          //return true;
-          return false;
         }
       }
+
+      for (Value *SrcVal : Inst.operands()) {
+        // it's some instruction that's not a call which is trying to do
+        // things to a function type. bail out
+        auto OperandPtrTy = dyn_cast<PointerType>(SrcVal->getType());
+        if (OperandPtrTy && isa<FunctionType>(OperandPtrTy->getElementType())) {
+          Inst.print(errs());
+          errs() << "contains weird use of function pointer.\n";
+          return true;
+        }
+      }
+    }
     return false;
   }
 
@@ -2739,7 +2754,7 @@ public:
     DL = &S->getRegion().getEntry()->getModule()->getDataLayout();
     RI = &getAnalysis<RegionInfoPass>().getRegionInfo();
 
-    dbgs() << "PPCGCodeGeneration running on :"<< S->getName() << "\n";
+    dbgs() << "PPCGCodeGeneration running on :" << S->getName() << "\n";
 
     // We currently do not support scops with invariant loads.
     if (S->hasInvariantAccesses()) {
@@ -2753,9 +2768,18 @@ public:
     // This also allows us to prevent codegen from trying to take the
     // address of an intrinsic function to send to the kernel.
     if (ContainsFnPtr(CurrentScop)) {
-      dbgs() << S->getName() << " contains a function pointer. Not supported yet\n";
+      dbgs() << S->getName()
+             << " contains a function pointer. Not supported yet\n";
       return false;
     }
+
+    // We currently do not support functions inside kernels, as code
+    // generation will need to offload function calls to the kernel.
+    // This may lead to a kernel try to call a function on the host.
+    // This also allows us to prevent codegen from trying to take the
+    // address of an intrinsic function to send to the kernel.
+    if (ContainsFnPtr(CurrentScop))
+      return false;
 
     auto PPCGScop = createPPCGScop();
     auto PPCGProg = createPPCGProg(PPCGScop);
