@@ -1392,6 +1392,8 @@ static void freeContextCUDA(PollyGPUContext *Context) {
 PollyGPUContext *polly_initContext() {
   DebugMode = getenv("POLLY_DEBUG") != 0;
   CacheMode = getenv("POLLY_NOCACHE") == 0;
+  
+  DebugMode = 1;
 
   dump_function();
 

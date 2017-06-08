@@ -37,6 +37,10 @@
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
+#include "llvm/Support/raw_os_ostream.h"
+#include <iostream>
+
+
 #include "isl/union_map.h"
 
 extern "C" {
@@ -48,6 +52,7 @@ extern "C" {
 }
 
 #include "llvm/Support/Debug.h"
+
 
 using namespace polly;
 using namespace llvm;
@@ -102,7 +107,7 @@ static cl::opt<std::string>
 static cl::opt<int>
     MinCompute("polly-acc-mincompute",
                cl::desc("Minimal number of compute statements to run on GPU."),
-               cl::Hidden, cl::init(10 * 512 * 512));
+               cl::Hidden, cl::init(0)); //cl::init(10 * 512 * 512));
 
 /// Create the ast expressions for a ScopStmt.
 ///
@@ -1677,13 +1682,16 @@ void GPUNodeBuilder::finalizeKernelArguments(ppcg_kernel *Kernel) {
     Arg++;
   }
 
-  if (StoredScalar)
+  if (StoredScalar) {
     /// In case more than one thread contains scalar stores, the generated
     /// code might be incorrect, if we only store at the end of the kernel.
     /// To support this case we need to store these scalars back at each
     /// memory store or at least before each kernel barrier.
-    if (Kernel->n_block != 0 || Kernel->n_grid != 0)
+    if (Kernel->n_block != 0 || Kernel->n_grid != 0) {
       BuildSuccessful = 0;
+      errs() << "@@@@" << __FILE__ << __LINE__ << "BuildSuccessful = 0\n";
+    }
+  }
 }
 
 void GPUNodeBuilder::createKernelVariables(ppcg_kernel *Kernel, Function *FN) {
@@ -1826,10 +1834,18 @@ std::string GPUNodeBuilder::createKernelASM() {
 }
 
 std::string GPUNodeBuilder::finalizeKernelFunction() {
-  if (verifyModule(*GPUModule)) {
-    BuildSuccessful = false;
-    return "";
-  }
+    if (verifyModule(*GPUModule)) {
+        errs() << "@@@ " << __FILE__ << ":" << 
+               __LINE__ << "verifyModule failed: ";
+        verifyModule(*GPUModule, new raw_os_ostream(std::cout));
+        errs() << "\n";
+        errs() << "@@@ failed module: ========\n";
+        GPUModule->print(errs());
+        errs() << "==========\n";
+        errs() << "Continuing anyway to see what happens\n";
+        // BuildSuccessful = false;
+        // return "";
+    }
 
   if (DumpKernelIR)
     outs() << *GPUModule << "\n";
@@ -2480,8 +2496,10 @@ public:
 
     // TODO: I've simply allowed this to test out the codegen, is this a bad
     // idea?
-    if ((!has_permutable || has_permutable < 0) && !HasFortranArrays) {
+    // HACK: simply disallowing this branch
+    if ((!has_permutable || has_permutable < 0) && !HasFortranArrays && false) {
       Schedule = isl_schedule_free(Schedule);
+      errs() << "@@@ Has neither permutable bands nor fortran arrays, qutting codegen for scop";
     } else {
       Schedule = map_to_device(PPCGGen, Schedule);
       PPCGGen->tree = generate_code(PPCGGen, isl_schedule_copy(Schedule));
@@ -2635,10 +2653,13 @@ public:
   ///          compute and to FALSE, otherwise.
   __isl_give isl_ast_expr *
   createSufficientComputeCheck(Scop &S, __isl_keep isl_ast_build *Build) {
-    auto Iterations = getNumberOfIterations(S, Build);
-    auto *MinComputeVal = isl_val_int_from_si(S.getIslCtx(), MinCompute);
-    auto *MinComputeExpr = isl_ast_expr_from_val(MinComputeVal);
-    return isl_ast_expr_ge(Iterations, MinComputeExpr);
+    // auto Iterations = getNumberOfIterations(S, Build);
+    // auto *MinComputeVal = isl_val_int_from_si(S.getIslCtx(), MinCompute);
+    // auto *MinComputeExpr = isl_ast_expr_from_val(MinComputeVal);
+
+    auto One = isl_ast_expr_from_val(isl_val_int_from_si(S.getIslCtx(), 1));
+
+    return isl_ast_expr_ge(isl_ast_expr_copy(One), One);
   }
 
   /// Check whether the Block contains any Function value.
@@ -2647,12 +2668,16 @@ public:
       const CallInst *Call = dyn_cast<CallInst>(&Inst);
       // allow calls to intrinsics
       if (Call) {
-        errs() << "CallInst: ";
+        errs() << "@@@ CallInst: ";
         Inst.print(errs());
 
         const Function *CalledFn = Call->getCalledFunction();
+        errs() << "\t Isintrinsic: " << (CalledFn->isIntrinsic() ? "True" : "False");
+
+        // what happens to copysign? need to see
         if (CalledFn->isIntrinsic() || CalledFn->getName() == "sqrt" ||
-            CalledFn->getName() == "exp") {
+            CalledFn->getName() == "exp" || CalledFn->getName() == "copysign") {
+          errs() << "\t*** allowing this function call\n";
           continue;
         }
       }
@@ -2662,8 +2687,9 @@ public:
         // things to a function type. bail out
         auto OperandPtrTy = dyn_cast<PointerType>(SrcVal->getType());
         if (OperandPtrTy && isa<FunctionType>(OperandPtrTy->getElementType())) {
+          errs() << "@@@ Call inst that was non-analysable or non call: ";
           Inst.print(errs());
-          errs() << "contains weird use of function pointer.\n";
+          errs() << "\t Contains weird use of function pointer.\n";
           return true;
         }
       }
@@ -2722,9 +2748,10 @@ public:
     NodeBuilder.addParameters(S->getContext());
 
     isl_ast_build *Build = isl_ast_build_alloc(S->getIslCtx());
-    isl_ast_expr *Condition = IslAst::buildRunCondition(*S, Build);
-    isl_ast_expr *SufficientCompute = createSufficientComputeCheck(*S, Build);
-    Condition = isl_ast_expr_and(Condition, SufficientCompute);
+    // isl_ast_expr *Condition = IslAst::buildRunCondition(*S, Build);
+     isl_ast_expr *SufficientCompute = createSufficientComputeCheck(*S, Build);
+    //Condition = isl_ast_expr_and(Condition, SufficientCompute);
+    isl_ast_expr *Condition = SufficientCompute;
     isl_ast_build_free(Build);
 
     Value *RTC = NodeBuilder.createRTC(Condition);
@@ -2736,6 +2763,17 @@ public:
     NodeBuilder.create(Root);
     NodeBuilder.finalize();
 
+    if (!NodeBuilder.BuildSuccessful) {
+        errs() << "@@@@@ Build failed in NodeBuilder!\n";
+        // exit(1);
+    }
+
+    if (NodeBuilder.DeepestSequential > NodeBuilder.DeepestParallel) {
+        errs() << "NodeBuilder.DeepestSequential:"<<NodeBuilder.DeepestSequential << " > NodeBuilder.DeepestParallel:" << NodeBuilder.DeepestParallel << "\n";
+        // exit(1);
+
+    }
+    /*
     /// In case a sequential kernel has more surrounding loops as any parallel
     /// kernel, the SCoP is probably mostly sequential. Hence, there is no
     /// point in running it on a GPU.
@@ -2744,6 +2782,7 @@ public:
 
     if (!NodeBuilder.BuildSuccessful)
       SplitBlock->getTerminator()->setOperand(0, Builder.getFalse());
+    */
   }
 
   bool runOnScop(Scop &CurrentScop) override {
@@ -2778,8 +2817,11 @@ public:
     // This may lead to a kernel try to call a function on the host.
     // This also allows us to prevent codegen from trying to take the
     // address of an intrinsic function to send to the kernel.
-    if (ContainsFnPtr(CurrentScop))
+    if (ContainsFnPtr(CurrentScop)) {
+      errs() << "@@@ Scop contains function pointer, not code-generating this.";
+      errs() << "S: "; CurrentScop.print(errs());
       return false;
+    }
 
     auto PPCGScop = createPPCGScop();
     auto PPCGProg = createPPCGProg(PPCGScop);
