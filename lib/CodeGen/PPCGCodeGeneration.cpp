@@ -1109,6 +1109,10 @@ isl_bool collectReferencesInGPUStmt(__isl_keep isl_ast_node *Node, void *User) {
   return isl_bool_true;
 }
 
+// Do not track functions as subtree values. If we do so, we would try to
+// offload a function to a kernel which is illegal.
+static bool IsValidSubtreeValue(Value *V) { return !isa<Function>(V); }
+
 SetVector<Value *> GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
   SetVector<Value *> SubtreeValues;
   SetVector<const SCEV *> SCEVs;
@@ -1146,7 +1150,8 @@ SetVector<Value *> GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
     isl_id_free(Id);
   }
 
-  return SubtreeValues;
+  auto It = make_filter_range(SubtreeValues, IsValidSubtreeValue);
+  return SetVector<Value *>(It.begin(), It.end());
 }
 
 void GPUNodeBuilder::clearDominators(Function *F) {
@@ -2455,7 +2460,7 @@ public:
     } else {
       Schedule = map_to_device(PPCGGen, Schedule);
       PPCGGen->tree = generate_code(PPCGGen, isl_schedule_copy(Schedule));
-    }
+   }
 
     if (DumpSchedule) {
       isl_printer *P = isl_printer_to_str(S->getIslCtx());
@@ -2611,9 +2616,16 @@ public:
     return isl_ast_expr_ge(Iterations, MinComputeExpr);
   }
 
+  bool isSupportedFunction(const Function *F) { return F && F->isIntrinsic(); }
+
   /// Check whether the Block contains any Function value.
   bool ContainsFnPtrValInBlock(const BasicBlock *BB) {
-    for (const Instruction &Inst : *BB)
+    for (const Instruction &Inst : *BB) {
+      const CallInst *Call = dyn_cast<CallInst>(&Inst);
+      if (Call && isSupportedFunction(Call->getCalledFunction())) {
+        continue;
+      }
+
       for (Value *SrcVal : Inst.operands()) {
         PointerType *p = dyn_cast<PointerType>(SrcVal->getType());
         if (!p)
@@ -2621,6 +2633,7 @@ public:
         if (isa<FunctionType>(p->getElementType()))
           return true;
       }
+    }
     return false;
   }
 
@@ -2716,8 +2729,9 @@ public:
     // This may lead to a kernel trying to call a function on the host.
     // This also allows us to prevent codegen from trying to take the
     // address of an intrinsic function to send to the kernel.
-    if (ContainsFnPtr(CurrentScop))
-      return false;
+    if (ContainsFnPtr(CurrentScop)) {
+        return false;
+    }
 
     auto PPCGScop = createPPCGScop();
     auto PPCGProg = createPPCGProg(PPCGScop);
