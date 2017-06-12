@@ -49,6 +49,11 @@ extern "C" {
 
 #include "llvm/Support/Debug.h"
 
+// for debug printing verifyModule()
+#include "llvm/Support/raw_os_ostream.h"
+#include <iostream>
+
+
 using namespace polly;
 using namespace llvm;
 
@@ -93,6 +98,12 @@ static cl::opt<bool> ManagedMemory("polly-acc-codegen-managed-memory",
                                             " declared as managed memory"),
                                    cl::Hidden, cl::init(false), cl::ZeroOrMore,
                                    cl::cat(PollyCategory));
+
+static cl::opt<bool> AllowNoPermutableBands(
+    "polly-acc-allow-no-permutable-bands",
+    cl::desc(
+        "Allow continuing even when no permutable bands have been identified."),
+    cl::Hidden, cl::init(false), cl::ZeroOrMore, cl::cat(PollyCategory));
 
 static cl::opt<std::string>
     CudaVersion("polly-acc-cuda-version",
@@ -1815,7 +1826,8 @@ std::string GPUNodeBuilder::createKernelASM() {
 }
 
 std::string GPUNodeBuilder::finalizeKernelFunction() {
-  if (verifyModule(*GPUModule)) {
+  if (verifyModule(*GPUModule, new raw_os_ostream(std::cerr))) {
+    exit(1);
     BuildSuccessful = false;
     return "";
   }
@@ -2455,12 +2467,13 @@ public:
 
     int has_permutable = has_any_permutable_node(Schedule);
 
-    if (!has_permutable || has_permutable < 0) {
+    if ((!has_permutable || has_permutable < 0) && !AllowNoPermutableBands) {
+      errs() << "@@@ schedule has no permutable bands\n";
       Schedule = isl_schedule_free(Schedule);
     } else {
       Schedule = map_to_device(PPCGGen, Schedule);
       PPCGGen->tree = generate_code(PPCGGen, isl_schedule_copy(Schedule));
-   }
+    }
 
     if (DumpSchedule) {
       isl_printer *P = isl_printer_to_str(S->getIslCtx());
@@ -2616,7 +2629,13 @@ public:
     return isl_ast_expr_ge(Iterations, MinComputeExpr);
   }
 
-  bool isSupportedFunction(const Function *F) { return F && F->isIntrinsic(); }
+  bool isSupportedFunction(const Function *F) { 
+      if (F) {
+          errs() << "@@@ Function in kernel: "; F->dump(); errs() << "\n";
+      }
+      return true; 
+      //return F && F->isIntrinsic(); }
+  }
 
   /// Check whether the Block contains any Function value.
   bool ContainsFnPtrValInBlock(const BasicBlock *BB) {
@@ -2730,7 +2749,10 @@ public:
     // This also allows us to prevent codegen from trying to take the
     // address of an intrinsic function to send to the kernel.
     if (ContainsFnPtr(CurrentScop)) {
-        return false;
+      errs() << "@@@ Scop contains function pointer:\n";
+      S->dump();
+      errs() << "\n";
+      return false;
     }
 
     auto PPCGScop = createPPCGScop();
