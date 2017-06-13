@@ -401,6 +401,9 @@ private:
   /// @param The kernel to generate the intrinsic functions for.
   void insertKernelIntrinsics(ppcg_kernel *Kernel);
 
+
+  void replaceKernelSubtreeFunctions(Function *KernelFunction, SetVector<Function *> &SubtreeFunctions);
+
   /// Create a global-to-shared or shared-to-global copy statement.
   ///
   /// @param CopyStmt The copy statement to generate code for
@@ -1128,16 +1131,18 @@ bool isValidFunctionInKernel(llvm::Value *V) {
 }
 bool isValidSubtreeValue(llvm::Value *V) { return !isValidFunctionInKernel(V); }
 
-// TODO: convert to filter + map. Not sure how to use the map_iterator in llvm's STLExtras
-SetVector<Function *> getSubtreeFunctionsFromRawSubtreeValues(SetVector<Value *>RawSubtreeValues) {
-    SetVector<Function *>SubtreeFunctions;
-    for(Value* It : RawSubtreeValues) {
-        Function *F = dyn_cast<Function>(It);
-        if (F && isValidFunctionInKernel(F)) SubtreeFunctions.insert(F);
-    }
-    return SubtreeFunctions;
+// TODO: convert to filter + map. Not sure how to use the map_iterator in llvm's
+// STLExtras
+SetVector<Function *>
+getSubtreeFunctionsFromRawSubtreeValues(SetVector<Value *> RawSubtreeValues) {
+  SetVector<Function *> SubtreeFunctions;
+  for (Value *It : RawSubtreeValues) {
+    Function *F = dyn_cast<Function>(It);
+    if (F && isValidFunctionInKernel(F))
+      SubtreeFunctions.insert(F);
+  }
+  return SubtreeFunctions;
 }
-
 
 std::pair<SetVector<Value *>, SetVector<Function *>>
 GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
@@ -1182,7 +1187,8 @@ GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
   SetVector<Value *> ValidSubtreeValues(ValidSubtreeValuesIt.begin(),
                                         ValidSubtreeValuesIt.end());
 
-  SetVector<Function *> ValidSubtreeFunctions(getSubtreeFunctionsFromRawSubtreeValues(SubtreeValues));
+  SetVector<Function *> ValidSubtreeFunctions(
+      getSubtreeFunctionsFromRawSubtreeValues(SubtreeValues));
 
   return std::make_pair(ValidSubtreeValues, ValidSubtreeFunctions);
 }
@@ -1440,6 +1446,7 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
   finalizeKernelArguments(Kernel);
   Function *F = Builder.GetInsertBlock()->getParent();
   addCUDAAnnotations(F->getParent(), BlockDimX, BlockDimY, BlockDimZ);
+  replaceKernelSubtreeFunctions(F, SubtreeFunctions);
   clearDominators(F);
   clearScalarEvolution(F);
   clearLoops(F);
@@ -1600,6 +1607,56 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
 
   return FN;
 }
+
+
+// can access state GPUNodeBuilder::GPUModle
+void GPUNodeBuilder::replaceKernelSubtreeFunctions(Function *KernelFunction, SetVector<Function *> &SubtreeFunctions) {
+    Module *M = GPUModule.get();
+    
+    errs() << "@@@" << __FILE__ << " : " << __LINE__ << " replaceKernelSubtreeFunctions:\n";
+
+    errs() << "Module:\n-----";
+    M->print(errs(), nullptr);
+    errs() << "\n----\n";
+
+    StringMap<Function *> ClonedFunctions;
+
+    
+    // Step 1: insert the functions referenced by the kernel in the GPU module
+    for (auto Fn : SubtreeFunctions) {
+        std::string Name = Fn->getName();
+
+        errs() << "\t@@Clone FnName: " << Name << "\n";
+        Function *Clone = Function::Create(Fn->getFunctionType(), GlobalValue::ExternalLinkage, Fn->getName(), M);
+        ClonedFunctions[Name] = Clone;
+    }
+
+
+    //Step 2: replace all call() instructions to refer to the new function
+    for (BasicBlock &BB: *KernelFunction) {
+        for(Instruction &Inst : BB) {
+
+            CallInst *Call = dyn_cast<CallInst>(&Inst);
+            if (!Call) continue;
+
+            errs() << "\t @@callInst:\t"; Call->print(errs()); errs() << "\n";
+            
+            // Note that not all `call` instructions are calling external functions. Some of them
+            // are intrinsics inserted by us. So, only replace those functions which are known
+            // to be external.
+            auto It = ClonedFunctions.find(Call->getCalledFunction()->getName());
+            if (It == ClonedFunctions.end()) continue;
+            Function *Replacement = It->getValue();
+            assert (Replacement && "did not get a valid Function from iterator");
+            errs() << "\t @@replacement:\t"; Replacement->print(errs()); errs() << "\n";
+            errs() << "\n";
+            Call->setCalledFunction(Replacement);
+
+        }
+    }
+
+}
+
 
 void GPUNodeBuilder::insertKernelIntrinsics(ppcg_kernel *Kernel) {
   Intrinsic::ID IntrinsicsBID[2];
