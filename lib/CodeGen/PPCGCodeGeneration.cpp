@@ -53,7 +53,6 @@ extern "C" {
 #include "llvm/Support/raw_os_ostream.h"
 #include <iostream>
 
-
 using namespace polly;
 using namespace llvm;
 
@@ -267,7 +266,8 @@ private:
   /// @param Kernel The kernel to scan for llvm::Values
   ///
   /// @returns A set of values referenced by the kernel.
-  SetVector<Value *> getReferencesInKernel(ppcg_kernel *Kernel);
+  std::pair<SetVector<Value *>, SetVector<Function *>>
+  getReferencesInKernel(ppcg_kernel *Kernel);
 
   /// Compute the sizes of the execution grid for a given kernel.
   ///
@@ -377,7 +377,8 @@ private:
   /// @param Kernel The kernel to generate code for.
   /// @param SubtreeValues The set of llvm::Values referenced by this kernel.
   void createKernelFunction(ppcg_kernel *Kernel,
-                            SetVector<Value *> &SubtreeValues);
+                            SetVector<Value *> &SubtreeValues,
+                            SetVector<Function *> &SubtreeFunctions);
 
   /// Create the declaration of a kernel function.
   ///
@@ -1120,11 +1121,26 @@ isl_bool collectReferencesInGPUStmt(__isl_keep isl_ast_node *Node, void *User) {
   return isl_bool_true;
 }
 
-// Do not track functions as subtree values. If we do so, we would try to
-// offload a function to a kernel which is illegal.
-static bool IsValidSubtreeValue(Value *V) { return !isa<Function>(V); }
+bool isValidFunctionInKernel(llvm::Value *V) {
+  // auto *F = dyn_cast<llvm::Function>(V);
+  // return F != nullptr;
+  return isa<Function>(V);
+}
+bool isValidSubtreeValue(llvm::Value *V) { return !isValidFunctionInKernel(V); }
 
-SetVector<Value *> GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
+// TODO: convert to filter + map. Not sure how to use the map_iterator in llvm's STLExtras
+SetVector<Function *> getSubtreeFunctionsFromRawSubtreeValues(SetVector<Value *>RawSubtreeValues) {
+    SetVector<Function *>SubtreeFunctions;
+    for(Value* It : RawSubtreeValues) {
+        Function *F = dyn_cast<Function>(It);
+        if (F && isValidFunctionInKernel(F)) SubtreeFunctions.insert(F);
+    }
+    return SubtreeFunctions;
+}
+
+
+std::pair<SetVector<Value *>, SetVector<Function *>>
+GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
   SetVector<Value *> SubtreeValues;
   SetVector<const SCEV *> SCEVs;
   SetVector<const Loop *> Loops;
@@ -1161,8 +1177,14 @@ SetVector<Value *> GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
     isl_id_free(Id);
   }
 
-  auto It = make_filter_range(SubtreeValues, IsValidSubtreeValue);
-  return SetVector<Value *>(It.begin(), It.end());
+  auto ValidSubtreeValuesIt =
+      make_filter_range(SubtreeValues, isValidSubtreeValue);
+  SetVector<Value *> ValidSubtreeValues(ValidSubtreeValuesIt.begin(),
+                                        ValidSubtreeValuesIt.end());
+
+  SetVector<Function *> ValidSubtreeFunctions(getSubtreeFunctionsFromRawSubtreeValues(SubtreeValues));
+
+  return std::make_pair(ValidSubtreeValues, ValidSubtreeFunctions);
 }
 
 void GPUNodeBuilder::clearDominators(Function *F) {
@@ -1385,7 +1407,9 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
   Value *BlockDimX, *BlockDimY, *BlockDimZ;
   std::tie(BlockDimX, BlockDimY, BlockDimZ) = getBlockSizes(Kernel);
 
-  SetVector<Value *> SubtreeValues = getReferencesInKernel(Kernel);
+  SetVector<Value *> SubtreeValues;
+  SetVector<Function *> SubtreeFunctions;
+  std::tie(SubtreeValues, SubtreeFunctions) = getReferencesInKernel(Kernel);
 
   assert(Kernel->tree && "Device AST of kernel node is empty");
 
@@ -1409,7 +1433,7 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
     SubtreeValues.insert(V);
   }
 
-  createKernelFunction(Kernel, SubtreeValues);
+  createKernelFunction(Kernel, SubtreeValues, SubtreeFunctions);
 
   create(isl_ast_node_copy(Kernel->tree));
 
@@ -1737,8 +1761,9 @@ void GPUNodeBuilder::createKernelVariables(ppcg_kernel *Kernel, Function *FN) {
   }
 }
 
-void GPUNodeBuilder::createKernelFunction(ppcg_kernel *Kernel,
-                                          SetVector<Value *> &SubtreeValues) {
+void GPUNodeBuilder::createKernelFunction(
+    ppcg_kernel *Kernel, SetVector<Value *> &SubtreeValues,
+    SetVector<Function *> &SubtreeFunctions) {
   std::string Identifier = "kernel_" + std::to_string(Kernel->id);
   GPUModule.reset(new Module(Identifier, Builder.getContext()));
 
@@ -2629,12 +2654,14 @@ public:
     return isl_ast_expr_ge(Iterations, MinComputeExpr);
   }
 
-  bool isSupportedFunction(const Function *F) { 
-      if (F) {
-          errs() << "@@@ Function in kernel: "; F->dump(); errs() << "\n";
-      }
-      return true; 
-      //return F && F->isIntrinsic(); }
+  bool isSupportedFunction(const Function *F) {
+    if (F) {
+      errs() << "@@@ Function in kernel: ";
+      F->dump();
+      errs() << "\n";
+    }
+    return true;
+    // return F && F->isIntrinsic(); }
   }
 
   /// Check whether the Block contains any Function value.
