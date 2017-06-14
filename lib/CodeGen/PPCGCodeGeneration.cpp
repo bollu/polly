@@ -1615,10 +1615,6 @@ void GPUNodeBuilder::replaceKernelSubtreeFunctions(Function *KernelFunction, Set
     
     errs() << "@@@" << __FILE__ << " : " << __LINE__ << " replaceKernelSubtreeFunctions:\n";
 
-    errs() << "Module:\n-----";
-    M->print(errs(), nullptr);
-    errs() << "\n----\n";
-
     StringMap<Function *> ClonedFunctions;
 
     // HACK: directly replace function names to intrinsics here
@@ -1926,14 +1922,9 @@ std::string GPUNodeBuilder::createKernelASM() {
 }
 
 std::string GPUNodeBuilder::finalizeKernelFunction() {
-  errs() << "\n======\n";
   errs() << "@@@ Verifying Module...\n";
   if (verifyModule(*GPUModule, new raw_os_ostream(std::cerr))) {
-      errs() << "\n==========\n";
-      errs() << "@@@ VerifyModule failed! Printing module and exiting:\n";
-      GPUModule->print(errs(), nullptr);
-      errs() << "\n==========\n";
-      exit(1);
+      assert(false && "module has error. assert for bugpoint");
 
       BuildSuccessful = false;
       return "";
