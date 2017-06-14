@@ -1621,14 +1621,32 @@ void GPUNodeBuilder::replaceKernelSubtreeFunctions(Function *KernelFunction, Set
 
     StringMap<Function *> ClonedFunctions;
 
+    // HACK: directly replace function names to intrinsics here
+    // Correct place to do this is: SimplifyLibCalls which is used by 
+    // instcombine
+    StringMap<std::string> FunctionToIntrinsic;
+    FunctionToIntrinsic["exp"] = "llvm.exp.f64";
+    FunctionToIntrinsic["copysign"] = "llvm.copysign.f64";
+    
     
     // Step 1: insert the functions referenced by the kernel in the GPU module
     for (auto Fn : SubtreeFunctions) {
-        std::string Name = Fn->getName();
+        const std::string OrigFnName = Fn->getName();
 
-        errs() << "\t@@Clone FnName: " << Name << "\n";
-        Function *Clone = Function::Create(Fn->getFunctionType(), GlobalValue::ExternalLinkage, Fn->getName(), M);
-        ClonedFunctions[Name] = Clone;
+        errs() << "\t@@old FnName: " << OrigFnName << "\n";
+
+        
+        std::string ClonedFnName = "";
+        auto It = FunctionToIntrinsic.find(OrigFnName);
+        if (It != FunctionToIntrinsic.end()) {
+            ClonedFnName = It->getValue();
+        } else {
+            ClonedFnName = OrigFnName;
+        }
+
+        assert (ClonedFnName != "" && "expected function name for cloned funcion");
+        Function *Clone = Function::Create(Fn->getFunctionType(), GlobalValue::ExternalLinkage, ClonedFnName, M);
+        ClonedFunctions[OrigFnName] = Clone;
     }
 
 
@@ -1908,10 +1926,17 @@ std::string GPUNodeBuilder::createKernelASM() {
 }
 
 std::string GPUNodeBuilder::finalizeKernelFunction() {
+  errs() << "\n======\n";
+  errs() << "@@@ Verifying Module...\n";
   if (verifyModule(*GPUModule, new raw_os_ostream(std::cerr))) {
-    exit(1);
-    BuildSuccessful = false;
-    return "";
+      errs() << "\n==========\n";
+      errs() << "@@@ VerifyModule failed! Printing module and exiting:\n";
+      GPUModule->print(errs(), nullptr);
+      errs() << "\n==========\n";
+      exit(1);
+
+      BuildSuccessful = false;
+      return "";
   }
 
   if (DumpKernelIR)
