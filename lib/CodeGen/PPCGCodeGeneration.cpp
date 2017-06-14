@@ -1621,7 +1621,9 @@ void GPUNodeBuilder::replaceKernelSubtreeFunctions(Function *KernelFunction, Set
     // Correct place to do this is: SimplifyLibCalls which is used by 
     // instcombine
     StringMap<std::string> FunctionToIntrinsic;
-    FunctionToIntrinsic["exp"] = "llvm.exp.f64";
+    // HACK: lower exp to fabs because fabs can be lowered by NVPTX backend
+    FunctionToIntrinsic["exp"] = "llvm.fabs.f64";
+    // HACK: lower copysign to something I need to figure out
     FunctionToIntrinsic["copysign"] = "llvm.copysign.f64";
     
     
