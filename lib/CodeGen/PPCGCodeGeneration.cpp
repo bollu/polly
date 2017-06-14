@@ -1935,7 +1935,6 @@ std::string GPUNodeBuilder::createKernelASM() {
 }
 
 std::string GPUNodeBuilder::finalizeKernelFunction() {
-  /*
   errs() << "@@@ Verifying Module...\n";
   if (verifyModule(*GPUModule, new raw_os_ostream(std::cerr))) {
       errs() << "\n\n====\n@@@VerifyModuleFailed!\n";
@@ -1945,7 +1944,6 @@ std::string GPUNodeBuilder::finalizeKernelFunction() {
       BuildSuccessful = false;
       return "";
   }
-  */
 
   if (DumpKernelIR)
     outs() << *GPUModule << "\n";
