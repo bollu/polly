@@ -1631,6 +1631,7 @@ void GPUNodeBuilder::replaceKernelSubtreeFunctions(Function *KernelFunction, Set
     for (auto Fn : SubtreeFunctions) {
         const std::string OrigFnName = Fn->getName();
 
+        errs() << "\n-------------\n";
         errs() << "\t@@old FnName: " << OrigFnName << "\n";
 
         
@@ -1642,9 +1643,17 @@ void GPUNodeBuilder::replaceKernelSubtreeFunctions(Function *KernelFunction, Set
             ClonedFnName = OrigFnName;
         }
 
+        errs() << "\t\tcloned FnName: " << ClonedFnName << "\n";
         assert (ClonedFnName != "" && "expected function name for cloned funcion");
-        Function *Clone = Function::Create(Fn->getFunctionType(), GlobalValue::ExternalLinkage, ClonedFnName, M);
+        // create a new function only if this function does not exist in the new module.
+        Function *Clone = M->getFunction(ClonedFnName);
+        if (Clone == nullptr) {
+            Clone = Function::Create(Fn->getFunctionType(), GlobalValue::ExternalLinkage, ClonedFnName, M);
+        }
+
         ClonedFunctions[OrigFnName] = Clone;
+        errs() << "\t\tcloned Fn: "; Clone->print(errs()); errs() << "\n";
+
     }
 
 
@@ -1655,7 +1664,9 @@ void GPUNodeBuilder::replaceKernelSubtreeFunctions(Function *KernelFunction, Set
             CallInst *Call = dyn_cast<CallInst>(&Inst);
             if (!Call) continue;
 
-            errs() << "\t @@callInst:\t"; Call->print(errs()); errs() << "\n";
+
+            errs() << "\n-------------\n";
+            errs() << "\t@@callInst: " << Call->getCalledFunction()->getName();  errs() << "\n";
             
             // Note that not all `call` instructions are calling external functions. Some of them
             // are intrinsics inserted by us. So, only replace those functions which are known
@@ -1664,7 +1675,7 @@ void GPUNodeBuilder::replaceKernelSubtreeFunctions(Function *KernelFunction, Set
             if (It == ClonedFunctions.end()) continue;
             Function *Replacement = It->getValue();
             assert (Replacement && "did not get a valid Function from iterator");
-            errs() << "\t @@replacement:\t"; Replacement->print(errs()); errs() << "\n";
+            errs() << "\t@@replacement:\t"; Replacement->print(errs()); errs() << "\n";
             errs() << "\n";
             Call->setCalledFunction(Replacement);
 
@@ -1924,13 +1935,17 @@ std::string GPUNodeBuilder::createKernelASM() {
 }
 
 std::string GPUNodeBuilder::finalizeKernelFunction() {
+  /*
   errs() << "@@@ Verifying Module...\n";
   if (verifyModule(*GPUModule, new raw_os_ostream(std::cerr))) {
+      errs() << "\n\n====\n@@@VerifyModuleFailed!\n";
+      std::cerr.flush();
       assert(false && "module has error. assert for bugpoint");
 
       BuildSuccessful = false;
       return "";
   }
+  */
 
   if (DumpKernelIR)
     outs() << *GPUModule << "\n";
