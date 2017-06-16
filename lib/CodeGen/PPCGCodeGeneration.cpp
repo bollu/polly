@@ -401,8 +401,8 @@ private:
   /// @param The kernel to generate the intrinsic functions for.
   void insertKernelIntrinsics(ppcg_kernel *Kernel);
 
-
-  void replaceKernelSubtreeFunctions(Function *KernelFunction, SetVector<Function *> &SubtreeFunctions);
+  void replaceKernelSubtreeFunctions(Function *KernelFunction,
+                                     SetVector<Function *> &SubtreeFunctions);
 
   /// Create a global-to-shared or shared-to-global copy statement.
   ///
@@ -1608,82 +1608,73 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
   return FN;
 }
 
-
 // can access state GPUNodeBuilder::GPUModle
-void GPUNodeBuilder::replaceKernelSubtreeFunctions(Function *KernelFunction, SetVector<Function *> &SubtreeFunctions) {
-    Module *M = GPUModule.get();
-    
-    errs() << "@@@" << __FILE__ << " : " << __LINE__ << " replaceKernelSubtreeFunctions:\n";
+void GPUNodeBuilder::replaceKernelSubtreeFunctions(
+    Function *KernelFunction, SetVector<Function *> &SubtreeFunctions) {
+  Module *M = GPUModule.get();
 
-    StringMap<Function *> ClonedFunctions;
+  StringMap<Function *> ClonedFunctions;
 
-    // HACK: directly replace function names to intrinsics here
-    // Correct place to do this is: SimplifyLibCalls which is used by 
-    // instcombine
-    StringMap<std::string> FunctionToIntrinsic;
-    // HACK: lower exp to fabs because fabs can be lowered by NVPTX backend
-    FunctionToIntrinsic["exp"] = "llvm.fabs.f64";
-    // HACK: lower copysign to something I need to figure out
-    FunctionToIntrinsic["copysign"] = "llvm.copysign.f64";
-    
-    
-    // Step 1: insert the functions referenced by the kernel in the GPU module
-    for (auto Fn : SubtreeFunctions) {
-        const std::string OrigFnName = Fn->getName();
+  // HACK: directly replace function names to intrinsics here
+  // Correct place to do this is: SimplifyLibCalls which is used by
+  // instcombine
+  StringMap<std::string> FunctionToIntrinsic;
+  // HACK: lower exp to fabs because fabs can be lowered by NVPTX backend
+  FunctionToIntrinsic["exp"] = "llvm.fabs.f64";
+  // HACK: lower copysign to something I need to figure out
+  FunctionToIntrinsic["copysign"] = "llvm.copysign.f64";
 
-        errs() << "\n-------------\n";
-        errs() << "\t@@old FnName: " << OrigFnName << "\n";
+  // Step 1: insert the functions referenced by the kernel in the GPU module
+  for (auto Fn : SubtreeFunctions) {
+    const std::string OrigFnName = Fn->getName();
 
-        
-        std::string ClonedFnName = "";
-        auto It = FunctionToIntrinsic.find(OrigFnName);
-        if (It != FunctionToIntrinsic.end()) {
-            ClonedFnName = It->getValue();
-        } else {
-            ClonedFnName = OrigFnName;
-        }
-
-        errs() << "\t\tcloned FnName: " << ClonedFnName << "\n";
-        assert (ClonedFnName != "" && "expected function name for cloned funcion");
-        // create a new function only if this function does not exist in the new module.
-        Function *Clone = M->getFunction(ClonedFnName);
-        if (Clone == nullptr) {
-            Clone = Function::Create(Fn->getFunctionType(), GlobalValue::ExternalLinkage, ClonedFnName, M);
-        }
-
-        ClonedFunctions[OrigFnName] = Clone;
-        errs() << "\t\tcloned Fn: "; Clone->print(errs()); errs() << "\n";
-
+    std::string ClonedFnName = "";
+    auto It = FunctionToIntrinsic.find(OrigFnName);
+    if (It != FunctionToIntrinsic.end()) {
+      ClonedFnName = It->getValue();
+    } else {
+      ClonedFnName = OrigFnName;
     }
 
-
-    //Step 2: replace all call() instructions to refer to the new function
-    for (BasicBlock &BB: *KernelFunction) {
-        for(Instruction &Inst : BB) {
-
-            CallInst *Call = dyn_cast<CallInst>(&Inst);
-            if (!Call) continue;
-
-
-            errs() << "\n-------------\n";
-            errs() << "\t@@callInst: " << Call->getCalledFunction()->getName();  errs() << "\n";
-            
-            // Note that not all `call` instructions are calling external functions. Some of them
-            // are intrinsics inserted by us. So, only replace those functions which are known
-            // to be external.
-            auto It = ClonedFunctions.find(Call->getCalledFunction()->getName());
-            if (It == ClonedFunctions.end()) continue;
-            Function *Replacement = It->getValue();
-            assert (Replacement && "did not get a valid Function from iterator");
-            errs() << "\t@@replacement:\t"; Replacement->print(errs()); errs() << "\n";
-            errs() << "\n";
-            Call->setCalledFunction(Replacement);
-
-        }
+    errs() << "\t\tcloned FnName: " << ClonedFnName << "\n";
+    assert(ClonedFnName != "" && "expected function name for cloned funcion");
+    // create a new function only if this function does not exist in the new
+    // module.
+    Function *Clone = M->getFunction(ClonedFnName);
+    if (Clone == nullptr) {
+      Clone = Function::Create(Fn->getFunctionType(),
+                               GlobalValue::ExternalLinkage, ClonedFnName, M);
     }
 
+    ClonedFunctions[OrigFnName] = Clone;
+    errs() << "\t\tcloned Fn: ";
+    Clone->print(errs());
+    errs() << "\n";
+  }
+
+  // Step 2: replace all call() instructions to refer to the new function
+  for (BasicBlock &BB : *KernelFunction) {
+    for (Instruction &Inst : BB) {
+
+      CallInst *Call = dyn_cast<CallInst>(&Inst);
+      if (!Call)
+        continue;
+
+      // Note that not all `call` instructions are calling external functions.
+      // Some of them are intrinsics inserted by us. So, only replace those
+      // functions which are known to be external.
+      auto It = ClonedFunctions.find(Call->getCalledFunction()->getName());
+      if (It == ClonedFunctions.end())
+        continue;
+      Function *Replacement = It->getValue();
+      assert(Replacement && "did not get a valid Function from iterator");
+      Replacement->print(errs());
+      errs() << "\n";
+      errs() << "\n";
+      Call->setCalledFunction(Replacement);
+    }
+  }
 }
-
 
 void GPUNodeBuilder::insertKernelIntrinsics(ppcg_kernel *Kernel) {
   Intrinsic::ID IntrinsicsBID[2];
@@ -1937,12 +1928,12 @@ std::string GPUNodeBuilder::createKernelASM() {
 std::string GPUNodeBuilder::finalizeKernelFunction() {
   errs() << "@@@ Verifying Module...\n";
   if (verifyModule(*GPUModule, new raw_os_ostream(std::cerr))) {
-      errs() << "\n\n====\n@@@VerifyModuleFailed!\n";
-      std::cerr.flush();
-      assert(false && "module has error. assert for bugpoint");
+    errs() << "\n\n====\n@@@VerifyModuleFailed!\n";
+    std::cerr.flush();
+    assert(false && "module has error. assert for bugpoint");
 
-      BuildSuccessful = false;
-      return "";
+    BuildSuccessful = false;
+    return "";
   }
 
   if (DumpKernelIR)
@@ -2743,13 +2734,7 @@ public:
   }
 
   bool isSupportedFunction(const Function *F) {
-    if (F) {
-      errs() << "@@@ Function in kernel: ";
-      F->dump();
-      errs() << "\n";
-    }
-    return true;
-    // return F && F->isIntrinsic(); }
+    return F && F->isIntrinsic();
   }
 
   /// Check whether the Block contains any Function value.
