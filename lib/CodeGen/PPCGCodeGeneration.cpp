@@ -1,4 +1,4 @@
-//===------ PPCGCodeGeneration.cpp - Polly Accelerator Code Generation. ---===//
+//===-----r PPCGCodeGeneration.cpp - Polly Accelerator Code Generation. ---===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -403,6 +403,9 @@ private:
 
   void replaceKernelSubtreeFunctions(Function *KernelFunction,
                                      SetVector<Function *> &SubtreeFunctions);
+
+
+  void replaceKernelGlobals(Function *KernelFunction);
 
   /// Create a global-to-shared or shared-to-global copy statement.
   ///
@@ -1447,6 +1450,7 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
   Function *F = Builder.GetInsertBlock()->getParent();
   addCUDAAnnotations(F->getParent(), BlockDimX, BlockDimY, BlockDimZ);
   replaceKernelSubtreeFunctions(F, SubtreeFunctions);
+  replaceKernelGlobals(F);
   clearDominators(F);
   clearScalarEvolution(F);
   clearLoops(F);
@@ -1608,6 +1612,23 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
   return FN;
 }
 
+
+void GPUNodeBuilder::replaceKernelGlobals(Function *KernelFunction) {
+    errs() << "@@@" << __FILE__ << ":" << __LINE__ << "replaceKernelGlobal()\n";
+    for (BasicBlock &BB : *KernelFunction) {
+      for (Instruction &Inst : BB) {
+          GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(&Inst);
+          if (!GEP) continue;
+
+          GlobalValue *Arr = dyn_cast<GlobalValue>(GEP->getPointerOperand());
+          if (!Arr) continue;
+
+          errs() << "@@@ Global array: " << *Arr << "\n";
+      }
+    }
+}
+
+
 // can access state GPUNodeBuilder::GPUModle
 void GPUNodeBuilder::replaceKernelSubtreeFunctions(
     Function *KernelFunction, SetVector<Function *> &SubtreeFunctions) {
@@ -1636,7 +1657,6 @@ void GPUNodeBuilder::replaceKernelSubtreeFunctions(
       ClonedFnName = OrigFnName;
     }
 
-    errs() << "\t\tcloned FnName: " << ClonedFnName << "\n";
     assert(ClonedFnName != "" && "expected function name for cloned funcion");
     // create a new function only if this function does not exist in the new
     // module.
@@ -1647,9 +1667,6 @@ void GPUNodeBuilder::replaceKernelSubtreeFunctions(
     }
 
     ClonedFunctions[OrigFnName] = Clone;
-    errs() << "\t\tcloned Fn: ";
-    Clone->print(errs());
-    errs() << "\n";
   }
 
   // Step 2: replace all call() instructions to refer to the new function
@@ -1668,9 +1685,6 @@ void GPUNodeBuilder::replaceKernelSubtreeFunctions(
         continue;
       Function *Replacement = It->getValue();
       assert(Replacement && "did not get a valid Function from iterator");
-      Replacement->print(errs());
-      errs() << "\n";
-      errs() << "\n";
       Call->setCalledFunction(Replacement);
     }
   }
