@@ -1,5 +1,5 @@
-; RUN: opt %loadPolly -analyze -polly-scops < %s | FileCheck -check-prefix=SCOPS %s
-; RUN: opt %loadPolly  -polly-codegen-ppcg  < %s
+; RUN: opt %loadPolly -analyze -polly-canonicalize -polly-scops < %s | FileCheck -check-prefix=SCOPS %s
+; RUN: opt %loadPolly -polly-canonicalize  -polly-codegen-ppcg  < %s
 
 ; SCOPS:      Function: fn
 ; SCOPS-NEXT:     Region: %for.inc---%for.exit
@@ -12,20 +12,19 @@ module asm "\09.ident\09\22GCC: (GNU) 4.6.4 LLVM: 3.3.1\22"
 
 %struct.ty = type { [40 x [255 x i8]] }
 
-@arr = external global [199 x %struct.ty], align 32
 
 ; Function Attrs: argmemonly nounwind
 declare void @llvm.memset.p0i8.i64(i8* nocapture writeonly, i8, i64, i32, i1) #0
 
 ; Function Attrs: nounwind uwtable
-define void @fn() #1 {
+define void @fn([199 x %struct.ty]* %arr) #1 {
 entry:
   br label %for.inc
 
 for.inc:                                            ; preds = %for.inc, %entry
   %0 = phi i64 [ 1, %entry ], [ %3, %for.inc ]
   %1 = add nsw i64 %0, -1
-  %2 = getelementptr [199 x %struct.ty], [199 x %struct.ty]* @arr, i64 0, i64 0, i32 0, i64 %1, i64 0
+  %2 = getelementptr [199 x %struct.ty], [199 x %struct.ty]* %arr, i64 0, i64 0, i32 0, i64 %1, i64 0
   call void @llvm.memset.p0i8.i64(i8* %2, i8 32, i64 255, i32 1, i1 false)
   %3 = add nuw nsw i64 %0, 1
   %exitcond = icmp eq i64 %3, 41
