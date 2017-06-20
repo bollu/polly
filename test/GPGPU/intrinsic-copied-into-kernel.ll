@@ -1,5 +1,6 @@
 ; RUN: opt %loadPolly -analyze -polly-scops < %s | FileCheck %s --check-prefix=SCOP
-; RUN: opt %loadPolly -S -polly-codegen-ppcg -polly-acc-dump-kernel-ir < %s | FileCheck %s --check-prefix=KERNEL-IR
+; RUN: opt %loadPolly -analyze -polly-codegen-ppcg -polly-acc-dump-kernel-ir < %s | FileCheck %s --check-prefix=KERNEL-IR
+; RUN: opt %loadPolly -S -polly-codegen-ppcg  < %s | FileCheck %s --check-prefix=HOST-IR
 
 ; Test that we do recognise and codegen a kernel that has intrinsics.
 
@@ -8,9 +9,12 @@
 ; SCOP-NEXT:       Region: %entry.split---%for.end
 
 ; Check that the intrinsic call is present in the kernel IR.
-; KERNEL-IR:       %sqrt = tail call float @sqrt(float %A.arr.i.val)
-; KERNEL-IR-NEXT:  %B.arr.i = getelementptr inbounds float, float* %B, i64 %indvars.iv
-; KERNEL-IR-NEXT:  store float %sqrt, float* %B.arr.i, align 4
+; KERNEL-IR:   %p_sqrt = tail call float @llvm.sqrt.f32(float %A.arr.i.val_p_scalar_)
+; KERNEL-IR:   declare float @llvm.sqrt.f32(float) #2
+
+; Check that kernel launch is generated in host IR.
+; the declare would not be generated unless a call to a kernel exists.
+; HOST-IR: declare void @polly_launchKernel(i8*, i32, i32, i32, i32, i32, i8*)
 
 
 ; void f(float *A, float *B, int N) {
@@ -37,7 +41,7 @@ for.body:                                         ; preds = %for.body.lr.ph, %fo
   %A.arr.i = getelementptr inbounds float, float* %A, i64 %indvars.iv
   %A.arr.i.val = load float, float* %A.arr.i, align 4
   ; Call to intrinsic that should be part of the kernel.
-  %sqrt = tail call float @sqrt(float %A.arr.i.val)
+  %sqrt = tail call float @llvm.sqrt.f32(float %A.arr.i.val)
   %B.arr.i = getelementptr inbounds float, float* %B, i64 %indvars.iv
   store float %sqrt, float* %B.arr.i, align 4
 
@@ -54,7 +58,7 @@ for.end:                                          ; preds = %for.cond.for.end_cr
 }
 
 ; Function Attrs: nounwind readnone
-declare float @sqrt(float) #0
+declare float @llvm.sqrt.f32(float) #0
 
 attributes #0 = { nounwind readnone }
 
