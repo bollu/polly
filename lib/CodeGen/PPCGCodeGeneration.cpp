@@ -1123,7 +1123,7 @@ static bool IsValidFunctionInKernel(llvm::Function *F) {
                << "\n";);
 
   const std::string Name = F->getName();
-  return F->isIntrinsic() || Name == "sqrt" || Name == "fabs";
+  return F->isIntrinsic() || Name == "sqrt" || Name == "exp" || Name == "copysign";
 }
 
 // Do not take `Function` as a subtree value.
