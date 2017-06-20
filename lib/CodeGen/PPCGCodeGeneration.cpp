@@ -2815,6 +2815,10 @@ public:
     // This also allows us to prevent codegen from trying to take the
     // address of an intrinsic function to send to the kernel.
     if (ContainsInvalidKernelFunction(CurrentScop)) {
+      DEBUG(
+          dbgs()
+              << "Scop contains function which cannot be materialised in a GPU "
+                 "kernel. bailing out.\n";);
       return false;
     }
 
