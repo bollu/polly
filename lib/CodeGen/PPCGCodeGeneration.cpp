@@ -1810,7 +1810,11 @@ std::string GPUNodeBuilder::createKernelASM() {
 }
 
 std::string GPUNodeBuilder::finalizeKernelFunction() {
-  if (verifyModule(*GPUModule)) {
+  if (verifyModule(*GPUModule, &errs())) {
+    errs() << "VerifyModule failed on module:\n";
+    GPUModule->print(errs(), nullptr);
+    errs() << "\n";
+    llvm_unreachable("VerifyModule failed.");
     BuildSuccessful = false;
     return "";
   }
