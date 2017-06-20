@@ -1119,11 +1119,14 @@ isl_bool collectReferencesInGPUStmt(__isl_keep isl_ast_node *Node, void *User) {
 // TODO: is this too lax? We maybe allowing intrinsics that cannot be lowered.
 static bool IsValidFunctionInKernel(llvm::Function *F) {
   assert(F && "F is a invalid pointer");
-  DEBUG(dbgs() << *F << " :: IsValidFunctionInKernel = " << F->isIntrinsic()
+  const std::string Name = F->getName();
+  const bool IsValidFunction =  F->isIntrinsic() || Name == "sqrt" || Name == "exp" || Name == "copysign";
+
+  DEBUG(dbgs() << *F << " :: IsValidFunctionInKernel = " << IsValidFunction
                << "\n";);
 
-  const std::string Name = F->getName();
-  return F->isIntrinsic() || Name == "sqrt" || Name == "exp" || Name == "copysign";
+  return IsValidFunction;
+
 }
 
 // Do not take `Function` as a subtree value.
