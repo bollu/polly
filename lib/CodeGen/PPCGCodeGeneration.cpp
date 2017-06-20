@@ -2700,7 +2700,7 @@ public:
   }
 
   // If this basic block does something with a `Function` other than calling
-  // a function that we suppport in a kernel, return true.
+  // a function that we support in a kernel, return true.
   bool ContainsInvalidKernelFunctionInBlock(const BasicBlock *BB) {
     for (const Instruction &Inst : *BB) {
       const CallInst *Call = dyn_cast<CallInst>(&Inst);
