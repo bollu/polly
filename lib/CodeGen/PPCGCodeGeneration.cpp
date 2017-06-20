@@ -1121,7 +1121,9 @@ static bool IsValidFunctionInKernel(llvm::Function *F) {
   assert(F && "F is a invalid pointer");
   DEBUG(dbgs() << *F << " :: IsValidFunctionInKernel = " << F->isIntrinsic()
                << "\n";);
-  return F->isIntrinsic();
+
+  const std::string Name = F->getName();
+  return F->isIntrinsic() || Name == "sqrt" || Name == "fabs";
 }
 
 // Do not take `Function` as a subtree value.
