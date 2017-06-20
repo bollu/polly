@@ -1621,13 +1621,20 @@ void GPUNodeBuilder::replaceKernelSubtreeFunctions(
 
   // Step 1: insert the functions referenced by the kernel in the GPU module
   for (auto Fn : SubtreeFunctions) {
-    const std::string ClonedFnName = Fn->getName();
+    const std::string OrigFnName = Fn->getName();
+    std::string ClonedFnName = Fn->getName();
+
+    if (ClonedFnName == "exp")
+      ClonedFnName = "llvm.fabs.f64";
+    if (ClonedFnName == "copysign")
+      ClonedFnName = "llvm.copysign.f64";
+
     Function *Clone = M->getFunction(ClonedFnName);
     if (!Clone)
       Clone = Function::Create(Fn->getFunctionType(),
                                GlobalValue::ExternalLinkage, ClonedFnName, M);
     assert(Clone && "Expected cloned function to be initialized.");
-    ClonedFunctions[ClonedFnName] = Clone;
+    ClonedFunctions[OrigFnName] = Clone;
   }
 
   // Step 2: replace all call() instructions to refer to the new function
