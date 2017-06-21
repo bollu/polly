@@ -1120,13 +1120,24 @@ isl_bool collectReferencesInGPUStmt(__isl_keep isl_ast_node *Node, void *User) {
 static bool IsValidFunctionInKernel(llvm::Function *F) {
   assert(F && "F is a invalid pointer");
   const std::string Name = F->getName();
-  const bool IsValidFunction =  F->isIntrinsic() || Name == "sqrt" || Name == "exp" || Name == "copysign";
+  bool IsValidFunction = false;
+  if (F->isIntrinsic())
+    IsValidFunction = true;
+
+  const FunctionType *FTy = F->getFunctionType();
+  if ((Name == "sqrt" || Name == "exp") && F->getNumOperands() == 1 &&
+      FTy->getParamType(0)->isDoubleTy() && F->getReturnType()->isDoubleTy())
+    IsValidFunction = true;
+
+  if (Name == "copysign" && F->getNumOperands() == 2 &&
+      FTy->getParamType(0)->isDoubleTy() &&
+      FTy->getParamType(1)->isDoubleTy() && FTy->getReturnType()->isDoubleTy())
+    IsValidFunction = true;
 
   DEBUG(dbgs() << *F << " :: IsValidFunctionInKernel = " << IsValidFunction
                << "\n";);
 
   return IsValidFunction;
-
 }
 
 // Do not take `Function` as a subtree value.
