@@ -1125,11 +1125,11 @@ static bool IsValidFunctionInKernel(llvm::Function *F) {
     IsValidFunction = true;
 
   const FunctionType *FTy = F->getFunctionType();
-  if ((Name == "sqrt" || Name == "exp") && F->getNumOperands() == 1 &&
-      FTy->getParamType(0)->isDoubleTy() && F->getReturnType()->isDoubleTy())
+  if ((Name == "sqrt" || Name == "exp") && FTy->getNumParams() == 1 &&
+      FTy->getParamType(0)->isDoubleTy() && FTy->getReturnType()->isDoubleTy())
     IsValidFunction = true;
 
-  if (Name == "copysign" && F->getNumOperands() == 2 &&
+  if (Name == "copysign" && FTy->getNumParams() == 2 &&
       FTy->getParamType(0)->isDoubleTy() &&
       FTy->getParamType(1)->isDoubleTy() && FTy->getReturnType()->isDoubleTy())
     IsValidFunction = true;
