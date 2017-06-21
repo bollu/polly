@@ -1415,6 +1415,10 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
     S.invalidateScopArrayInfo(BasePtr, MemoryKind::Array);
   LocalArrays.clear();
 
+  dbgs() << "Scop Module:\n====\n";
+  S.getRegion().getEntry()->getParent()->getParent()->print(dbgs(), nullptr);
+  dbgs() << "===Scop Module end===\n";
+
   std::string ASMString = finalizeKernelFunction();
   Builder.SetInsertPoint(&HostInsertPoint);
   Value *Parameters = createLaunchParameters(Kernel, F, SubtreeValues);
@@ -1810,6 +1814,7 @@ std::string GPUNodeBuilder::createKernelASM() {
 }
 
 std::string GPUNodeBuilder::finalizeKernelFunction() {
+
   if (verifyModule(*GPUModule, &errs())) {
     errs() << "VerifyModule failed on module:\n";
     GPUModule->print(errs(), nullptr);
