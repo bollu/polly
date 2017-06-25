@@ -255,8 +255,13 @@ private:
   ///
   /// @param Kernel The kernel to scan for llvm::Values
   ///
-  /// @returns A set of values referenced by the kernel.
-  SetVector<Value *> getReferencesInKernel(ppcg_kernel *Kernel);
+  /// @returns A pair, whose first element contains the set of
+  ///          values referenced by the kernel, and whose
+  ///          second element contains the set of functions
+  ///          referenced by the kernel. All functions in the
+  ///          second set satisfy isValidFunctionInKernel.
+  std::pair<SetVector<Value *>, SetVector<Function *>>
+  getReferencesInKernel(ppcg_kernel *Kernel);
 
   /// Compute the sizes of the execution grid for a given kernel.
   ///
@@ -366,7 +371,8 @@ private:
   /// @param Kernel The kernel to generate code for.
   /// @param SubtreeValues The set of llvm::Values referenced by this kernel.
   void createKernelFunction(ppcg_kernel *Kernel,
-                            SetVector<Value *> &SubtreeValues);
+                            SetVector<Value *> &SubtreeValues,
+                            SetVector<Function *> &SubtreeFunctions);
 
   /// Create the declaration of a kernel function.
   ///
@@ -388,6 +394,24 @@ private:
   ///
   /// @param The kernel to generate the intrinsic functions for.
   void insertKernelIntrinsics(ppcg_kernel *Kernel);
+
+  /// Setup the creation of functions referenced by the GPU kernel.
+  ///
+  /// 1. Create new functions in GPUModule which are the same as
+  /// SubtreeFunctions.
+  ///
+  /// 2. Populate IslNodeBuilder::BlockGen::ValueMap with mappings from
+  /// old functions (that come from the original module) to new functions
+  /// (that are created within GPUModule). That way, we generate references
+  /// to the correct function (in GPUModule) in BlockGenerator.
+  ///
+  /// @see IslNodeBuilder::BlockGen::ValueMap
+  /// @see BlockGenerator::getNewValue
+  /// @see GPUNodeBuilder::getReferencesInKernel.
+  ///
+  /// @param SubtreeFunctions The set of llvm::Functions referenced by
+  ///                         this kernel.
+  void setupKernelSubtreeFunctions(SetVector<Function *> SubtreeFunctions);
 
   /// Create a global-to-shared or shared-to-global copy statement.
   ///
@@ -1109,7 +1133,40 @@ isl_bool collectReferencesInGPUStmt(__isl_keep isl_ast_node *Node, void *User) {
   return isl_bool_true;
 }
 
-SetVector<Value *> GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
+// By this point, we have only allowed "safe" function calls which we know
+// will be lowered. For now, we only allow intrinsics within kernel functions
+// TODO: is this too lax? We maybe allowing intrinsics that cannot be lowered.
+static bool IsValidFunctionInKernel(llvm::Function *F) {
+  assert(F && "F is a invalid pointer");
+  return F->getName().startswith("llvm.sqrt");
+}
+
+// Do not take `Function` as a subtree value.
+// We try to take the reference of all subtree values and pass them along
+// to the kernel from the host. Taking an address of any function and
+// trying to pass along is nonsensical. Only allow `Value`s that are not
+// `Function`s.
+static bool isValidSubtreeValue(llvm::Value *V) { return !isa<Function>(V); }
+
+// TODO: Consider converting to filter + map. Not sure how to use the
+// `map_iterator` in llvm's STLExtras.
+static SetVector<Function *>
+getFunctionsFromRawSubtreeValues(SetVector<Value *> RawSubtreeValues) {
+  SetVector<Function *> SubtreeFunctions;
+  for (Value *It : RawSubtreeValues) {
+    Function *F = dyn_cast<Function>(It);
+    if (F) {
+      assert(IsValidFunctionInKernel(F) && "Code should have bailed out by "
+                                           "this point if an invalid function "
+                                           "were present in a kernel");
+      SubtreeFunctions.insert(F);
+    }
+  }
+  return SubtreeFunctions;
+}
+
+std::pair<SetVector<Value *>, SetVector<Function *>>
+GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
   SetVector<Value *> SubtreeValues;
   SetVector<const SCEV *> SCEVs;
   SetVector<const Loop *> Loops;
@@ -1146,7 +1203,34 @@ SetVector<Value *> GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
     isl_id_free(Id);
   }
 
-  return SubtreeValues;
+  // TODO: Consider creating both SubtreeValue and SubtreeFunction in one
+  // loop since they are mutually exclusive? This makes it harder to read.
+  auto ValidSubtreeValuesIt =
+      make_filter_range(SubtreeValues, isValidSubtreeValue);
+  SetVector<Value *> ValidSubtreeValues(ValidSubtreeValuesIt.begin(),
+                                        ValidSubtreeValuesIt.end());
+
+  SetVector<Function *> ValidSubtreeFunctions(
+      getFunctionsFromRawSubtreeValues(SubtreeValues));
+
+#ifndef NDEBUG
+  // Note that { ValidSubtreeValues, ValidSubtreeFunctions } partions
+  // SubtreeValues. We are checking for that property here.
+
+  // Check that ValidSubtreeValues U ValidSubtreeFunctions == SubtreeValues
+  {
+    auto ValidSubtreeValuesUnion = SetVector<Value *>(
+        ValidSubtreeValues.begin(), ValidSubtreeValues.end());
+    ValidSubtreeValuesUnion.set_union(ValidSubtreeFunctions);
+    assert(ValidSubtreeValuesUnion == SubtreeValues);
+  }
+
+// TODO: Check ValidSubtreeValues intersection ValidSubtreeFunctions == empty.
+// llvm::SetVector does not support set_intersect.
+// llvm::set_intersect from llvm/ADT/SetOperations.h does not work over
+// llvm::SetVector, unfortunately.
+#endif
+  return std::make_pair(ValidSubtreeValues, ValidSubtreeFunctions);
 }
 
 void GPUNodeBuilder::clearDominators(Function *F) {
@@ -1353,6 +1437,23 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
                          Launch + "_params_i8ptr", Location);
 }
 
+void GPUNodeBuilder::setupKernelSubtreeFunctions(
+    SetVector<Function *> SubtreeFunctions) {
+  for (auto Fn : SubtreeFunctions) {
+    const std::string ClonedFnName = Fn->getName();
+    Function *Clone = GPUModule->getFunction(ClonedFnName);
+    if (!Clone)
+      Clone =
+          Function::Create(Fn->getFunctionType(), GlobalValue::ExternalLinkage,
+                           ClonedFnName, GPUModule.get());
+    assert(Clone && "Expected cloned function to be initialized.");
+#ifndef NDEBUG
+    assert(ValueMap.find(Fn) == ValueMap.end() && "Fn already present in"
+                                                  " ValueMap");
+#endif
+    ValueMap[Fn] = Clone;
+  }
+}
 void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
   isl_id *Id = isl_ast_node_get_annotation(KernelStmt);
   ppcg_kernel *Kernel = (ppcg_kernel *)isl_id_get_user(Id);
@@ -1369,7 +1470,9 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
   Value *BlockDimX, *BlockDimY, *BlockDimZ;
   std::tie(BlockDimX, BlockDimY, BlockDimZ) = getBlockSizes(Kernel);
 
-  SetVector<Value *> SubtreeValues = getReferencesInKernel(Kernel);
+  SetVector<Value *> SubtreeValues;
+  SetVector<Function *> SubtreeFunctions;
+  std::tie(SubtreeValues, SubtreeFunctions) = getReferencesInKernel(Kernel);
 
   assert(Kernel->tree && "Device AST of kernel node is empty");
 
@@ -1393,7 +1496,8 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
     SubtreeValues.insert(V);
   }
 
-  createKernelFunction(Kernel, SubtreeValues);
+  createKernelFunction(Kernel, SubtreeValues, SubtreeFunctions);
+  setupKernelSubtreeFunctions(SubtreeFunctions);
 
   create(isl_ast_node_copy(Kernel->tree));
 
@@ -1721,8 +1825,9 @@ void GPUNodeBuilder::createKernelVariables(ppcg_kernel *Kernel, Function *FN) {
   }
 }
 
-void GPUNodeBuilder::createKernelFunction(ppcg_kernel *Kernel,
-                                          SetVector<Value *> &SubtreeValues) {
+void GPUNodeBuilder::createKernelFunction(
+    ppcg_kernel *Kernel, SetVector<Value *> &SubtreeValues,
+    SetVector<Function *> &SubtreeFunctions) {
   std::string Identifier = "kernel_" + std::to_string(Kernel->id);
   GPUModule.reset(new Module(Identifier, Builder.getContext()));
 
@@ -2611,9 +2716,15 @@ public:
     return isl_ast_expr_ge(Iterations, MinComputeExpr);
   }
 
-  /// Check whether the Block contains any Function value.
-  bool ContainsFnPtrValInBlock(const BasicBlock *BB) {
-    for (const Instruction &Inst : *BB)
+  // If this basic block does something with a `Function` other than calling
+  // a function that we support in a kernel, return true.
+  bool ContainsInvalidKernelFunctionInBlock(const BasicBlock *BB) {
+    for (const Instruction &Inst : *BB) {
+      const CallInst *Call = dyn_cast<CallInst>(&Inst);
+      if (Call && IsValidFunctionInKernel(Call->getCalledFunction())) {
+        continue;
+      }
+
       for (Value *SrcVal : Inst.operands()) {
         PointerType *p = dyn_cast<PointerType>(SrcVal->getType());
         if (!p)
@@ -2621,20 +2732,21 @@ public:
         if (isa<FunctionType>(p->getElementType()))
           return true;
       }
+    }
     return false;
   }
 
-  /// Return whether the Scop S has functions.
-  bool ContainsFnPtr(const Scop &S) {
+  /// Return whether the Scop S uses functions in a way that we do not support.
+  bool ContainsInvalidKernelFunction(const Scop &S) {
     for (auto &Stmt : S) {
       if (Stmt.isBlockStmt()) {
-        if (ContainsFnPtrValInBlock(Stmt.getBasicBlock()))
+        if (ContainsInvalidKernelFunctionInBlock(Stmt.getBasicBlock()))
           return true;
       } else {
         assert(Stmt.isRegionStmt() &&
                "Stmt was neither block nor region statement");
         for (const BasicBlock *BB : Stmt.getRegion()->blocks())
-          if (ContainsFnPtrValInBlock(BB))
+          if (ContainsInvalidKernelFunctionInBlock(BB))
             return true;
       }
     }
@@ -2707,13 +2819,18 @@ public:
     DL = &S->getRegion().getEntry()->getModule()->getDataLayout();
     RI = &getAnalysis<RegionInfoPass>().getRegionInfo();
 
-    // We currently do not support functions inside kernels, as code
-    // generation will need to offload function calls to the kernel.
-    // This may lead to a kernel trying to call a function on the host.
+    // We currently do not support functions other than intrinsics inside
+    // kernels, as code generation will need to offload function calls to the
+    // kernel. This may lead to a kernel trying to call a function on the host.
     // This also allows us to prevent codegen from trying to take the
     // address of an intrinsic function to send to the kernel.
-    if (ContainsFnPtr(CurrentScop))
+    if (ContainsInvalidKernelFunction(CurrentScop)) {
+      DEBUG(
+          dbgs()
+              << "Scop contains function which cannot be materialised in a GPU "
+                 "kernel. bailing out.\n";);
       return false;
+    }
 
     auto PPCGScop = createPPCGScop();
     auto PPCGProg = createPPCGProg(PPCGScop);
