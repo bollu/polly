@@ -396,15 +396,16 @@ private:
 
   /// Setup the creation of functions referenced by the GPU kernel.
   ///
-  /// 1. Create new functions in GPUModule which are the same as
+  /// 1. Create new function declarations in GPUModule which are the same as
   /// SubtreeFunctions.
   ///
-  /// 2. Populate IslNodeBuilder::BlockGen::ValueMap with mappings from
+  /// 2. Populate IslNodeBuilder::ValueMap with mappings from
   /// old functions (that come from the original module) to new functions
   /// (that are created within GPUModule). That way, we generate references
   /// to the correct function (in GPUModule) in BlockGenerator.
   ///
-  /// @see IslNodeBuilder::BlockGen::ValueMap
+  /// @see IslNodeBuilder::ValueMap
+  /// @see BlockGenerator::GlobalMap
   /// @see BlockGenerator::getNewValue
   /// @see GPUNodeBuilder::getReferencesInKernel.
   ///
@@ -2701,9 +2702,12 @@ public:
     return isl_ast_expr_ge(Iterations, MinComputeExpr);
   }
 
-  // If this basic block does something with a `Function` other than calling
-  // a function that we support in a kernel, return true.
-  bool ContainsInvalidKernelFunctionInBlock(const BasicBlock *BB) {
+  /// Check if the basic block contains a function we cannot codegen for GPU
+  /// kernels.
+  ///
+  /// If this basic block does something with a `Function` other than calling
+  /// a function that we support in a kernel, return true.
+  bool containsInvalidKernelFunctionInBllock(const BasicBlock *BB) {
     for (const Instruction &Inst : *BB) {
       const CallInst *Call = dyn_cast<CallInst>(&Inst);
       if (Call && isValidFunctionInKernel(Call->getCalledFunction())) {
@@ -2722,16 +2726,16 @@ public:
   }
 
   /// Return whether the Scop S uses functions in a way that we do not support.
-  bool ContainsInvalidKernelFunction(const Scop &S) {
+  bool containsInvalidKernelFunction(const Scop &S) {
     for (auto &Stmt : S) {
       if (Stmt.isBlockStmt()) {
-        if (ContainsInvalidKernelFunctionInBlock(Stmt.getBasicBlock()))
+        if (containsInvalidKernelFunctionInBllock(Stmt.getBasicBlock()))
           return true;
       } else {
         assert(Stmt.isRegionStmt() &&
                "Stmt was neither block nor region statement");
         for (const BasicBlock *BB : Stmt.getRegion()->blocks())
-          if (ContainsInvalidKernelFunctionInBlock(BB))
+          if (containsInvalidKernelFunctionInBllock(BB))
             return true;
       }
     }
@@ -2809,11 +2813,11 @@ public:
     // kernel. This may lead to a kernel trying to call a function on the host.
     // This also allows us to prevent codegen from trying to take the
     // address of an intrinsic function to send to the kernel.
-    if (ContainsInvalidKernelFunction(CurrentScop)) {
+    if (containsInvalidKernelFunction(CurrentScop)) {
       DEBUG(
           dbgs()
               << "Scop contains function which cannot be materialised in a GPU "
-                 "kernel. bailing out.\n";);
+                 "kernel. Bailing out.\n";);
       return false;
     }
 
