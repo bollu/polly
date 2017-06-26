@@ -1141,15 +1141,15 @@ static bool isValidFunctionInKernel(llvm::Function *F) {
   return F->isIntrinsic() && F->getName().startswith("llvm.sqrt");
 }
 
-// Do not take `Function` as a subtree value.
-// We try to take the reference of all subtree values and pass them along
-// to the kernel from the host. Taking an address of any function and
-// trying to pass along is nonsensical. Only allow `Value`s that are not
-// `Function`s.
+/// Do not take `Function` as a subtree value.
+///
+/// We try to take the reference of all subtree values and pass them along
+/// to the kernel from the host. Taking an address of any function and
+/// trying to pass along is nonsensical. Only allow `Value`s that are not
+/// `Function`s.
 static bool isValidSubtreeValue(llvm::Value *V) { return !isa<Function>(V); }
 
-// TODO: Consider converting to filter + map. Not sure how to use the
-// `map_iterator` in llvm's STLExtras.
+/// Return `Function`s from `RawSubtreeValues`.
 static SetVector<Function *>
 getFunctionsFromRawSubtreeValues(SetVector<Value *> RawSubtreeValues) {
   SetVector<Function *> SubtreeFunctions;
