@@ -255,10 +255,9 @@ private:
   ///
   /// @param Kernel The kernel to scan for llvm::Values
   ///
-  /// @returns A pair, whose first element contains the set of
-  ///          values referenced by the kernel, and whose
-  ///          second element contains the set of functions
-  ///          referenced by the kernel. All functions in the
+  /// @returns A pair, whose first element contains the set of values
+  //           referenced by the kernel, and whose second element contains the
+  //           set of functions referenced by the kernel. All functions in the
   ///          second set satisfy isValidFunctionInKernel.
   std::pair<SetVector<Value *>, SetVector<Function *>>
   getReferencesInKernel(ppcg_kernel *Kernel);
@@ -1133,12 +1132,12 @@ isl_bool collectReferencesInGPUStmt(__isl_keep isl_ast_node *Node, void *User) {
   return isl_bool_true;
 }
 
-// By this point, we have only allowed "safe" function calls which we know
-// will be lowered. For now, we only allow intrinsics within kernel functions
-// TODO: is this too lax? We maybe allowing intrinsics that cannot be lowered.
-static bool IsValidFunctionInKernel(llvm::Function *F) {
-  assert(F && "F is a invalid pointer");
-  return F->getName().startswith("llvm.sqrt");
+/// Check if F is a function that we can code-generate in a GPU kernel.
+static bool isValidFunctionInKernel(llvm::Function *F) {
+  assert(F && "F is an invalid pointer");
+  // We string compare against the name of the function to allow
+  // all variants of the intrinsic "llvm.sqrt.*"
+  return F->isIntrinsic() && F->getName().startswith("llvm.sqrt");
 }
 
 // Do not take `Function` as a subtree value.
@@ -1156,7 +1155,7 @@ getFunctionsFromRawSubtreeValues(SetVector<Value *> RawSubtreeValues) {
   for (Value *It : RawSubtreeValues) {
     Function *F = dyn_cast<Function>(It);
     if (F) {
-      assert(IsValidFunctionInKernel(F) && "Code should have bailed out by "
+      assert(isValidFunctionInKernel(F) && "Code should have bailed out by "
                                            "this point if an invalid function "
                                            "were present in a kernel");
       SubtreeFunctions.insert(F);
@@ -1203,33 +1202,19 @@ GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
     isl_id_free(Id);
   }
 
-  // TODO: Consider creating both SubtreeValue and SubtreeFunction in one
-  // loop since they are mutually exclusive? This makes it harder to read.
+  // Note: { ValidSubtreeValues, ValidSubtreeFunctions } partitions
+  // SubtreeValues. This is important, because we should not lose any
+  // SubtreeValues in the process of constructing the
+  // "ValidSubtree{Values, Functions} sets. Nor should the set
+  // ValidSubtree{Values, Functions} have any common element.
   auto ValidSubtreeValuesIt =
       make_filter_range(SubtreeValues, isValidSubtreeValue);
   SetVector<Value *> ValidSubtreeValues(ValidSubtreeValuesIt.begin(),
                                         ValidSubtreeValuesIt.end());
-
   SetVector<Function *> ValidSubtreeFunctions(
       getFunctionsFromRawSubtreeValues(SubtreeValues));
 
-#ifndef NDEBUG
-  // Note that { ValidSubtreeValues, ValidSubtreeFunctions } partions
-  // SubtreeValues. We are checking for that property here.
 
-  // Check that ValidSubtreeValues U ValidSubtreeFunctions == SubtreeValues
-  {
-    auto ValidSubtreeValuesUnion = SetVector<Value *>(
-        ValidSubtreeValues.begin(), ValidSubtreeValues.end());
-    ValidSubtreeValuesUnion.set_union(ValidSubtreeFunctions);
-    assert(ValidSubtreeValuesUnion == SubtreeValues);
-  }
-
-// TODO: Check ValidSubtreeValues intersection ValidSubtreeFunctions == empty.
-// llvm::SetVector does not support set_intersect.
-// llvm::set_intersect from llvm/ADT/SetOperations.h does not work over
-// llvm::SetVector, unfortunately.
-#endif
   return std::make_pair(ValidSubtreeValues, ValidSubtreeFunctions);
 }
 
@@ -2721,7 +2706,7 @@ public:
   bool ContainsInvalidKernelFunctionInBlock(const BasicBlock *BB) {
     for (const Instruction &Inst : *BB) {
       const CallInst *Call = dyn_cast<CallInst>(&Inst);
-      if (Call && IsValidFunctionInKernel(Call->getCalledFunction())) {
+      if (Call && isValidFunctionInKernel(Call->getCalledFunction())) {
         continue;
       }
 
