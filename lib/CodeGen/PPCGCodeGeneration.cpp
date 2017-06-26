@@ -112,6 +112,12 @@ static cl::opt<int>
                cl::desc("Minimal number of compute statements to run on GPU."),
                cl::Hidden, cl::init(10 * 512 * 512));
 
+static cl::opt<bool> AllowNoPermutableBands(
+    "polly-acc-allow-no-permutable-bands",
+    cl::desc(
+        "Allow continuing even when no permutable bands have been identified."),
+    cl::Hidden, cl::init(false), cl::ZeroOrMore, cl::cat(PollyCategory));
+
 /// Create the ast expressions for a ScopStmt.
 ///
 /// This function is a callback for to generate the ast expressions for each
@@ -2557,7 +2563,10 @@ public:
 
     int has_permutable = has_any_permutable_node(Schedule);
 
-    if (!has_permutable || has_permutable < 0) {
+    if ((!has_permutable || has_permutable < 0) && !AllowNoPermutableBands) {
+      dbgs() << "No permutable bands found, and "
+                "-polly-acc-allow-no-permutable-bands is not set. Bailing out "
+                "of PPCGCodeGeneration\n";
       Schedule = isl_schedule_free(Schedule);
     } else {
       Schedule = map_to_device(PPCGGen, Schedule);
