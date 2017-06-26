@@ -1148,7 +1148,9 @@ static bool isValidFunctionInKernel(llvm::Function *F) {
   assert(F && "F is an invalid pointer");
   // We string compare against the name of the function to allow
   // all variants of the intrinsic "llvm.sqrt.*"
-  return F->isIntrinsic() && F->getName().startswith("llvm.sqrt");
+  return F->isIntrinsic() && (F->getName().startswith("llvm.sqrt") ||
+                              F->getName().startswith("llvm.fabs") ||
+                              F->getName().startswith("llvm.copysign"));
 }
 
 /// Do not take `Function` as a subtree value.
