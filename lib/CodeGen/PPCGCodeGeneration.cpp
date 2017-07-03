@@ -2173,6 +2173,9 @@ public:
     errs() << "@@@Scop schedule:\n";
     isl_schedule_dump(ScopSchedule);
     errs() << "==================\n";
+
+    // This assert fails.
+    // assert(isl_schedule_plain_is_equal(ScopSchedule, StringSchedule) && "scop schedule != string schedule");
     if (UseHardcodedSchedule) {
         PPCGScop->schedule = StringSchedule;
         isl_schedule_free(ScopSchedule);
