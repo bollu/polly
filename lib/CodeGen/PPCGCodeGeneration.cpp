@@ -102,6 +102,12 @@ static cl::opt<bool>
                               cl::Hidden, cl::init(false), cl::ZeroOrMore,
                               cl::cat(PollyCategory));
 
+static cl::opt<bool>
+    UseHardcodedSchedule("polly-acc-use-hardcoded-schedule",
+                              cl::desc("Use hardcoded schedule to PPCGScop"),
+                              cl::Hidden, cl::init(false), cl::ZeroOrMore,
+                              cl::cat(PollyCategory));
+
 static cl::opt<std::string>
     CudaVersion("polly-acc-cuda-version",
                 cl::desc("The CUDA version to compile for"), cl::Hidden,
@@ -112,6 +118,9 @@ static cl::opt<int>
                cl::desc("Minimal number of compute statements to run on GPU."),
                cl::Hidden, cl::init(10 * 512 * 512));
 
+#define DEBUG_PRINT(NAME, OBJ, TYPE) {fprintf(stderr, "@@@ %s:%d %s\n", __FILE__, __LINE__, #NAME); \
+                                          if(OBJ == NULL) fprintf(stderr, "nullptr"); else isl_ ## TYPE ## _dump(OBJ); \
+                                          fprintf(stderr, "\n---\n");};
 /// Create the ast expressions for a ScopStmt.
 ///
 /// This function is a callback for to generate the ast expressions for each
@@ -2114,6 +2123,8 @@ public:
     auto PPCGScop = (ppcg_scop *)malloc(sizeof(ppcg_scop));
 
     PPCGScop->options = createPPCGOptions();
+    // enable live range reordering
+    PPCGScop->options->live_range_reordering = 1;
 
     PPCGScop->start = 0;
     PPCGScop->end = 0;
@@ -2129,18 +2140,47 @@ public:
     PPCGScop->tagged_must_writes = getTaggedMustWrites();
     PPCGScop->must_writes = S->getMustWrites();
     PPCGScop->live_out = nullptr;
+    // We need to set this correctly.
     PPCGScop->tagged_must_kills = isl_union_map_empty(S->getParamSpace());
     PPCGScop->tagger = nullptr;
 
-    PPCGScop->independence = nullptr;
+    PPCGScop->independence =
+        isl_union_map_empty(isl_set_get_space(PPCGScop->context));
+    // PPCGScop->independence = nullptr;
     PPCGScop->dep_flow = nullptr;
     PPCGScop->tagged_dep_flow = nullptr;
     PPCGScop->dep_false = nullptr;
     PPCGScop->dep_forced = nullptr;
     PPCGScop->dep_order = nullptr;
+    // enable live range reordering
     PPCGScop->tagged_dep_order = nullptr;
 
-    PPCGScop->schedule = S->getScheduleTree();
+    const char *schedule_str = 
+"domain: \"[control] -> { Stmt_for_body[i0] : 0 <= i0 <= 999; Stmt_if_then[i0] : 0 <= i0 <= 999 and (control < 0 or control > 0); Stmt_if_end[i0] : 0 <= i0 <= 999 }\"\n"
+"child:\n"
+"  schedule: \"[control] -> [{ Stmt_for_body[i0] -> [(i0)]; Stmt_if_end[i0] -> [(i0)]; Stmt_if_then[i0] -> [(i0)] }]\"\n"
+"  child:\n"
+"    sequence:\n"
+"    - filter: \"[control] -> { Stmt_for_body[i0] }\"\n"
+"    - filter: \"[control] -> { Stmt_if_then[i0] }\"\n"
+"    - filter: \"[control] -> { Stmt_if_end[i0] }\"\n";
+
+    errs() << "==================\n";
+    isl_schedule *ScopSchedule = S->getScheduleTree();
+    isl_schedule *StringSchedule = isl_schedule_read_from_str(S->getIslCtx(), schedule_str);
+    errs() << "@@@From string:\n";
+    isl_schedule_dump(StringSchedule);
+    errs() << "@@@Scop schedule:\n";
+    isl_schedule_dump(ScopSchedule);
+    errs() << "==================\n";
+    if (UseHardcodedSchedule) {
+        PPCGScop->schedule = StringSchedule;
+        isl_schedule_free(ScopSchedule);
+    } else {
+        PPCGScop->schedule = ScopSchedule;
+        isl_schedule_free(StringSchedule);
+    }
+
     PPCGScop->names = getNames();
 
     PPCGScop->pet = nullptr;
@@ -2414,7 +2454,10 @@ public:
     PPCGProg->to_inner = getArrayIdentity();
     PPCGProg->to_outer = getArrayIdentity();
     PPCGProg->any_to_outer = nullptr;
-    PPCGProg->array_order = nullptr;
+
+    // this needs to be set for live range reordering
+    PPCGProg->array_order =
+        isl_union_map_empty(isl_set_get_space(PPCGScop->context));
     PPCGProg->n_stmts = std::distance(S->begin(), S->end());
     PPCGProg->stmts = getStatements();
     PPCGProg->n_array = std::distance(S->array_begin(), S->array_end());
@@ -2425,6 +2468,19 @@ public:
 
     PPCGProg->may_persist = compute_may_persist(PPCGProg);
 
+    DEBUG_PRINT("PPCGProg->array_order finalized", PPCGProg->array_order,
+                union_map);
+    DEBUG_PRINT("PPCGProg->read finalized", PPCGProg->read, union_map);
+    DEBUG_PRINT("PPCGProg->may_write finalized", PPCGProg->may_write,
+                union_map);
+    DEBUG_PRINT("PPCGProg->must_write finalized", PPCGProg->must_write,
+                union_map);
+    DEBUG_PRINT("PPCGProg->tagged_must_kill finalized",
+                PPCGProg->tagged_must_kill, union_map);
+    DEBUG_PRINT("PPCGProg->to_inner finalized", PPCGProg->to_inner, union_map);
+    DEBUG_PRINT("PPCGProg->to_outer finalized", PPCGProg->to_outer, union_map);
+    DEBUG_PRINT("PPCGProg->any_to_outer finalized", PPCGProg->any_to_outer,
+                union_map);
     return PPCGProg;
   }
 
