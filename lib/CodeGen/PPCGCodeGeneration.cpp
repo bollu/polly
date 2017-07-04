@@ -2151,24 +2151,13 @@ public:
 
 
     // Collect phi nodes in scop.
-    SetVector<isl_id *> KillMemIds;
-    for (ScopStmt &Stmt : *S) {
-      for (MemoryAccess *MemRef : Stmt) {
-        if (MemRef->getLatestKind() == MemoryKind::PHI) {
-          isl_map *AccessRel = MemRef->getLatestAccessRelation();
-          isl_id *KillId = isl_map_get_tuple_id(AccessRel, isl_dim_out);
-          if (KillMemIds.count(KillId) == 0)  {
-              KillMemIds.insert(KillId);
-          } else {
-              isl_id_free(KillId);
-          }
-          isl_map_free(AccessRel);
-        }
-      }
+    SmallVector<isl_id *, 4> KillMemIds;
+    for(ScopArrayInfo *sai : S->arrays()) {
+        if (!sai->isPHIKind()) continue;
+        KillMemIds.push_back(sai->getBasePtrId());
     }
 
-
-    // Will be modified inside loop/
+    // Will be modified inside loop
     PPCGScop->tagged_must_kills =
         isl_union_map_from_map(isl_map_universe(S->getParamSpace()));
 
