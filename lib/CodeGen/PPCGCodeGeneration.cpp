@@ -2131,21 +2131,21 @@ public:
     PPCGScop->tagged_must_writes = getTaggedMustWrites();
     PPCGScop->must_writes = S->getMustWrites();
     PPCGScop->live_out = nullptr;
-    // We need to set this correctly.
-    PPCGScop->tagged_must_kills = nullptr;
-    // PPCGScop->tagged_must_kills = isl_union_map_read_from_str("[control] -> {
-    // [S_2[] -> __pet_ref_5[]] -> MemRef_x_0__phi[] }");
     PPCGScop->tagger = nullptr;
 
+    /*
+        ps->independence = isl_union_map_empty(isl_set_get_space(ps->context));
+        for (i = 0; i < scop->n_independence; ++i)
+                ps->independence = isl_union_map_union(ps->independence,
+                        isl_union_map_copy(scop->independences[i]->filter));
+     */
     PPCGScop->independence =
         isl_union_map_empty(isl_set_get_space(PPCGScop->context));
-    // PPCGScop->independence = nullptr;
     PPCGScop->dep_flow = nullptr;
     PPCGScop->tagged_dep_flow = nullptr;
     PPCGScop->dep_false = nullptr;
     PPCGScop->dep_forced = nullptr;
     PPCGScop->dep_order = nullptr;
-    // enable live range reordering
     PPCGScop->tagged_dep_order = nullptr;
 
     isl_schedule *ScopSchedule = S->getScheduleTree();
@@ -2204,7 +2204,6 @@ public:
     isl_map *TaggedMustKill =
         isl_map_domain_product(TaggedMustKillStmtMap, TaggedMustKillRefMap);
     PPCGScop->tagged_must_kills = isl_union_map_from_map(TaggedMustKill);
-    // isl_map_free(TaggedMustKill);
 
     PPCGScop->schedule = ScopSchedule;
 
@@ -2482,7 +2481,10 @@ public:
     PPCGProg->to_outer = getArrayIdentity();
     PPCGProg->any_to_outer = nullptr;
 
-    // this needs to be set for live range reordering
+    // this needs to be set when live range reordering is enabled.
+    // NOTE: I am not sure if this is conservatively correct. I'm not sure
+    //       what the semantics of this is.
+    // Quoting PPCG/gpu.h: "Order dependences on non-scalars."
     PPCGProg->array_order =
         isl_union_map_empty(isl_set_get_space(PPCGScop->context));
     PPCGProg->n_stmts = std::distance(S->begin(), S->end());
