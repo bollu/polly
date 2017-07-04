@@ -2163,15 +2163,10 @@ public:
               isl_id_free(KillId);
           }
           isl_map_free(AccessRel);
-
-          errs() << "## Killing: ";
-          MemRef->print(errs());
-          errs() << "---\n";
         }
       }
     }
 
-    errs() << "\nLength of KillMemIds: " << KillMemIds.size() << "\n";
 
     // Will be modified inside loop/
     PPCGScop->tagged_must_kills =

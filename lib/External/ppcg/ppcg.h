@@ -16,8 +16,8 @@ int ppcg_extract_base_name(char *name, const char *input);
 									  if(OBJ == NULL) fprintf(stderr, "nullptr"); else isl_ ## TYPE ## _dump(OBJ); \
 									  fprintf(stderr, "\n---\n");};
 
-// #undef DEBUG_PRINT
-// #define DEBUG_PRINT(NAME, OBJ, TYPE)  if(0) {};
+#undef DEBUG_PRINT
+#define DEBUG_PRINT(NAME, OBJ, TYPE)  if(0) {};
 
 /* Representation of the scop for use inside PPCG.
  *
