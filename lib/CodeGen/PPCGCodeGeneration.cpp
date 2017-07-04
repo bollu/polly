@@ -2159,12 +2159,20 @@ public:
     isl_union_set *KillStmtDomain =
         isl_union_set_from_set(isl_set_universe(isl_space_copy(KillStmtSpace)));
     isl_space_free(KillStmtSpace);
+
     isl_schedule *KillSchedule = isl_schedule_from_domain(KillStmtDomain);
     DEBUG_PRINT("Kill schedule: ", KillSchedule, schedule);
 
     ScopSchedule = isl_schedule_sequence(ScopSchedule, KillSchedule);
     DEBUG_PRINT("Scop schedule after adding kill schedule: ", ScopSchedule,
                 schedule);
+
+    for (ScopStmt &Stmt : *S) {
+      for (MemoryAccess *MemRef : Stmt) {
+        if (MemRef->getLatestKind() == MemoryKind::PHI) {
+        }
+      }
+    }
 
     // TODO: add must_kill [control] -> { [S_2[] -> __pet_ref_5[]] -> x[] } into
     // schedule
@@ -2187,17 +2195,17 @@ public:
       for (MemoryAccess *MemRef : Stmt) {
         isl_map *AccessRel = MemRef->getLatestAccessRelation();
         const char *name = isl_map_get_tuple_name(AccessRel, isl_dim_out);
+        isl_id *MemId = isl_map_get_tuple_id(AccessRel, isl_dim_out);
         isl_map_free(AccessRel);
         if (!strcmp(name, "MemRef_x_0__phi")) {
           errs() << "found: " << name << "\n";
           TaggedMustKillStmtMap = isl_map_set_tuple_id(
-              TaggedMustKillStmtMap, isl_dim_out,
-              isl_map_get_tuple_id(AccessRel, isl_dim_out));
-          TaggedMustKillRefMap = isl_map_set_tuple_id(
-              TaggedMustKillRefMap, isl_dim_out,
-              isl_map_get_tuple_id(AccessRel, isl_dim_out));
+              TaggedMustKillStmtMap, isl_dim_out, isl_id_copy(MemId));
+          TaggedMustKillRefMap =
+              isl_map_set_tuple_id(TaggedMustKillRefMap, isl_dim_out, MemId);
           break;
         }
+        isl_id_free(MemId);
       }
     }
 
