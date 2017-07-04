@@ -2164,8 +2164,6 @@ public:
 
     // Will be modified once, after loop.
     PPCGScop->schedule = S->getScheduleTree();
-    DEBUG_PRINT("Scop Schedule (Original)", PPCGScop->schedule, schedule);
-
 
     // Collection of all kills that will be grafter onto PPCGScop->schedule.
     // Initialising this creates an empty node in the schedule node:
@@ -2216,15 +2214,9 @@ public:
           isl_union_set_from_set(isl_set_universe(KillStmtSpace));
 
       isl_schedule *KillSchedule = isl_schedule_from_domain(KillStmtDomain);
-      DEBUG_PRINT("Kill schedule (to be sequenced) ", KillSchedule, schedule);
-      DEBUG_PRINT("Scop schedule (to be sequenced) ", PPCGScop->schedule,
-                  schedule);
-
       AllKillsSchedule = AllKillsSchedule
                              ? isl_schedule_set(AllKillsSchedule, KillSchedule)
                              : KillSchedule;
-      DEBUG_PRINT("Scop schedule after adding kill schedule: ",
-                  PPCGScop->schedule, schedule);
     }
 
     if (AllKillsSchedule)
@@ -2518,20 +2510,6 @@ public:
     createArrays(PPCGProg);
 
     PPCGProg->may_persist = compute_may_persist(PPCGProg);
-
-    DEBUG_PRINT("PPCGProg->array_order finalized", PPCGProg->array_order,
-                union_map);
-    DEBUG_PRINT("PPCGProg->read finalized", PPCGProg->read, union_map);
-    DEBUG_PRINT("PPCGProg->may_write finalized", PPCGProg->may_write,
-                union_map);
-    DEBUG_PRINT("PPCGProg->must_write finalized", PPCGProg->must_write,
-                union_map);
-    DEBUG_PRINT("PPCGProg->tagged_must_kill finalized",
-                PPCGProg->tagged_must_kill, union_map);
-    DEBUG_PRINT("PPCGProg->to_inner finalized", PPCGProg->to_inner, union_map);
-    DEBUG_PRINT("PPCGProg->to_outer finalized", PPCGProg->to_outer, union_map);
-    DEBUG_PRINT("PPCGProg->any_to_outer finalized", PPCGProg->any_to_outer,
-                union_map);
     return PPCGProg;
   }
 

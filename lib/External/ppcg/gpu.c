@@ -4070,7 +4070,6 @@ static __isl_give isl_schedule_constraints *construct_schedule_constraints(
 	sc = isl_schedule_constraints_set_context(sc,
 				isl_set_copy(prog->scop->context));
 	if (prog->scop->options->live_range_reordering) {
-        printf("live range reordering enabled.\n");
 		sc = isl_schedule_constraints_set_conditional_validity(sc,
 			isl_union_map_copy(prog->scop->tagged_dep_flow),
 			isl_union_map_copy(prog->scop->tagged_dep_order));
@@ -4083,14 +4082,9 @@ static __isl_give isl_schedule_constraints *construct_schedule_constraints(
 		coincidence = isl_union_map_copy(validity);
 		coincidence = isl_union_map_subtract(coincidence,
 			isl_union_map_copy(prog->scop->independence));
-
-		// DEBUG_PRINT("coincidence: ", coincidence, union_map);
-		// DEBUG_PRINT("** array order: ", prog->array_order, union_map);
 		coincidence = isl_union_map_union(coincidence,
 				isl_union_map_copy(prog->array_order));
-		assert(coincidence != NULL && "coincidence should be correct.");
 	} else {
-        assert(0 && "why is live range reordering disabled?");
 		dep_raw = isl_union_map_copy(prog->scop->dep_flow);
 		dep = isl_union_map_copy(prog->scop->dep_false);
 		dep = isl_union_map_union(dep, dep_raw);
@@ -4100,10 +4094,7 @@ static __isl_give isl_schedule_constraints *construct_schedule_constraints(
 		validity = dep;
 	}
 	sc = isl_schedule_constraints_set_validity(sc, validity);
-	// DEBUG_PRINT("sc: ", sc, schedule_constraints);
-	// DEBUG_PRINT("coincidence: ", coincidence, union_map);
 	sc = isl_schedule_constraints_set_coincidence(sc, coincidence);
-	// DEBUG_PRINT("sc: ", sc, schedule_constraints);
 	sc = isl_schedule_constraints_set_proximity(sc, proximity);
 
 	if (prog->scop->options->debug->dump_schedule_constraints)
@@ -4124,9 +4115,8 @@ static __isl_give isl_schedule *compute_schedule(struct gpu_gen *gen)
 	isl_schedule *schedule;
 
 	sc = construct_schedule_constraints(gen->prog);
-    // DEBUG_PRINT("sc: ", sc, schedule_constraints);
 	schedule = isl_schedule_constraints_compute_schedule(sc);
- 
+
 	return schedule;
 }
 
@@ -4287,13 +4277,10 @@ __isl_give isl_schedule *get_schedule(struct gpu_gen *gen)
 		schedule = load_schedule(gen->ctx,
 					gen->options->load_schedule_file);
 	} else {
-        printf("reschedule?: (%d)\n", gen->options->reschedule);
 		if (gen->options->reschedule)
 			schedule = compute_schedule(gen);
-		else {
-            assert(0 && "does not enter here");
+		else
 			schedule = determine_properties_original_schedule(gen);
-        }
 		if (gen->options->save_schedule_file)
 			save_schedule(schedule,
 					gen->options->save_schedule_file);
@@ -5389,7 +5376,6 @@ struct gpu_prog *gpu_prog_alloc(isl_ctx *ctx, struct ppcg_scop *scop)
 	if (!prog->stmts)
 		return gpu_prog_free(prog);
 
-    printf("***** collect array info\n");
 	if (collect_array_info(prog) < 0)
 		return gpu_prog_free(prog);
 	prog->may_persist = compute_may_persist(prog);
