@@ -2148,75 +2148,87 @@ public:
     PPCGScop->dep_order = nullptr;
     PPCGScop->tagged_dep_order = nullptr;
 
-    isl_schedule *ScopSchedule = S->getScheduleTree();
-    DEBUG_PRINT("Scop Schedule (Original)", ScopSchedule, schedule);
 
-    isl_id *KillStmtId = isl_id_alloc(S->getIslCtx(), "S2_phantom", NULL);
 
-    isl_space *KillStmtSpace = S->getParamSpace();
-    KillStmtSpace = isl_space_set_tuple_id(KillStmtSpace, isl_dim_set,
-                                           isl_id_copy(KillStmtId));
-    isl_union_set *KillStmtDomain =
-        isl_union_set_from_set(isl_set_universe(isl_space_copy(KillStmtSpace)));
-    isl_space_free(KillStmtSpace);
-
-    isl_schedule *KillSchedule = isl_schedule_from_domain(KillStmtDomain);
-    DEBUG_PRINT("Kill schedule: ", KillSchedule, schedule);
-
-    ScopSchedule = isl_schedule_sequence(ScopSchedule, KillSchedule);
-    DEBUG_PRINT("Scop schedule after adding kill schedule: ", ScopSchedule,
-                schedule);
-
+    // Collect phi nodes in scop.
+    SetVector<isl_id *> KillMemIds;
     for (ScopStmt &Stmt : *S) {
       for (MemoryAccess *MemRef : Stmt) {
         if (MemRef->getLatestKind() == MemoryKind::PHI) {
+          isl_map *AccessRel = MemRef->getLatestAccessRelation();
+          isl_id *KillId = isl_map_get_tuple_id(AccessRel, isl_dim_out);
+          if (KillMemIds.count(KillId) == 0)  {
+              KillMemIds.insert(KillId);
+          } else {
+              isl_id_free(KillId);
+          }
+          isl_map_free(AccessRel);
+
+          errs() << "## Killing: ";
+          MemRef->print(errs());
+          errs() << "---\n";
         }
       }
     }
 
-    // TODO: add must_kill [control] -> { [S_2[] -> __pet_ref_5[]] -> x[] } into
-    // schedule
-    //
-    // [control] -> { [S_2[] -> __pet_ref_5[]] }
-    isl_map *TaggedMustKillStmtMap = isl_map_universe(S->getParamSpace());
-    TaggedMustKillStmtMap =
-        isl_map_set_tuple_id(TaggedMustKillStmtMap, isl_dim_in, KillStmtId);
+    errs() << "\nLength of KillMemIds: " << KillMemIds.size() << "\n";
 
-    // __pet_ref_5
-    isl_id *PhantomRefId =
-        isl_id_alloc(S->getIslCtx(), "__pet_ref_5_phantom", NULL);
+    // Will be modified inside loop/
+    PPCGScop->tagged_must_kills =
+        isl_union_map_from_map(isl_map_universe(S->getParamSpace()));
 
-    // [control] -> { [S_2[] -> Memref_x_0_phi[]] }
-    isl_map *TaggedMustKillRefMap = isl_map_universe(S->getParamSpace());
-    TaggedMustKillRefMap =
-        isl_map_set_tuple_id(TaggedMustKillRefMap, isl_dim_in, PhantomRefId);
+    // Will be modified inside loop
+    PPCGScop->schedule = S->getScheduleTree();
+    DEBUG_PRINT("Scop Schedule (Original)", PPCGScop->schedule, schedule);
 
-    for (ScopStmt &Stmt : *S) {
-      for (MemoryAccess *MemRef : Stmt) {
-        isl_map *AccessRel = MemRef->getLatestAccessRelation();
-        const char *name = isl_map_get_tuple_name(AccessRel, isl_dim_out);
-        isl_id *MemId = isl_map_get_tuple_id(AccessRel, isl_dim_out);
-        isl_map_free(AccessRel);
-        if (!strcmp(name, "MemRef_x_0__phi")) {
-          errs() << "found: " << name << "\n";
-          TaggedMustKillStmtMap = isl_map_set_tuple_id(
-              TaggedMustKillStmtMap, isl_dim_out, isl_id_copy(MemId));
-          TaggedMustKillRefMap =
-              isl_map_set_tuple_id(TaggedMustKillRefMap, isl_dim_out, MemId);
-          break;
-        }
-        isl_id_free(MemId);
-      }
+    for (isl_id *killId : KillMemIds) {
+
+
+      // PPCGScop->tagged_must_kill adjustment
+      // =====================================
+      isl_id *KillStmtId = isl_id_alloc(S->getIslCtx(), "SKill_phantom", NULL);
+
+      // [param] -> { S_2[] -> memref[] }
+      isl_map *TaggedMustKillStmtMap = isl_map_universe(S->getParamSpace());
+      TaggedMustKillStmtMap = isl_map_set_tuple_id(
+          TaggedMustKillStmtMap, isl_dim_in, isl_id_copy(KillStmtId));
+      TaggedMustKillStmtMap = isl_map_set_tuple_id(
+          TaggedMustKillStmtMap, isl_dim_out, isl_id_copy(killId));
+
+      isl_id *PhantomRefId = isl_id_alloc(S->getIslCtx(), "ref_phantom", NULL);
+
+      // [param] -> { phantom_ref[] -> memref[] }
+      isl_map *TaggedMustKillRefMap = isl_map_universe(S->getParamSpace());
+      TaggedMustKillRefMap =
+          isl_map_set_tuple_id(TaggedMustKillRefMap, isl_dim_in, PhantomRefId);
+      TaggedMustKillRefMap = isl_map_set_tuple_id(
+          TaggedMustKillRefMap, isl_dim_out, killId);
+
+      // [param] -> { [Stmt[] -> phantom_ref[]] -> memref[] }
+      isl_map *TaggedMustKill =
+          isl_map_domain_product(TaggedMustKillStmtMap, TaggedMustKillRefMap);
+      PPCGScop->tagged_must_kills = isl_union_map_union(
+          PPCGScop->tagged_must_kills, isl_union_map_from_map(TaggedMustKill));
+
+      // Schedule adjustment
+      // ===================
+
+      isl_space *KillStmtSpace = S->getParamSpace();
+      KillStmtSpace =
+          isl_space_set_tuple_id(KillStmtSpace, isl_dim_set, KillStmtId);
+      isl_union_set *KillStmtDomain =
+          isl_union_set_from_set(isl_set_universe(KillStmtSpace));
+
+      isl_schedule *KillSchedule = isl_schedule_from_domain(KillStmtDomain);
+      DEBUG_PRINT("Kill schedule: ", KillSchedule, schedule);
+
+      
+      PPCGScop->schedule = isl_schedule_sequence(PPCGScop->schedule, KillSchedule);
+      DEBUG_PRINT("Scop schedule after adding kill schedule: ", PPCGScop->schedule,
+                  schedule);
     }
-
-    isl_map *TaggedMustKill =
-        isl_map_domain_product(TaggedMustKillStmtMap, TaggedMustKillRefMap);
-    PPCGScop->tagged_must_kills = isl_union_map_from_map(TaggedMustKill);
-
-    PPCGScop->schedule = ScopSchedule;
 
     PPCGScop->names = getNames();
-
     PPCGScop->pet = nullptr;
 
     compute_tagger(PPCGScop);
