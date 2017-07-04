@@ -49,6 +49,8 @@ extern "C" {
 
 #include "llvm/Support/Debug.h"
 
+#include <sstream>
+
 using namespace polly;
 using namespace llvm;
 
@@ -2148,29 +2150,36 @@ public:
     PPCGScop->dep_order = nullptr;
     PPCGScop->tagged_dep_order = nullptr;
 
-
-
     // Collect phi nodes in scop.
     SmallVector<isl_id *, 4> KillMemIds;
-    for(ScopArrayInfo *sai : S->arrays()) {
-        if (!sai->isPHIKind()) continue;
-        KillMemIds.push_back(sai->getBasePtrId());
+    for (ScopArrayInfo *sai : S->arrays()) {
+      if (!sai->isPHIKind())
+        continue;
+      KillMemIds.push_back(sai->getBasePtrId());
     }
 
-    // Will be modified inside loop
+    // Will be modified inside loop.
     PPCGScop->tagged_must_kills =
-        isl_union_map_from_map(isl_map_universe(S->getParamSpace()));
+        isl_union_map_from_map(isl_map_empty(S->getParamSpace()));
 
-    // Will be modified inside loop
+    // Will be modified once, after loop.
     PPCGScop->schedule = S->getScheduleTree();
     DEBUG_PRINT("Scop Schedule (Original)", PPCGScop->schedule, schedule);
 
-    for (isl_id *killId : KillMemIds) {
 
+    // Collection of all kills that will be grafter onto PPCGScop->schedule.
+    // Initialising this creates an empty node in the schedule node:
+    // - filter: "[control] -> { }"
+    isl_schedule *AllKillsSchedule = nullptr;
+
+    for (isl_id *killId : KillMemIds) {
 
       // PPCGScop->tagged_must_kill adjustment
       // =====================================
-      isl_id *KillStmtId = isl_id_alloc(S->getIslCtx(), "SKill_phantom", NULL);
+      std::stringstream KillStmtSS;
+      KillStmtSS << "Skill_phantom_" << isl_id_get_name(killId);
+      isl_id *KillStmtId =
+          isl_id_alloc(S->getIslCtx(), KillStmtSS.str().c_str(), NULL);
 
       // [param] -> { S_2[] -> memref[] }
       isl_map *TaggedMustKillStmtMap = isl_map_universe(S->getParamSpace());
@@ -2179,14 +2188,17 @@ public:
       TaggedMustKillStmtMap = isl_map_set_tuple_id(
           TaggedMustKillStmtMap, isl_dim_out, isl_id_copy(killId));
 
-      isl_id *PhantomRefId = isl_id_alloc(S->getIslCtx(), "ref_phantom", NULL);
+      std::stringstream PhantomRefSS;
+      PhantomRefSS << "ref_phantom_" << isl_id_get_name(killId);
+      isl_id *PhantomRefId =
+          isl_id_alloc(S->getIslCtx(), PhantomRefSS.str().c_str(), NULL);
 
       // [param] -> { phantom_ref[] -> memref[] }
       isl_map *TaggedMustKillRefMap = isl_map_universe(S->getParamSpace());
       TaggedMustKillRefMap =
           isl_map_set_tuple_id(TaggedMustKillRefMap, isl_dim_in, PhantomRefId);
-      TaggedMustKillRefMap = isl_map_set_tuple_id(
-          TaggedMustKillRefMap, isl_dim_out, killId);
+      TaggedMustKillRefMap =
+          isl_map_set_tuple_id(TaggedMustKillRefMap, isl_dim_out, killId);
 
       // [param] -> { [Stmt[] -> phantom_ref[]] -> memref[] }
       isl_map *TaggedMustKill =
@@ -2204,14 +2216,20 @@ public:
           isl_union_set_from_set(isl_set_universe(KillStmtSpace));
 
       isl_schedule *KillSchedule = isl_schedule_from_domain(KillStmtDomain);
-      DEBUG_PRINT("Kill schedule: ", KillSchedule, schedule);
-
-      
-      PPCGScop->schedule = isl_schedule_sequence(PPCGScop->schedule, KillSchedule);
-      DEBUG_PRINT("Scop schedule after adding kill schedule: ", PPCGScop->schedule,
+      DEBUG_PRINT("Kill schedule (to be sequenced) ", KillSchedule, schedule);
+      DEBUG_PRINT("Scop schedule (to be sequenced) ", PPCGScop->schedule,
                   schedule);
+
+      AllKillsSchedule = AllKillsSchedule
+                             ? isl_schedule_set(AllKillsSchedule, KillSchedule)
+                             : KillSchedule;
+      DEBUG_PRINT("Scop schedule after adding kill schedule: ",
+                  PPCGScop->schedule, schedule);
     }
 
+    if (AllKillsSchedule)
+      PPCGScop->schedule =
+          isl_schedule_sequence(PPCGScop->schedule, AllKillsSchedule);
     PPCGScop->names = getNames();
     PPCGScop->pet = nullptr;
 
