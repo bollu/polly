@@ -150,10 +150,36 @@ static MustKillsInfo computeMustKillsInfo(const Scop &S) {
   // 1. Collect phi nodes in scop.
   SmallVector<isl::id, 4> KillMemIds;
   for (ScopArrayInfo *SAI : S.arrays()) {
-    if (!SAI->isPHIKind())
+    if (SAI->isPHIKind()) {
+      KillMemIds.push_back(isl::manage(SAI->getBasePtrId()));
       continue;
+    }
 
-    KillMemIds.push_back(isl::manage(SAI->getBasePtrId()));
+    const Region &R = S.getRegion();
+    if (!SAI->isArrayKind()) {
+      errs() << "*** Scalar: ";
+      SAI->print(errs());
+      errs() << "\n";
+      errs() << "\tBasePtr: ";
+      SAI->getBasePtr()->print(errs());
+      errs() << "\n";
+      bool containsAllUses = true;
+      for (User *U : SAI->getBasePtr()->users()) {
+        Instruction *I = dyn_cast<Instruction>(U);
+        assert(I && "invalid user");
+        if (!R.contains(I)) {
+          errs() << "scop: " << S.getName()
+                 << "does not contain SAI:" << SAI->getName() << "\n";
+          containsAllUses = false;
+        }
+      }
+
+      if (containsAllUses) {
+        errs() << "scop: " << S.getName()
+               << "DOES contain SAI:" << SAI->getName() << "\n";
+        KillMemIds.push_back(isl::manage(SAI->getBasePtrId()));
+      }
+    }
   }
 
   Info.TaggedMustKills = isl::union_map::empty(isl::space(ParamSpace));
