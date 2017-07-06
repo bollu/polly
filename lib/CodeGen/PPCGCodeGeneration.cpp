@@ -157,26 +157,48 @@ static bool isScalarUsesContainedInScop(const Scop &S,
   return true;
 }
 
+/// We want a type of [0 x ty]*
+bool isFortranScalarPromotedArray(const Scop &S, const ScopArrayInfo *SAI) {
+  assert(SAI->isArrayKind());
+  const Value *BasePtr = SAI->getBasePtr();
+  // ___ * : pattern match on pointer
+  const PointerType *PTy = dyn_cast<PointerType>(BasePtr->getType());
+  if (!PTy)
+    return false;
+  const ArrayType *ArrTy = dyn_cast<ArrayType>(PTy->getElementType());
+  if (!ArrTy)
+    return false;
+  if (ArrTy->getNumElements() > 0)
+    return false;
+
+  errs() << "FOUND FORTRAN SCALAR: \n";
+  SAI->print(errs());
+  SAI->getBasePtr()->print(errs());
+  errs() << "\n==\n";
+  return true;
+}
+
 /// Compute must-kills needed to enable live range reordering with PPCG.
 ///
 /// @params S The Scop to compute live range reordering information
 /// @returns live range reordering information that can be used to setup
 /// PPCG.
 static MustKillsInfo computeMustKillsInfo(const Scop &S) {
-  const isl::space ParamSpace(isl::manage(S.getParamSpace()));
+  // const isl::space ParamSpace(isl::manage(S.getParamSpace()));
   MustKillsInfo Info;
 
   // 1. Collect all ScopArrayInfo that satisfy *any* of the criteria:
   //      1.1 phi nodes in scop.
   //      1.2 scalars that are only used within the scop
-  SmallVector<isl::id, 4> KillMemIds;
+  SmallVector<ScopArrayInfo *, 4> KillMemSAIs;
   for (ScopArrayInfo *SAI : S.arrays()) {
     if (SAI->isPHIKind() ||
-        (SAI->isValueKind() && isScalarUsesContainedInScop(S, SAI)))
-      KillMemIds.push_back(isl::manage(SAI->getBasePtrId()));
+        (SAI->isValueKind() && isScalarUsesContainedInScop(S, SAI)) ||
+        (SAI->isArrayKind() && isFortranScalarPromotedArray(S, SAI)))
+      KillMemSAIs.push_back(SAI);
   }
 
-  Info.TaggedMustKills = isl::union_map::empty(isl::space(ParamSpace));
+  Info.TaggedMustKills = isl::union_map::empty(isl::manage(S.getParamSpace()));
 
   // Initialising KillsSchedule to `isl_set_empty` creates an empty node in the
   // schedule:
@@ -185,7 +207,8 @@ static MustKillsInfo computeMustKillsInfo(const Scop &S) {
   // at the cost of some code complexity.
   Info.KillsSchedule = nullptr;
 
-  for (isl::id &phiId : KillMemIds) {
+  for (ScopArrayInfo *SAI : KillMemSAIs) {
+    isl::id phiId = isl::manage(SAI->getBasePtrId());
     isl::id KillStmtId = isl::id::alloc(
         S.getIslCtx(), std::string("SKill_phantom_").append(phiId.get_name()),
         nullptr);
@@ -204,7 +227,7 @@ static MustKillsInfo computeMustKillsInfo(const Scop &S) {
     //     [param] -> { [Stmt[] -> phantom_ref[]] -> memref[] }
 
     // 2a. [param] -> { S_2[] -> phi_ref[] }
-    isl::map StmtToPhi = isl::map::universe(isl::space(ParamSpace));
+    isl::map StmtToPhi = isl::map::universe(isl::manage(SAI->getSpace()));
     StmtToPhi = StmtToPhi.set_tuple_id(isl::dim::in, isl::id(KillStmtId));
     StmtToPhi = StmtToPhi.set_tuple_id(isl::dim::out, isl::id(phiId));
 
@@ -212,7 +235,12 @@ static MustKillsInfo computeMustKillsInfo(const Scop &S) {
         S.getIslCtx(), std::string("ref_phantom") + phiId.get_name(), nullptr);
 
     // 2b. [param] -> { phantom_ref[] -> memref[] }
-    isl::map PhantomRefToPhi = isl::map::universe(isl::space(ParamSpace));
+    errs() << "SAI: " << SAI->getName() << "->space:\n";
+    auto DumpSpace = SAI->getSpace();
+    isl_space_dump(DumpSpace);
+    isl_space_free(DumpSpace);
+    errs() << "\n\n";
+    isl::map PhantomRefToPhi = isl::map::universe(isl::manage(SAI->getSpace()));
     PhantomRefToPhi = PhantomRefToPhi.set_tuple_id(isl::dim::in, PhantomRefId);
     PhantomRefToPhi = PhantomRefToPhi.set_tuple_id(isl::dim::out, phiId);
 
@@ -223,7 +251,7 @@ static MustKillsInfo computeMustKillsInfo(const Scop &S) {
     // 3. Create the kill schedule of the form:
     //     "[param] -> { Stmt_phantom[] }"
     // Then add this to Info.KillsSchedule.
-    isl::space KillStmtSpace = ParamSpace;
+    isl::space KillStmtSpace = isl::manage(SAI->getSpace());
     KillStmtSpace = KillStmtSpace.set_tuple_id(isl::dim::set, KillStmtId);
     isl::union_set KillStmtDomain = isl::set::universe(KillStmtSpace);
 
@@ -1281,7 +1309,7 @@ static bool isValidFunctionInKernel(llvm::Function *F) {
   assert(F && "F is an invalid pointer");
   // We string compare against the name of the function to allow
   // all variants of the intrinsic "llvm.sqrt.*"
-  return F->isIntrinsic() && F->getName().startswith("llvm.sqrt");
+  return F->isIntrinsic() && (F->getName().startswith("llvm.sqrt"));
 }
 
 /// Do not take `Function` as a subtree value.
@@ -2281,7 +2309,13 @@ public:
     if (KillsInfo.KillsSchedule.get())
       PPCGScop->schedule = isl_schedule_sequence(
           PPCGScop->schedule, KillsInfo.KillsSchedule.take());
+
+    DEBUG(dbgs() << "KillsInfo.TaggedMustKills: :\n";
+          KillsInfo.TaggedMustKills.dump());
     PPCGScop->tagged_must_kills = KillsInfo.TaggedMustKills.take();
+
+    DEBUG(dbgs() << "PPCGScop->schedule: \n";
+          isl_schedule_dump(PPCGScop->schedule));
 
     PPCGScop->names = getNames();
     PPCGScop->pet = nullptr;
@@ -2980,6 +3014,7 @@ public:
               << "Scop contains function which cannot be materialised in a GPU "
                  "kernel. Bailing out.\n";);
       return false;
+      assert(false && "contains invalid function");
     }
 
     auto PPCGScop = createPPCGScop();
