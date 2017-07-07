@@ -157,25 +157,25 @@ static bool isScalarUsesContainedInScop(const Scop &S,
   return true;
 }
 
-/// We want a type of [0 x ty]*
+/// We DO NOT want a type of [0 x ty]*, because arrays look like that
 bool isFortranScalarPromotedArray(const Scop &S, const ScopArrayInfo *SAI) {
   assert(SAI->isArrayKind());
   const Value *BasePtr = SAI->getBasePtr();
   // ___ * : pattern match on pointer
   const PointerType *PTy = dyn_cast<PointerType>(BasePtr->getType());
   if (!PTy)
-    return false;
+    return true;
   const ArrayType *ArrTy = dyn_cast<ArrayType>(PTy->getElementType());
   if (!ArrTy)
-    return false;
+    return true;
   if (ArrTy->getNumElements() > 0)
-    return false;
+    return true;
 
-  errs() << "FOUND FORTRAN SCALAR: \n";
+  errs() << "FOUND FORTRAN ARRAY: \n";
   SAI->print(errs());
   SAI->getBasePtr()->print(errs());
   errs() << "\n==\n";
-  return true;
+  return false;
 }
 
 /// Compute must-kills needed to enable live range reordering with PPCG.
