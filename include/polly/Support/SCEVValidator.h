@@ -65,7 +65,7 @@ void findValues(const llvm::SCEV *Expr, llvm::ScalarEvolution &SE,
 /// Returns true when the SCEV contains references to instructions within the
 /// region.
 ///
-/// @param S The SCEV to analyze.
+/// @param Expr The SCEV to analyze.
 /// @param R The region in which we look for dependences.
 /// @param Scope Location where the value is needed.
 /// @param AllowLoops Whether loop recurrences outside the loop that are in the
