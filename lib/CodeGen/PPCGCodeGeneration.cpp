@@ -99,7 +99,7 @@ static cl::opt<bool>
                               cl::desc("Fail and generate a backtrace if"
                                        " verifyModule fails on the GPU "
                                        " kernel module."),
-                              cl::Hidden, cl::init(false), cl::ZeroOrMore,
+                              cl::Hidden, cl::init(true), cl::ZeroOrMore,
                               cl::cat(PollyCategory));
 
 static cl::opt<std::string>
@@ -1282,7 +1282,9 @@ static bool isValidFunctionInKernel(llvm::Function *F) {
   // We string compare against the name of the function to allow
   // all variants of the intrinsic "llvm.sqrt.*"
 
-  return F->isIntrinsic() && F->getName().startswith("llvm.sqrt");
+  const StringRef Name = F->getName();
+  return F->isIntrinsic() && (Name.startswith("llvm.sqrt") ||
+          Name.startswith("llvm.copysign") || Name.startswith("llvm.fabs") || Name.startswith("llvm.cos"));
 }
 
 /// Do not take `Function` as a subtree value.
@@ -2712,8 +2714,10 @@ public:
     int has_permutable = has_any_permutable_node(Schedule);
 
     if (!has_permutable || has_permutable < 0) {
+      assert(false && "** DOES NOT HAVE PERMUTABLE BANDS");
       Schedule = isl_schedule_free(Schedule);
     } else {
+      DEBUG(dbgs() << "** HAS PERMUTABLE BANDS\n";);
       Schedule = map_to_device(PPCGGen, Schedule);
       PPCGGen->tree = generate_code(PPCGGen, isl_schedule_copy(Schedule));
     }
@@ -2984,6 +2988,7 @@ public:
     // This also allows us to prevent codegen from trying to take the
     // address of an intrinsic function to send to the kernel.
     if (containsInvalidKernelFunction(CurrentScop)) {
+        assert(false && "contains invalid kernel function");
       DEBUG(
           dbgs()
               << "Scop contains function which cannot be materialised in a GPU "

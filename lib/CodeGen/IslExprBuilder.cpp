@@ -695,6 +695,7 @@ Value *IslExprBuilder::createId(__isl_take isl_ast_expr *Expr) {
 
   Id = isl_ast_expr_get_id(Expr);
 
+  errs() << "Id: "; isl_id_dump(Id);
   assert(IDToValue.count(Id) && "Identifier not found");
 
   V = IDToValue[Id];
