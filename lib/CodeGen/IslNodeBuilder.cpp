@@ -322,6 +322,16 @@ void IslNodeBuilder::getReferencesInSubtree(__isl_keep isl_ast_node *For,
   Loops.remove_if([this](const Loop *L) {
     return S.contains(L) || L->contains(S.getEntry());
   });
+
+  SetVector<Value *> ReplacedValues;
+  for (auto V : Values) {
+    if (ValueMap.count(V)) {
+      ReplacedValues.insert(ValueMap[V]);
+    } else {
+      ReplacedValues.insert(V);
+    }
+  }
+  Values = ReplacedValues;
 }
 
 void IslNodeBuilder::updateValues(ValueMapT &NewValues) {
