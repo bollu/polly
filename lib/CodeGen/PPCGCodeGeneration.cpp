@@ -1109,11 +1109,6 @@ void GPUNodeBuilder::createDataTransfer(__isl_take isl_ast_node *TransferStmt,
   else
     HostPtr = ScopArray->getBasePtr();
 
-  if (ValueMap.count(HostPtr))
-    HostPtr = ValueMap[HostPtr];
-  if (ValueMap.count(DevPtr))
-    DevPtr = ValueMap[DevPtr];
-
   if (Offset) {
     HostPtr = Builder.CreatePointerCast(
         HostPtr, ScopArray->getElementType()->getPointerTo());
@@ -1361,10 +1356,19 @@ GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
       make_filter_range(SubtreeValues, isValidSubtreeValue);
   SetVector<Value *> ValidSubtreeValues(ValidSubtreeValuesIt.begin(),
                                         ValidSubtreeValuesIt.end());
+
   SetVector<Function *> ValidSubtreeFunctions(
       getFunctionsFromRawSubtreeValues(SubtreeValues));
 
-  return std::make_pair(ValidSubtreeValues, ValidSubtreeFunctions);
+  SetVector<Value *> MappedSubtreeValues;
+  for (auto Val : ValidSubtreeValues) {
+    if (ValueMap.count(Val)) {
+      MappedSubtreeValues.insert(ValueMap[Val]);
+    } else {
+      MappedSubtreeValues.insert(Val);
+    }
+  }
+  return std::make_pair(MappedSubtreeValues, ValidSubtreeFunctions);
 }
 
 void GPUNodeBuilder::clearDominators(Function *F) {
@@ -1512,9 +1516,6 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_set, i);
     Value *Val = IDToValue[Id];
     isl_id_free(Id);
-    if (ValueMap.count(Val)) {
-      Val = ValueMap[Val];
-    }
 
     ArgSizes[Index] = computeSizeInBytes(Val->getType());
 
@@ -1531,9 +1532,8 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
   for (long i = 0; i < NumVars; i++) {
     isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_param, i);
     Value *Val = IDToValue[Id];
-    if (ValueMap.count(Val)) {
+    if (ValueMap.count(Val))
       Val = ValueMap[Val];
-    }
     isl_id_free(Id);
 
     ArgSizes[Index] = computeSizeInBytes(Val->getType());
@@ -1548,9 +1548,6 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
   }
 
   for (auto Val : SubtreeValues) {
-    if (ValueMap.count(Val)) {
-      Val = ValueMap[Val];
-    }
     ArgSizes[Index] = computeSizeInBytes(Val->getType());
 
     Instruction *Param =
@@ -2981,7 +2978,6 @@ public:
     SE = &getAnalysis<ScalarEvolutionWrapperPass>().getSE();
     DL = &S->getRegion().getEntry()->getModule()->getDataLayout();
     RI = &getAnalysis<RegionInfoPass>().getRegionInfo();
-
     // We currently do not support functions other than intrinsics inside
     // kernels, as code generation will need to offload function calls to the
     // kernel. This may lead to a kernel trying to call a function on the host.
