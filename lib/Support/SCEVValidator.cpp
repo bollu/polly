@@ -481,7 +481,14 @@ public:
         return false;
 
       if (Inst) {
-        // Do not consider invariant loads.
+        // When we invariant load hoist a load, we first make sure that there
+        // can be no dependences within the Scop region. So, we should not
+        // consider scalar dependences to `LoadInst`s that are invariant load
+        // hoisted.
+        //
+        // If this is not present, then we create data dependences which are
+        // strictly not necessary by tracking the invariant load as a scalar in
+        // the region.
         LoadInst *LI = dyn_cast<LoadInst>(Inst);
         if (LI && ILS.count(LI) > 0)
           return false;

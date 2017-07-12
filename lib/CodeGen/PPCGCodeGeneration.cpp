@@ -1281,7 +1281,6 @@ static bool isValidFunctionInKernel(llvm::Function *F) {
   assert(F && "F is an invalid pointer");
   // We string compare against the name of the function to allow
   // all variants of the intrinsic "llvm.sqrt.*"
-
   return F->isIntrinsic() && F->getName().startswith("llvm.sqrt");
 }
 
@@ -1356,19 +1355,19 @@ GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
       make_filter_range(SubtreeValues, isValidSubtreeValue);
   SetVector<Value *> ValidSubtreeValues(ValidSubtreeValuesIt.begin(),
                                         ValidSubtreeValuesIt.end());
-
   SetVector<Function *> ValidSubtreeFunctions(
       getFunctionsFromRawSubtreeValues(SubtreeValues));
 
-  SetVector<Value *> MappedSubtreeValues;
-  for (auto Val : ValidSubtreeValues) {
-    if (ValueMap.count(Val)) {
-      MappedSubtreeValues.insert(ValueMap[Val]);
-    } else {
-      MappedSubtreeValues.insert(Val);
-    }
+  // @see IslNodeBuilder::getReferencesInSubtree
+  SetVector<Value *> ReplacedValues;
+  for (Value *V : ValidSubtreeValues) {
+    auto It = ValueMap.find(V);
+    if (It == ValueMap.end())
+      ReplacedValues.insert(V);
+    else
+      ReplacedValues.insert(It->second);
   }
-  return std::make_pair(MappedSubtreeValues, ValidSubtreeFunctions);
+  return std::make_pair(ReplacedValues, ValidSubtreeFunctions);
 }
 
 void GPUNodeBuilder::clearDominators(Function *F) {
@@ -1443,7 +1442,7 @@ void GPUNodeBuilder::insertStoreParameter(Instruction *Parameters,
 Value *
 GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
                                        SetVector<Value *> SubtreeValues) {
-  const int NumArgs = F->arg_size();
+  int NumArgs = F->arg_size();
   std::vector<int> ArgSizes(NumArgs);
 
   Type *ArrayTy = ArrayType::get(Builder.getInt8PtrTy(), 2 * NumArgs);
@@ -1511,7 +1510,7 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     Index++;
   }
 
-  const int NumHostIters = isl_space_dim(Kernel->space, isl_dim_set);
+  int NumHostIters = isl_space_dim(Kernel->space, isl_dim_set);
   for (long i = 0; i < NumHostIters; i++) {
     isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_set, i);
     Value *Val = IDToValue[Id];
@@ -1528,7 +1527,7 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     Index++;
   }
 
-  const int NumVars = isl_space_dim(Kernel->space, isl_dim_param);
+  int NumVars = isl_space_dim(Kernel->space, isl_dim_param);
   for (long i = 0; i < NumVars; i++) {
     isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_param, i);
     Value *Val = IDToValue[Id];
@@ -2978,6 +2977,7 @@ public:
     SE = &getAnalysis<ScalarEvolutionWrapperPass>().getSE();
     DL = &S->getRegion().getEntry()->getModule()->getDataLayout();
     RI = &getAnalysis<RegionInfoPass>().getRegionInfo();
+
     // We currently do not support functions other than intrinsics inside
     // kernels, as code generation will need to offload function calls to the
     // kernel. This may lead to a kernel trying to call a function on the host.
