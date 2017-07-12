@@ -323,13 +323,16 @@ void IslNodeBuilder::getReferencesInSubtree(__isl_keep isl_ast_node *For,
     return S.contains(L) || L->contains(S.getEntry());
   });
 
+  // Contains Values that may need to be replaced with other values
+  // due to replacements from the ValueMap. We should make sure
+  // that we return correctly remapped values.
   SetVector<Value *> ReplacedValues;
-  for (auto V : Values) {
-    if (ValueMap.count(V)) {
-      ReplacedValues.insert(ValueMap[V]);
-    } else {
+  for (Value *V : Values) {
+    auto It = ValueMap.find(V);
+    if (It == ValueMap.end())
       ReplacedValues.insert(V);
-    }
+    else
+      ReplacedValues.insert(It->second);
   }
   Values = ReplacedValues;
 }
