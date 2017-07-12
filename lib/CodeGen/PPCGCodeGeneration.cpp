@@ -1637,14 +1637,14 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
   createKernelFunction(Kernel, SubtreeValues, SubtreeFunctions);
   setupKernelSubtreeFunctions(SubtreeFunctions);
 
-  create(isl_ast_node_copy(Kernel->tree));
+  // create(isl_ast_node_copy(Kernel->tree));
 
   finalizeKernelArguments(Kernel);
-  Function *F = Builder.GetInsertBlock()->getParent();
-  addCUDAAnnotations(F->getParent(), BlockDimX, BlockDimY, BlockDimZ);
-  clearDominators(F);
-  clearScalarEvolution(F);
-  clearLoops(F);
+  // Function *F = Builder.GetInsertBlock()->getParent();
+  // addCUDAAnnotations(F->getParent(), BlockDimX, BlockDimY, BlockDimZ);
+  // clearDominators(F);
+  // clearScalarEvolution(F);
+  // clearLoops(F);
 
   IDToValue = HostIDs;
 
@@ -1657,6 +1657,7 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
     S.invalidateScopArrayInfo(BasePtr, MemoryKind::Array);
   LocalArrays.clear();
 
+  /*
   std::string ASMString = finalizeKernelFunction();
   Builder.SetInsertPoint(&HostInsertPoint);
   Value *Parameters = createLaunchParameters(Kernel, F, SubtreeValues);
@@ -1672,6 +1673,7 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
   createCallLaunchKernel(GPUKernel, GridDimX, GridDimY, BlockDimX, BlockDimY,
                          BlockDimZ, Parameters);
   createCallFreeKernel(GPUKernel);
+  */
 
   for (auto Id : KernelIds)
     isl_id_free(Id);
@@ -1899,6 +1901,9 @@ void GPUNodeBuilder::finalizeKernelArguments(ppcg_kernel *Kernel) {
     Value *Val = Builder.CreateLoad(Alloca);
     Builder.CreateStore(Val, TypedArgPtr);
     StoredScalar = true;
+
+    SAI->dump();
+
 
     Arg++;
   }
