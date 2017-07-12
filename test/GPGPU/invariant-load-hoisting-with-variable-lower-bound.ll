@@ -1,5 +1,9 @@
-; RUN: opt %loadPolly -analyze -polly-use-llvm-names -polly-scops -polly-invariant-load-hoisting < %s | FileCheck %s -check-prefix=SCOP
-; RUN: opt %loadPolly -S -polly-use-llvm-names -polly-codegen-ppcg -polly-invariant-load-hoisting < %s | FileCheck %s -check-prefix=HOST-IR
+; RUN: opt %loadPolly -analyze -polly-use-llvm-names -polly-scops \
+; RUN: -polly-invariant-load-hoisting < %s | FileCheck %s -check-prefix=SCOP
+
+
+; RUN: opt %loadPolly -S -polly-use-llvm-names -polly-codegen-ppcg \
+; RUN: -polly-invariant-load-hoisting < %s | FileCheck %s -check-prefix=HOST-IR
 
 ; REQUIRES: pollyacc
 
@@ -13,11 +17,9 @@
 ; SCOP-NEXT:         Execution Context: [beginval] -> {  :  }
 ; SCOP-NEXT: }
 
-
-; Check that kernel launch is generated in host IR.
-; the declare would not be generated unless a call to a kernel exists.
+; Check that the kernel launch is generated in the host IR.
+; This declaration would not have been generated unless a kernel launch exists.
 ; HOST-IR: declare void @polly_launchKernel(i8*, i32, i32, i32, i32, i32, i8*)
-target datalayout = "e-m:o-p:32:32-f64:32:64-f80:128-n8:16:32-S128"
 
 ; 
 ; void f(int *begin, int *arr) {
@@ -26,6 +28,7 @@ target datalayout = "e-m:o-p:32:32-f64:32:64-f80:128-n8:16:32-S128"
 ;     }
 ; }
 
+target datalayout = "e-m:o-p:32:32-f64:32:64-f80:128-n8:16:32-S128"
 
 define void @f(i32* %begin, i32* %arr) {
 entry:
