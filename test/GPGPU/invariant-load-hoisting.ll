@@ -26,6 +26,7 @@
 
 ; Check that we generate correct GPU code in case of invariant load hoisting.
 ;
+;
 ;    static const int N = 3000;
 ;
 ;    void f(int A[N][N], int *invariant, int B[N][N], int n) {

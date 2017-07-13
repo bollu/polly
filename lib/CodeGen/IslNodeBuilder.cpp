@@ -326,6 +326,9 @@ void IslNodeBuilder::getReferencesInSubtree(__isl_keep isl_ast_node *For,
   // Contains Values that may need to be replaced with other values
   // due to replacements from the ValueMap. We should make sure
   // that we return correctly remapped values.
+  // NOTE: this code path is tested by:
+  //     1.  test/Isl/CodeGen/OpenMP/single_loop_with_loop_invariant_baseptr.ll
+  //     2.  test/Isl/CodeGen/OpenMP/loop-body-references-outer-values-3.ll
   SetVector<Value *> ReplacedValues;
   for (Value *V : Values) {
     auto It = ValueMap.find(V);

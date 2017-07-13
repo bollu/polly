@@ -1442,7 +1442,7 @@ void GPUNodeBuilder::insertStoreParameter(Instruction *Parameters,
 Value *
 GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
                                        SetVector<Value *> SubtreeValues) {
-  int NumArgs = F->arg_size();
+  const int NumArgs = F->arg_size();
   std::vector<int> ArgSizes(NumArgs);
 
   Type *ArrayTy = ArrayType::get(Builder.getInt8PtrTy(), 2 * NumArgs);
@@ -1511,6 +1511,7 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
   }
 
   int NumHostIters = isl_space_dim(Kernel->space, isl_dim_set);
+
   for (long i = 0; i < NumHostIters; i++) {
     isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_set, i);
     Value *Val = IDToValue[Id];
@@ -1528,6 +1529,7 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
   }
 
   int NumVars = isl_space_dim(Kernel->space, isl_dim_param);
+
   for (long i = 0; i < NumVars; i++) {
     isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_param, i);
     Value *Val = IDToValue[Id];
