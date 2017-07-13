@@ -195,7 +195,10 @@ Value *BlockGenerator::getNewValue(ScopStmt &Stmt, Value *Old, ValueMapT &BBMap,
     // redefined locally (which will be ignored anyway). That is, the following
     // assertion should apply: assert(!BBMap.count(Old))
 
-    New = lookupGlobally(Old);
+    if ((New = lookupGlobally(Old)))
+      break;
+    else
+      New = Old;
     break;
 
   case VirtualUse::Intra:
@@ -355,6 +358,10 @@ void BlockGenerator::copyInstruction(ScopStmt &Stmt, Instruction *Inst,
     return;
 
   if (auto *Load = dyn_cast<LoadInst>(Inst)) {
+    // If a load is an invariant load, do not copy the load.
+    if (Stmt.getParent()->lookupInvariantEquivClass(Load))
+      return;
+
     Value *NewLoad = generateArrayLoad(Stmt, Load, BBMap, LTS, NewAccesses);
     // Compute NewLoad before its insertion in BBMap to make the insertion
     // deterministic.
