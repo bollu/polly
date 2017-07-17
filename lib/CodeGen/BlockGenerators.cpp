@@ -241,19 +241,6 @@ void BlockGenerator::copyInstScalar(ScopStmt &Stmt, Instruction *Inst,
     NewInst->setName("p_" + Inst->getName());
 }
 
-static bool isInvariantAccess(Scop *S, MemoryAccess *MemAcc,
-                              ValueMapT &GlobalMap) {
-  auto InvEquivClasses = S->getInvariantAccesses();
-  for (auto EquivClass : InvEquivClasses) {
-    for (auto CurMemAcc : EquivClass.InvariantAccesses) {
-      if (MemAcc == CurMemAcc) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
 Value *
 BlockGenerator::generateLocationAccessed(ScopStmt &Stmt, MemAccInst Inst,
                                          ValueMapT &BBMap, LoopToScevMapT &LTS,
@@ -553,8 +540,7 @@ void BlockGenerator::generateScalarLoads(
     ScopStmt &Stmt, LoopToScevMapT &LTS, ValueMapT &BBMap,
     __isl_keep isl_id_to_ast_expr *NewAccesses) {
   for (MemoryAccess *MA : Stmt) {
-    if (MA->isOriginalArrayKind() || MA->isWrite() ||
-        isInvariantAccess(Stmt.getParent(), MA, GlobalMap))
+    if (MA->isOriginalArrayKind() || MA->isWrite())
       continue;
 
 #ifndef NDEBUG
