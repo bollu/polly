@@ -1420,17 +1420,6 @@ public:
   /// @returns The unique array memory access related to Inst or nullptr if
   ///          no array access exists
   MemoryAccess *getArrayAccessOrNULLFor(const Instruction *Inst) const {
-    /*
-    errs() << "### InstructionToAccess (" << InstructionToAccess.size() <<
-    "):\n"; for (auto It : InstructionToAccess) { errs() << "key:\n";
-        It.first->print(errs());
-        errs()  << "\nvalues:\n";
-        auto Accesses = It.second;
-        for (auto Acc : Accesses) { errs() << "\t-"; Acc->print(errs()); errs()
-    << "\n"; } errs() << "\n\n";
-    }
-    */
-
     auto It = InstructionToAccess.find(Inst);
     if (It == InstructionToAccess.end())
       return nullptr;
@@ -1453,7 +1442,12 @@ public:
   ///
   /// @param Inst The instruction for which to look up the access.
   /// @returns The unique array memory access related to Inst.
-  MemoryAccess &getArrayAccessFor(const Instruction *Inst) const;
+  MemoryAccess &getArrayAccessFor(const Instruction *Inst) const {
+    MemoryAccess *ArrayAccess = getArrayAccessOrNULLFor(Inst);
+
+    assert(ArrayAccess && "No array access found for instruction!");
+    return *ArrayAccess;
+  }
 
   /// Return the MemoryAccess that writes the value of an instruction
   ///        defined in this statement, or nullptr if not existing, respectively

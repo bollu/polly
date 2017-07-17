@@ -241,40 +241,12 @@ void BlockGenerator::copyInstScalar(ScopStmt &Stmt, Instruction *Inst,
     NewInst->setName("p_" + Inst->getName());
 }
 
-static bool isInvariantAccess(Scop *S, MemAccInst Inst, ValueMapT &GlobalMap) {
-  errs() << "### isInvariantAccess:" << __LINE__ << "\n";
-  Value *BasePtr = Inst.getPointerOperand();
-  errs() << "- baseptr: " << *BasePtr << "\n";
-
-  errs() << "###### Invariant Accesses:\n";
-  auto InvEquivClasses = S->getInvariantAccesses();
-  for (auto EquivClass : InvEquivClasses) {
-    errs() << "\t-identifying ptr: " << *(EquivClass.IdentifyingPointer)
-           << "\n";
-
-    for (auto CurAccess : EquivClass.InvariantAccesses) {
-      Value *CurBasePtr = CurAccess->getLatestScopArrayInfo()->getBasePtr();
-      errs() << "\t-access: " << *BasePtr << "\n";
-      if (CurBasePtr == BasePtr) {
-        errs() << "\tfound.\n";
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
 static bool isInvariantAccess(Scop *S, MemoryAccess *MemAcc,
                               ValueMapT &GlobalMap) {
-  errs() << "### isInvariantAccess:" << __LINE__ << "\n";
   auto InvEquivClasses = S->getInvariantAccesses();
   for (auto EquivClass : InvEquivClasses) {
-    errs() << "\t-identifying ptr: " << *(EquivClass.IdentifyingPointer)
-           << "\n";
-
     for (auto CurMemAcc : EquivClass.InvariantAccesses) {
       if (MemAcc == CurMemAcc) {
-        errs() << "\tfound.\n";
         return true;
       }
     }
@@ -286,7 +258,7 @@ Value *
 BlockGenerator::generateLocationAccessed(ScopStmt &Stmt, MemAccInst Inst,
                                          ValueMapT &BBMap, LoopToScevMapT &LTS,
                                          isl_id_to_ast_expr *NewAccesses) {
-  MemoryAccess &MA = Stmt.getArrayAccessFor(Inst);
+  const MemoryAccess &MA = Stmt.getArrayAccessFor(Inst);
   return generateLocationAccessed(
       Stmt, getLoopForStmt(Stmt),
       Inst.isNull() ? nullptr : Inst.getPointerOperand(), BBMap, LTS,
@@ -341,14 +313,6 @@ Loop *BlockGenerator::getLoopForStmt(const ScopStmt &Stmt) const {
 Value *BlockGenerator::generateArrayLoad(ScopStmt &Stmt, LoadInst *Load,
                                          ValueMapT &BBMap, LoopToScevMapT &LTS,
                                          isl_id_to_ast_expr *NewAccesses) {
-  errs() << "### generateArrayLoad:\n";
-  errs() << "######Inst:\n";
-  Load->print(errs());
-  errs() << "\n";
-  if (isInvariantAccess(Stmt.getParent(), MemAccInst(Load), GlobalMap)) {
-    errs() << "- load is an invariant load.\n";
-  }
-  errs() << "\n\n\n";
   if (Value *PreloadLoad = GlobalMap.lookup(Load))
     return PreloadLoad;
 
@@ -394,10 +358,6 @@ bool BlockGenerator::canSyntheziseInStmt(ScopStmt &Stmt, Instruction *Inst) {
 void BlockGenerator::copyInstruction(ScopStmt &Stmt, Instruction *Inst,
                                      ValueMapT &BBMap, LoopToScevMapT &LTS,
                                      isl_id_to_ast_expr *NewAccesses) {
-  errs() << "### CopyInstruction:\n";
-  errs() << "- ";
-  Inst->print(errs());
-  errs() << "\n\n\n";
   // Terminator instructions control the control flow. They are explicitly
   // expressed in the clast and do not need to be copied.
   if (Inst->isTerminator())
@@ -463,14 +423,6 @@ void BlockGenerator::copyStmt(ScopStmt &Stmt, LoopToScevMapT &LTS,
   ValueMapT BBMap;
 
   BasicBlock *BB = Stmt.getBasicBlock();
-
-  errs() << "### copyStmt: " << __LINE__ << "\n";
-  errs() << "###### Stmt:\n";
-  Stmt.print(errs());
-  errs() << "###### BB:\n";
-  BB->print(errs());
-  errs() << "\n\n\n";
-
   copyBB(Stmt, BB, BBMap, LTS, NewAccesses);
   removeDeadInstructions(BB, BBMap);
 }
@@ -485,7 +437,6 @@ BasicBlock *BlockGenerator::splitBB(BasicBlock *BB) {
 BasicBlock *BlockGenerator::copyBB(ScopStmt &Stmt, BasicBlock *BB,
                                    ValueMapT &BBMap, LoopToScevMapT &LTS,
                                    isl_id_to_ast_expr *NewAccesses) {
-  errs() << "### copyBB:" << __LINE__ << "\n";
   BasicBlock *CopyBB = splitBB(BB);
   Builder.SetInsertPoint(&CopyBB->front());
   generateScalarLoads(Stmt, LTS, BBMap, NewAccesses);
@@ -601,7 +552,6 @@ void BlockGenerator::handleOutsideUsers(const Scop &S, ScopArrayInfo *Array) {
 void BlockGenerator::generateScalarLoads(
     ScopStmt &Stmt, LoopToScevMapT &LTS, ValueMapT &BBMap,
     __isl_keep isl_id_to_ast_expr *NewAccesses) {
-  errs() << "### generateScalarLoads:" << __LINE__ << "\n";
   for (MemoryAccess *MA : Stmt) {
     if (MA->isOriginalArrayKind() || MA->isWrite() ||
         isInvariantAccess(Stmt.getParent(), MA, GlobalMap))
@@ -1327,12 +1277,6 @@ void VectorBlockGenerator::copyStmt(
 
   generateScalarVectorLoads(Stmt, VectorBlockMap);
 
-  errs() << "### copyStmt";
-  errs() << "###### Stmt:\n";
-  Stmt.print(errs());
-  errs() << "###### BB\n";
-  BB->print(errs());
-  errs() << "\n\n\n";
   for (Instruction &Inst : *BB)
     copyInstruction(Stmt, &Inst, VectorBlockMap, ScalarBlockMap, NewAccesses);
 
@@ -1397,7 +1341,6 @@ static BasicBlock *findExitDominator(DominatorTree &DT, Region *R) {
 
 void RegionGenerator::copyStmt(ScopStmt &Stmt, LoopToScevMapT &LTS,
                                isl_id_to_ast_expr *IdToAstExp) {
-
   assert(Stmt.isRegionStmt() &&
          "Only region statements can be copied by the region generator");
 
