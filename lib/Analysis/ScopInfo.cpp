@@ -1279,6 +1279,12 @@ __isl_give isl_map *ScopStmt::getSchedule() const {
   return M;
 }
 
+MemoryAccess &ScopStmt::getArrayAccessFor(const Instruction *Inst) const {
+  MemoryAccess *ArrayAccess = getArrayAccessOrNULLFor(Inst);
+  assert(ArrayAccess && "no array access found");
+  return *ArrayAccess;
+}
+
 void ScopStmt::restrictDomain(__isl_take isl_set *NewDomain) {
   assert(isl_set_is_subset(NewDomain, Domain) &&
          "New domain is not a subset of old domain!");
