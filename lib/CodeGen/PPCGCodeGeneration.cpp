@@ -159,6 +159,11 @@ static bool isScalarUsesContainedInScop(const Scop &S,
   return true;
 }
 
+static bool canKillSAI(const Scop &S, const ScopArrayInfo *SAI) {
+  return (SAI->isPHIKind() ||
+          (SAI->isValueKind() && isScalarUsesContainedInScop(S, SAI)));
+}
+
 /// Compute must-kills needed to enable live range reordering with PPCG.
 ///
 /// @params S The Scop to compute live range reordering information
@@ -173,8 +178,7 @@ static MustKillsInfo computeMustKillsInfo(const Scop &S) {
   //      1.2 scalars that are only used within the scop
   SmallVector<isl::id, 4> KillMemIds;
   for (ScopArrayInfo *SAI : S.arrays()) {
-    if (SAI->isPHIKind() ||
-        (SAI->isValueKind() && isScalarUsesContainedInScop(S, SAI)))
+    if (canKillSAI(S, SAI))
       KillMemIds.push_back(isl::manage(SAI->getBasePtrId()));
   }
 
@@ -1902,7 +1906,11 @@ void GPUNodeBuilder::finalizeKernelArguments(ppcg_kernel *Kernel) {
     Value *TypedArgPtr = Builder.CreatePointerCast(ArgPtr, TypePtr);
     Value *Val = Builder.CreateLoad(Alloca);
     Builder.CreateStore(Val, TypedArgPtr);
-    StoredScalar = true;
+    // We only care about a scalar if there are reads / writes to it
+    // after the scop: this condition is captured by checking if it cannot
+    // be killed.
+    if (!canKillSAI(S, SAI))
+      StoredScalar = true;
 
     Arg++;
   }
