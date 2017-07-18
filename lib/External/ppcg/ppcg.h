@@ -121,4 +121,7 @@ __isl_give isl_schedule *ppcg_compute_schedule(
 	__isl_take isl_schedule_constraints *sc,
 	__isl_keep isl_schedule *schedule, struct ppcg_options *options);
 
+void compute_tagger(struct ppcg_scop *ps);
+void compute_dependences(struct ppcg_scop *scop);
+void *ppcg_scop_free(struct ppcg_scop *ps);
 #endif
