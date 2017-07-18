@@ -12,7 +12,9 @@
 
 const char *ppcg_base_name(const char *filename);
 int ppcg_extract_base_name(char *name, const char *input);
-
+#define DEBUG_PRINT(NAME, OBJ, TYPE) {fprintf(stderr, "@@@ %s:%d %s\n", __FILE__, __LINE__, #NAME); \
+                                          if(OBJ == NULL) fprintf(stderr, "nullptr"); else isl_ ## TYPE ## _dump(OBJ); \
+                                          fprintf(stderr, "\n---\n");};
 /* Representation of the scop for use inside PPCG.
  *
  * "options" are the options specified by the user.

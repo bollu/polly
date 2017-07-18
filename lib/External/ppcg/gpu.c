@@ -2539,6 +2539,8 @@ static int any_global_or_shared_sync_writes(struct ppcg_kernel *kernel)
 		return 0;
 
 	writes = collect_non_private_tagged_writes(kernel);
+    printf("@@@writes:\n"); isl_union_set_dump(writes);
+    printf("@@@kernel->sync_writes:\n"); isl_union_set_dump(kernel->sync_writes);
 	disjoint = isl_union_set_is_disjoint(kernel->sync_writes, writes);
 	isl_union_set_free(writes);
 
@@ -2974,6 +2976,7 @@ static __isl_give isl_schedule_node *add_sync(struct ppcg_kernel *kernel,
 	int need_sync;
 
 	need_sync = any_global_or_shared_sync_writes(kernel);
+    printf("@@@need_sync: %d\n", need_sync);
 	if (need_sync < 0)
 		return isl_schedule_node_free(node);
 	if (!need_sync)
