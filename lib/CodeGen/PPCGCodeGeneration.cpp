@@ -1906,11 +1906,7 @@ void GPUNodeBuilder::finalizeKernelArguments(ppcg_kernel *Kernel) {
     Value *TypedArgPtr = Builder.CreatePointerCast(ArgPtr, TypePtr);
     Value *Val = Builder.CreateLoad(Alloca);
     Builder.CreateStore(Val, TypedArgPtr);
-    // We only care about a scalar if there are reads / writes to it
-    // after the scop: this condition is captured by checking if it cannot
-    // be killed.
-    if (!canKillSAI(S, SAI))
-      StoredScalar = true;
+    StoredScalar = true;
 
     Arg++;
   }
