@@ -2173,9 +2173,6 @@ public:
   ///
   /// a tagged access has the form
   ///
-  ///   [Stmt[i,j,k] -> id[]] -> Array[f_0(i,j,k), f_1(i,j,k)]
-  ///
-  /// where 'id' is an additional space that references the memory access that
   /// triggered the access.
   ///
   /// @param AccessTy The type of the memory accesses to collect.
@@ -2311,6 +2308,9 @@ public:
     PPCGScop->dep_forced = nullptr;
     PPCGScop->dep_order = nullptr;
     PPCGScop->tagged_dep_order = nullptr;
+
+    errs() << "tagged_must_kills: ";
+    isl_union_map_dump(PPCGScop->tagged_must_kills);
 
     compute_tagger(PPCGScop);
     compute_dependences(PPCGScop);
@@ -2515,25 +2515,28 @@ public:
 
       gpu_array_info &PPCGArray = PPCGProg->array[i];
 
+      //extract_array_info
       PPCGArray.space = Array->getSpace();
+      PPCGArray.name = strdup(Array->getName().c_str());
+      PPCGArray.n_index = Array->getNumberOfDimensions();
+      PPCGArray.linearize = false;
+
       PPCGArray.type = strdup(TypeName.c_str());
       PPCGArray.size = Array->getElementType()->getPrimitiveSizeInBits() / 8;
-      PPCGArray.name = strdup(Array->getName().c_str());
-      PPCGArray.extent = nullptr;
-      PPCGArray.n_index = Array->getNumberOfDimensions();
+	  // is this incorrect?
+      PPCGArray.local = false;
+      PPCGArray.has_compound_element = false;
+      PPCGArray.read_only_scalar =
+          Array->isReadOnly() && Array->getNumberOfDimensions() == 0;
+
+      PPCGArray.accessed = true;
       PPCGArray.bound =
           isl_alloc_array(S->getIslCtx(), isl_pw_aff *, PPCGArray.n_index);
       PPCGArray.extent = getExtent(Array);
       PPCGArray.n_ref = 0;
       PPCGArray.refs = nullptr;
-      PPCGArray.accessed = true;
-      PPCGArray.read_only_scalar =
-          Array->isReadOnly() && Array->getNumberOfDimensions() == 0;
-      PPCGArray.has_compound_element = false;
-      PPCGArray.local = false;
       PPCGArray.declare_local = false;
       PPCGArray.global = false;
-      PPCGArray.linearize = false;
       PPCGArray.dep_order = nullptr;
       PPCGArray.user = Array;
 
@@ -2710,6 +2713,7 @@ public:
     PPCGGen->print = nullptr;
     PPCGGen->print_user = nullptr;
     PPCGGen->build_ast_expr = &pollyBuildAstExprForStmt;
+
     PPCGGen->prog = PPCGProg;
     PPCGGen->tree = nullptr;
     PPCGGen->types.n = 0;
