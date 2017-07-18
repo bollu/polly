@@ -1916,8 +1916,10 @@ void GPUNodeBuilder::finalizeKernelArguments(ppcg_kernel *Kernel) {
     /// code might be incorrect, if we only store at the end of the kernel.
     /// To support this case we need to store these scalars back at each
     /// memory store or at least before each kernel barrier.
-    if (Kernel->n_block != 0 || Kernel->n_grid != 0)
+    if (Kernel->n_block != 0 || Kernel->n_grid != 0) {
+      // assert(false && "stored scalar");
       BuildSuccessful = 0;
+    }
 }
 
 void GPUNodeBuilder::createKernelVariables(ppcg_kernel *Kernel, Function *FN) {
@@ -2264,47 +2266,51 @@ public:
   ///
   /// @returns A new ppcg scop.
   ppcg_scop *createPPCGScop() {
+
+    MustKillsInfo KillsInfo = computeMustKillsInfo(*S);
+
     auto PPCGScop = (ppcg_scop *)malloc(sizeof(ppcg_scop));
 
+    PPCGScop->names = getNames();
     PPCGScop->options = createPPCGOptions();
     // enable live range reordering
     PPCGScop->options->live_range_reordering = 1;
-
     PPCGScop->start = 0;
     PPCGScop->end = 0;
-
     PPCGScop->context = S->getContext();
     PPCGScop->domain = S->getDomains();
     PPCGScop->call = nullptr;
     PPCGScop->tagged_reads = getTaggedReads();
     PPCGScop->reads = S->getReads();
-    PPCGScop->live_in = nullptr;
     PPCGScop->tagged_may_writes = getTaggedMayWrites();
     PPCGScop->may_writes = S->getWrites();
     PPCGScop->tagged_must_writes = getTaggedMustWrites();
     PPCGScop->must_writes = S->getMustWrites();
-    PPCGScop->live_out = nullptr;
-    PPCGScop->tagger = nullptr;
+    PPCGScop->tagged_must_kills = KillsInfo.TaggedMustKills.take();
+    // PPCGScop->must_kills = pet_scop_get_must_kills(scop);
+    PPCGScop->schedule = S->getScheduleTree();
+    // If we have something non-trivial to kill, add it to the schedule
+    if (KillsInfo.KillsSchedule.get())
+      PPCGScop->schedule = isl_schedule_sequence(
+          PPCGScop->schedule, KillsInfo.KillsSchedule.take());
+
+    PPCGScop->pet = nullptr;
+    // Maybe this is too conservative.
     PPCGScop->independence =
         isl_union_map_empty(isl_set_get_space(PPCGScop->context));
+    // for (i = 0; i < scop->n_independence; ++i)
+    // ps->independence = isl_union_map_union(ps->independence,
+    //     isl_union_map_copy(scop->independences[i]->filter));
+
+    PPCGScop->live_in = nullptr;
+    PPCGScop->live_out = nullptr;
+    PPCGScop->tagger = nullptr;
     PPCGScop->dep_flow = nullptr;
     PPCGScop->tagged_dep_flow = nullptr;
     PPCGScop->dep_false = nullptr;
     PPCGScop->dep_forced = nullptr;
     PPCGScop->dep_order = nullptr;
     PPCGScop->tagged_dep_order = nullptr;
-
-    PPCGScop->schedule = S->getScheduleTree();
-
-    MustKillsInfo KillsInfo = computeMustKillsInfo(*S);
-    // If we have something non-trivial to kill, add it to the schedule
-    if (KillsInfo.KillsSchedule.get())
-      PPCGScop->schedule = isl_schedule_sequence(
-          PPCGScop->schedule, KillsInfo.KillsSchedule.take());
-    PPCGScop->tagged_must_kills = KillsInfo.TaggedMustKills.take();
-
-    PPCGScop->names = getNames();
-    PPCGScop->pet = nullptr;
 
     compute_tagger(PPCGScop);
     compute_dependences(PPCGScop);
