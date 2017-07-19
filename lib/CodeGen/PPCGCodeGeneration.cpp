@@ -2141,6 +2141,7 @@ public:
 
     Options->debug = DebugOptions;
 
+    Options->group_chains = false;
     Options->reschedule = true;
     Options->scale_tile_loops = false;
     Options->wrap = false;
@@ -2149,7 +2150,10 @@ public:
     Options->ctx = nullptr;
     Options->sizes = nullptr;
 
+    Options->tile = true;
     Options->tile_size = 32;
+
+    Options->isolate_full_tiles = false;
 
     Options->use_private_memory = PrivateMemory;
     Options->use_shared_memory = SharedMemory;
@@ -2158,7 +2162,13 @@ public:
     Options->target = PPCG_TARGET_CUDA;
     Options->openmp = false;
     Options->linearize_device_arrays = true;
+    Options->allow_gnu_extensions = false;
+
+    Options->unroll_copy_shared = false;
+    Options->unroll_gpu_tile = false;
+
     Options->live_range_reordering = true;
+    Options->hybrid = false;
 
     Options->opencl_compiler_options = nullptr;
     Options->opencl_use_gpu = false;
@@ -2274,6 +2284,8 @@ public:
   ///
   /// @returns A new ppcg scop.
   ppcg_scop *createPPCGScop() {
+    MustKillsInfo KillsInfo = computeMustKillsInfo(*S);
+
     auto PPCGScop = (ppcg_scop *)malloc(sizeof(ppcg_scop));
 
     PPCGScop->options = createPPCGOptions();
@@ -2285,7 +2297,8 @@ public:
 
     PPCGScop->context = S->getContext();
     PPCGScop->domain = S->getDomains();
-    PPCGScop->call = nullptr;
+    // is this correct? PPCG calls collect_call_domains.
+    PPCGScop->call = isl_union_set_from_set(S->getContext());
     PPCGScop->tagged_reads = getTaggedReads();
     PPCGScop->reads = S->getReads();
     PPCGScop->live_in = nullptr;
@@ -2294,9 +2307,14 @@ public:
     PPCGScop->tagged_must_writes = getTaggedMustWrites();
     PPCGScop->must_writes = S->getMustWrites();
     PPCGScop->live_out = nullptr;
+    PPCGScop->tagged_must_kills = KillsInfo.TaggedMustKills.take();
+    PPCGScop->must_kills = KillsInfo.MustKills.take();
+
     PPCGScop->tagger = nullptr;
+
     PPCGScop->independence =
         isl_union_map_empty(isl_set_get_space(PPCGScop->context));
+
     PPCGScop->dep_flow = nullptr;
     PPCGScop->tagged_dep_flow = nullptr;
     PPCGScop->dep_false = nullptr;
@@ -2305,20 +2323,17 @@ public:
     PPCGScop->tagged_dep_order = nullptr;
 
     PPCGScop->schedule = S->getScheduleTree();
-
-    MustKillsInfo KillsInfo = computeMustKillsInfo(*S);
     // If we have something non-trivial to kill, add it to the schedule
     if (KillsInfo.KillsSchedule.get())
       PPCGScop->schedule = isl_schedule_sequence(
           PPCGScop->schedule, KillsInfo.KillsSchedule.take());
-    PPCGScop->tagged_must_kills = KillsInfo.TaggedMustKills.take();
-    PPCGScop->must_kills = KillsInfo.MustKills.take();
 
     PPCGScop->names = getNames();
     PPCGScop->pet = nullptr;
 
     compute_tagger(PPCGScop);
     compute_dependences(PPCGScop);
+    eliminate_dead_code(PPCGScop);
 
     return PPCGScop;
   }
@@ -2472,20 +2487,17 @@ public:
   ///
   /// @param PPCGArray The array to compute bounds for.
   /// @param Array The polly array from which to take the information.
-  /// @param IslCtx The isl context object.
-  void setArrayBounds(gpu_array_info &PPCGArray, ScopArrayInfo *Array,
-                      isl_ctx *IslCtx) {
+  void setArrayBounds(gpu_array_info &PPCGArray, ScopArrayInfo *Array) {
     isl_pw_aff_list *BoundsList =
-        isl_pw_aff_list_alloc(IslCtx, PPCGArray.n_index);
+        isl_pw_aff_list_alloc(S->getIslCtx(), PPCGArray.n_index);
     if (PPCGArray.n_index > 0) {
       if (isl_set_is_empty(PPCGArray.extent)) {
         isl_set *Dom = isl_set_copy(PPCGArray.extent);
         isl_local_space *LS = isl_local_space_from_space(
             isl_space_params(isl_set_get_space(Dom)));
         isl_set_free(Dom);
-        isl_aff *Zero = isl_aff_zero_on_domain(LS);
-        BoundsList =
-            isl_pw_aff_list_insert(BoundsList, 0, isl_pw_aff_from_aff(Zero));
+        isl_pw_aff *Zero = isl_pw_aff_from_aff(isl_aff_zero_on_domain(LS));
+        BoundsList = isl_pw_aff_list_insert(BoundsList, 0, Zero);
       } else {
         isl_set *Dom = isl_set_copy(PPCGArray.extent);
         Dom = isl_set_project_out(Dom, isl_dim_set, 1, PPCGArray.n_index - 1);
@@ -2510,9 +2522,25 @@ public:
       BoundsList = isl_pw_aff_list_insert(BoundsList, i, Bound);
     }
 
-    isl_space *BoundsSpace = Array->getSpace();
-    PPCGArray.bound =
-        isl_multi_pw_aff_from_pw_aff_list(BoundsSpace, BoundsList);
+    isl_space *BoundsSpace = isl_set_get_space(PPCGArray.extent);
+
+    assert(BoundsSpace && "unable to access space of array");
+    assert(BoundsList && "unable to access list of bounds");
+
+    PPCGArray.bound = isl_multi_pw_aff_from_pw_aff_list(
+        isl_space_copy(BoundsSpace), isl_pw_aff_list_copy(BoundsList));
+    // DEBUG CODE----
+    if (!PPCGArray.bound) {
+      errs() << "BoundsSpace: ";
+      isl_space_dump(BoundsSpace);
+      errs() << "BoundsList: ";
+      isl_pw_aff_list_dump(BoundsList);
+      errs() << "SAI: ";
+      Array->dump();
+    }
+    isl_space_free(BoundsSpace);
+    isl_pw_aff_list_free(BoundsList);
+    assert(PPCGArray.bound && "PPCGArray.bound was not constructed correctly");
   }
 
   /// Create the arrays for @p PPCGProg.
@@ -2535,8 +2563,6 @@ public:
       PPCGArray.name = strdup(Array->getName().c_str());
       PPCGArray.extent = nullptr;
       PPCGArray.n_index = Array->getNumberOfDimensions();
-      // PPCGArray.bound =
-      //    isl_alloc_array(S->getIslCtx(), isl_pw_aff *, PPCGArray.n_index);
       PPCGArray.extent = getExtent(Array);
       PPCGArray.n_ref = 0;
       PPCGArray.refs = nullptr;
@@ -2552,7 +2578,7 @@ public:
       PPCGArray.user = Array;
 
       PPCGArray.bound = nullptr;
-      setArrayBounds(PPCGArray, Array, S->getIslCtx());
+      setArrayBounds(PPCGArray, Array);
       i++;
 
       collect_references(PPCGProg, &PPCGArray);
@@ -2595,6 +2621,7 @@ public:
         isl_union_map_copy(PPCGScop->tagged_must_kills);
     PPCGProg->to_inner = getArrayIdentity();
     PPCGProg->to_outer = getArrayIdentity();
+    // is this correct?
     PPCGProg->any_to_outer = nullptr;
 
     // this needs to be set when live range reordering is enabled.
@@ -2745,6 +2772,9 @@ public:
     if (!has_permutable || has_permutable < 0) {
       Schedule = isl_schedule_free(Schedule);
     } else {
+      // add_to_from_device is where Schedule gets nuked
+      // add_to_from_device -> create_copy_device -> insert_positive_size_guards
+      // -> gpu_array_positive_size_guard
       Schedule = map_to_device(PPCGGen, Schedule);
       PPCGGen->tree = generate_code(PPCGGen, isl_schedule_copy(Schedule));
     }
@@ -3069,7 +3099,7 @@ public:
     AU.addPreserved<RegionInfoPass>();
     AU.addPreserved<ScopInfoRegionPass>();
   }
-};
+}; // namespace
 } // namespace
 
 char PPCGCodeGeneration::ID = 1;
