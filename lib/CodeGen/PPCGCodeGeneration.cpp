@@ -137,7 +137,11 @@ struct MustKillsInfo {
   /// [params] -> { [Stmt_phantom[] -> ref_phantom[]] -> scalar_to_kill[] }
   isl::union_map TaggedMustKills;
 
-  MustKillsInfo() : KillsSchedule(nullptr), TaggedMustKills(nullptr){};
+  /// Tagged must kills stripped of the tags.
+  /// [params] -> { Stmt_phantom[]  -> scalar_to_kill[] }
+  isl::union_map MustKills;
+
+  MustKillsInfo() : KillsSchedule(nullptr), MustKills(nullptr){};
 };
 
 /// Check if SAI's uses are entirely contained within Scop S.
@@ -224,6 +228,9 @@ static MustKillsInfo computeMustKillsInfo(const Scop &S) {
     // 2. [param] -> { [Stmt[] -> phantom_ref[]] -> scalar_to_kill[] }
     isl::map TaggedMustKill = StmtToScalar.domain_product(PhantomRefToScalar);
     Info.TaggedMustKills = Info.TaggedMustKills.unite(TaggedMustKill);
+
+    // 2. [param] -> { Stmt[] -> scalar_to_kill[] }
+    Info.MustKills = Info.TaggedMustKills.domain_factor_domain();
 
     // 3. Create the kill schedule of the form:
     //     "[param] -> { Stmt_phantom[] }"
@@ -1005,23 +1012,25 @@ static bool isPrefix(std::string String, std::string Prefix) {
 /// We use __isl_take semantics on the parameter since it is more natural
 /// for converting between isl objects.
 /// TODO: how do I assert this? I was unable to find a function that
-isl_pw_aff *isl_multi_pw_aff_index(__isl_take isl_multi_pw_aff *mpa, int index) {
-    isl_pw_aff *pwaff = isl_multi_pw_aff_get_pw_aff(mpa, index);
-    isl_multi_pw_aff_free(mpa);
-    return pwaff;
+isl_pw_aff *isl_multi_pw_aff_index(__isl_take isl_multi_pw_aff *mpa,
+                                   int index) {
+  isl_pw_aff *pwaff = isl_multi_pw_aff_get_pw_aff(mpa, index);
+  isl_multi_pw_aff_free(mpa);
+  return pwaff;
 }
-
 
 Value *GPUNodeBuilder::getArraySize(gpu_array_info *Array) {
   isl_ast_build *Build = isl_ast_build_from_context(S.getContext());
   Value *ArraySize = ConstantInt::get(Builder.getInt64Ty(), Array->size);
 
   if (!gpu_array_is_scalar(Array)) {
-    auto OffsetDimZero = isl_pw_aff_copy(isl_multi_pw_aff_index(Array->bound, 0));
+    auto OffsetDimZero =
+        isl_pw_aff_copy(isl_multi_pw_aff_index(Array->bound, 0));
     isl_ast_expr *Res = isl_ast_build_expr_from_pw_aff(Build, OffsetDimZero);
 
     for (unsigned int i = 1; i < Array->n_index; i++) {
-      isl_pw_aff *Bound_I = isl_pw_aff_copy(isl_multi_pw_aff_index(Array->bound, i));
+      isl_pw_aff *Bound_I =
+          isl_pw_aff_copy(isl_multi_pw_aff_index(Array->bound, i));
       isl_ast_expr *Expr = isl_ast_build_expr_from_pw_aff(Build, Bound_I);
       Res = isl_ast_expr_mul(Res, Expr);
     }
@@ -1061,7 +1070,8 @@ Value *GPUNodeBuilder::getArrayOffset(gpu_array_info *Array) {
 
   for (long i = 0; i < isl_set_dim(Min, isl_dim_set); i++) {
     if (i > 0) {
-      isl_pw_aff *Bound_I = isl_pw_aff_copy(isl_multi_pw_aff_index(Array->bound, i - 1));
+      isl_pw_aff *Bound_I =
+          isl_pw_aff_copy(isl_multi_pw_aff_index(Array->bound, i - 1));
       isl_ast_expr *BExpr = isl_ast_build_expr_from_pw_aff(Build, Bound_I);
       Result = isl_ast_expr_mul(Result, BExpr);
     }
@@ -1779,7 +1789,8 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     Sizes.push_back(nullptr);
     for (long j = 1; j < Kernel->array[i].array->n_index; j++) {
       isl_ast_expr *DimSize = isl_ast_build_expr_from_pw_aff(
-          Build, isl_pw_aff_copy(isl_multi_pw_aff_index(Kernel->array[i].array->bound, j)));
+          Build, isl_pw_aff_copy(
+                     isl_multi_pw_aff_index(Kernel->array[i].array->bound, j)));
       auto V = ExprBuilder.create(DimSize);
       Sizes.push_back(SE.getSCEV(V));
     }
@@ -2277,7 +2288,7 @@ public:
 
     PPCGScop->options = createPPCGOptions();
     // enable live range reordering
-    PPCGScop->options->live_range_reordering = 1;
+    PPCGScop->options->live_range_reordering = 0;
 
     PPCGScop->start = 0;
     PPCGScop->end = 0;
@@ -2311,6 +2322,7 @@ public:
       PPCGScop->schedule = isl_schedule_sequence(
           PPCGScop->schedule, KillsInfo.KillsSchedule.take());
     PPCGScop->tagged_must_kills = KillsInfo.TaggedMustKills.take();
+    PPCGScop->must_kills = KillsInfo.MustKills.take();
 
     PPCGScop->names = getNames();
     PPCGScop->pet = nullptr;
@@ -2471,8 +2483,10 @@ public:
   /// @param PPCGArray The array to compute bounds for.
   /// @param Array The polly array from which to take the information.
   /// @param IslCtx The isl context object.
-  void setArrayBounds(gpu_array_info &PPCGArray, ScopArrayInfo *Array, isl_ctx *IslCtx) {
-    isl_pw_aff_list *BoundsList = isl_pw_aff_list_alloc(IslCtx, PPCGArray.n_index);
+  void setArrayBounds(gpu_array_info &PPCGArray, ScopArrayInfo *Array,
+                      isl_ctx *IslCtx) {
+    isl_pw_aff_list *BoundsList =
+        isl_pw_aff_list_alloc(IslCtx, PPCGArray.n_index);
     if (PPCGArray.n_index > 0) {
       if (isl_set_is_empty(PPCGArray.extent)) {
         isl_set *Dom = isl_set_copy(PPCGArray.extent);
@@ -2480,7 +2494,8 @@ public:
             isl_space_params(isl_set_get_space(Dom)));
         isl_set_free(Dom);
         isl_aff *Zero = isl_aff_zero_on_domain(LS);
-        BoundsList = isl_pw_aff_list_insert(BoundsList, 0, isl_pw_aff_from_aff(Zero));
+        BoundsList =
+            isl_pw_aff_list_insert(BoundsList, 0, isl_pw_aff_from_aff(Zero));
       } else {
         isl_set *Dom = isl_set_copy(PPCGArray.extent);
         Dom = isl_set_project_out(Dom, isl_dim_set, 1, PPCGArray.n_index - 1);
@@ -2506,7 +2521,8 @@ public:
     }
 
     isl_space *BoundsSpace = Array->getSpace();
-    PPCGArray.bound = isl_multi_pw_aff_from_pw_aff_list(BoundsSpace,BoundsList);
+    PPCGArray.bound =
+        isl_multi_pw_aff_from_pw_aff_list(BoundsSpace, BoundsList);
   }
 
   /// Create the arrays for @p PPCGProg.
