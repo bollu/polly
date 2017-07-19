@@ -2498,6 +2498,14 @@ public:
         isl_pw_aff_list_alloc(S->getIslCtx(), PPCGArray.n_index);
     std::vector<isl::pw_aff> PwAffs;
 
+    isl_space *AlignSpace = S->getParamSpace();
+    errs() << "AlignSpace(Param): ";
+    isl_space_dump(AlignSpace);
+    AlignSpace = isl_space_add_dims(AlignSpace, isl_dim_set, 1);
+
+    errs() << "AlignSpace(With dims): ";
+    isl_space_dump(AlignSpace);
+
     if (PPCGArray.n_index > 0) {
       if (isl_set_is_empty(PPCGArray.extent)) {
         isl_set *Dom = isl_set_copy(PPCGArray.extent);
@@ -2505,6 +2513,7 @@ public:
             isl_space_params(isl_set_get_space(Dom)));
         isl_set_free(Dom);
         isl_pw_aff *Zero = isl_pw_aff_from_aff(isl_aff_zero_on_domain(LS));
+        Zero = isl_pw_aff_align_params(Zero, isl_space_copy(AlignSpace));
         PwAffs.push_back(isl::manage(isl_pw_aff_copy(Zero)));
         BoundsList = isl_pw_aff_list_insert(BoundsList, 0, Zero);
       } else {
@@ -2519,6 +2528,7 @@ public:
         One = isl_aff_add_constant_si(One, 1);
         Bound = isl_pw_aff_add(Bound, isl_pw_aff_alloc(Dom, One));
         Bound = isl_pw_aff_gist(Bound, S->getContext());
+        Bound = isl_pw_aff_align_params(Bound, isl_space_copy(AlignSpace));
         PwAffs.push_back(isl::manage(isl_pw_aff_copy(Bound)));
         BoundsList = isl_pw_aff_list_insert(BoundsList, 0, Bound);
       }
@@ -2529,10 +2539,12 @@ public:
       auto LS = isl_pw_aff_get_domain_space(Bound);
       auto Aff = isl_multi_aff_zero(LS);
       Bound = isl_pw_aff_pullback_multi_aff(Bound, Aff);
+      Bound = isl_pw_aff_align_params(Bound, isl_space_copy(AlignSpace));
       PwAffs.push_back(isl::manage(isl_pw_aff_copy(Bound)));
       BoundsList = isl_pw_aff_list_insert(BoundsList, i, Bound);
     }
 
+    isl_space_free(AlignSpace);
     isl_space *BoundsSpace = isl_set_get_space(PPCGArray.extent);
 
     assert(BoundsSpace && "unable to access space of array");
