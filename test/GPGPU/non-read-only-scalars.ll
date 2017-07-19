@@ -31,11 +31,7 @@
 ;   printf("%f\n", sum);
 ; }
 
-; CODE: Code
-; CODE-NEXT: ====
-; CODE-NEXT: # host
-; CODE-NEXT: {
-; CODE-NEXT:   {
+; Data flow seems wrong. For example, we never use sum_0.
 ; CODE-NEXT:     dim3 k0_dimBlock(32);
 ; CODE-NEXT:     dim3 k0_dimGrid(1);
 ; CODE-NEXT:     kernel0 <<<k0_dimGrid, k0_dimBlock>>> (dev_MemRef_A);
@@ -49,24 +45,15 @@
 ; CODE-NEXT:     cudaCheckKernel();
 ; CODE-NEXT:   }
 
-; CODE:   for (int c0 = 0; c0 <= 32; c0 += 1) {
-; CODE-NEXT:     {
+; CODE:          {
 ; CODE-NEXT:       dim3 k2_dimBlock;
 ; CODE-NEXT:       dim3 k2_dimGrid;
-; CODE-NEXT:       kernel2 <<<k2_dimGrid, k2_dimBlock>>> (dev_MemRef_sum_0__phi, dev_MemRef_sum_0, c0);
+; CODE-NEXT:       kernel2 <<<k2_dimGrid, k2_dimBlock>>> (dev_MemRef_A, dev_MemRef_sum_0__phi, dev_MemRef_sum_0);
 ; CODE-NEXT:       cudaCheckKernel();
 ; CODE-NEXT:     }
-
-; CODE:     if (c0 <= 31)
-; CODE-NEXT:       {
-; CODE-NEXT:         dim3 k3_dimBlock;
-; CODE-NEXT:         dim3 k3_dimGrid;
-; CODE-NEXT:         kernel3 <<<k3_dimGrid, k3_dimBlock>>> (dev_MemRef_A, dev_MemRef_sum_0__phi, dev_MemRef_sum_0, c0);
-; CODE-NEXT:         cudaCheckKernel();
-; CODE-NEXT:       }
-
 ; CODE:   }
-; CODE-NEXT:   cudaCheckReturn(cudaMemcpy(MemRef_A, dev_MemRef_A, (32) * sizeof(float), cudaMemcpyDeviceToHost));
+
+; CODE:        cudaCheckReturn(cudaMemcpy(MemRef_A, dev_MemRef_A, (32) * sizeof(float), cudaMemcpyDeviceToHost));
 ; CODE-NEXT:   cudaCheckReturn(cudaMemcpy(&MemRef_sum_0, dev_MemRef_sum_0, sizeof(float), cudaMemcpyDeviceToHost));
 ; CODE-NEXT: }
 
@@ -80,10 +67,11 @@
 ; CODE-NEXT: Stmt_bb17();
 
 ; CODE: # kernel2
-; CODE-NEXT: Stmt_bb18(c0);
-
-; CODE: # kernel3
-; CODE-NEXT: Stmt_bb20(c0);
+; CODE-NEXT: for (int c0 = 0; c0 <= 32; c0 += 1) {
+; CODE-NEXT:   Stmt_bb18(c0);
+; CODE-NEXT:   if (c0 <= 31)
+; CODE-NEXT:     Stmt_bb20(c0);
+; CODE-NEXT: }
 
 ; KERNEL-IR:       store float %p_tmp23, float* %sum.0.phiops
 ; KERNEL-IR-NEXT:  [[REGA:%.+]] = addrspacecast i8 addrspace(1)* %MemRef_sum_0__phi to float*
