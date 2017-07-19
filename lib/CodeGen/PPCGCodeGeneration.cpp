@@ -54,6 +54,12 @@ using namespace llvm;
 
 #define DEBUG_TYPE "polly-codegen-ppcg"
 
+static cl::opt<bool> PrintBoundsDebugInfo(
+    "bollu-debug-print-bounds",
+    cl::desc("Print bounds information. Introduced to understand "
+             "isl_multi_pw_aff, DO NOT COMMIT!"),
+    cl::Hidden, cl::init(false), cl::ZeroOrMore, cl::cat(PollyCategory));
+
 static cl::opt<bool> DumpSchedule("polly-acc-dump-schedule",
                                   cl::desc("Dump the computed GPU Schedule"),
                                   cl::Hidden, cl::init(false), cl::ZeroOrMore,
@@ -2490,6 +2496,8 @@ public:
   void setArrayBounds(gpu_array_info &PPCGArray, ScopArrayInfo *Array) {
     isl_pw_aff_list *BoundsList =
         isl_pw_aff_list_alloc(S->getIslCtx(), PPCGArray.n_index);
+    std::vector<isl::pw_aff> PwAffs;
+
     if (PPCGArray.n_index > 0) {
       if (isl_set_is_empty(PPCGArray.extent)) {
         isl_set *Dom = isl_set_copy(PPCGArray.extent);
@@ -2497,6 +2505,7 @@ public:
             isl_space_params(isl_set_get_space(Dom)));
         isl_set_free(Dom);
         isl_pw_aff *Zero = isl_pw_aff_from_aff(isl_aff_zero_on_domain(LS));
+        PwAffs.push_back(isl::manage(isl_pw_aff_copy(Zero)));
         BoundsList = isl_pw_aff_list_insert(BoundsList, 0, Zero);
       } else {
         isl_set *Dom = isl_set_copy(PPCGArray.extent);
@@ -2510,6 +2519,7 @@ public:
         One = isl_aff_add_constant_si(One, 1);
         Bound = isl_pw_aff_add(Bound, isl_pw_aff_alloc(Dom, One));
         Bound = isl_pw_aff_gist(Bound, S->getContext());
+        PwAffs.push_back(isl::manage(isl_pw_aff_copy(Bound)));
         BoundsList = isl_pw_aff_list_insert(BoundsList, 0, Bound);
       }
     }
@@ -2519,6 +2529,7 @@ public:
       auto LS = isl_pw_aff_get_domain_space(Bound);
       auto Aff = isl_multi_aff_zero(LS);
       Bound = isl_pw_aff_pullback_multi_aff(Bound, Aff);
+      PwAffs.push_back(isl::manage(isl_pw_aff_copy(Bound)));
       BoundsList = isl_pw_aff_list_insert(BoundsList, i, Bound);
     }
 
@@ -2530,13 +2541,26 @@ public:
     PPCGArray.bound = isl_multi_pw_aff_from_pw_aff_list(
         isl_space_copy(BoundsSpace), isl_pw_aff_list_copy(BoundsList));
     // DEBUG CODE----
-    if (!PPCGArray.bound) {
-      errs() << "BoundsSpace: ";
+    if (!PPCGArray.bound || PrintBoundsDebugInfo) {
+      if (!PPCGArray.bound)
+        errs() << "# Bounds are WRECKED for: " << Array->getName() << "\n";
+
+      errs() << "#### BoundsSpace: ";
       isl_space_dump(BoundsSpace);
-      errs() << "BoundsList: ";
+      errs() << "#### BoundsList: ";
       isl_pw_aff_list_dump(BoundsList);
-      errs() << "SAI: ";
+      errs() << "#### SAI: ";
       Array->dump();
+
+      errs() << "#### Bounds per pw aff:\n";
+      for (isl::pw_aff &PwAff : PwAffs) {
+        errs() << "- pwaff: ";
+        PwAff.dump();
+        errs() << "\t";
+        errs() << "- space: ";
+        PwAff.get_space().dump();
+        errs() << "\n\n";
+      }
     }
     isl_space_free(BoundsSpace);
     isl_pw_aff_list_free(BoundsList);
