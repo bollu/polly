@@ -1007,25 +1007,16 @@ static bool isPrefix(std::string String, std::string Prefix) {
   return String.find(Prefix) == 0;
 }
 
-/// Return the `isl_pw_aff` this `isl_multi_pw_aff` is comprised of.
-isl_pw_aff *isl_multi_pw_aff_index(__isl_keep isl_multi_pw_aff *mpa,
-                                   int index) {
-  isl_pw_aff *pwaff = isl_multi_pw_aff_get_pw_aff(mpa, index);
-  return pwaff;
-}
-
 Value *GPUNodeBuilder::getArraySize(gpu_array_info *Array) {
   isl_ast_build *Build = isl_ast_build_from_context(S.getContext());
   Value *ArraySize = ConstantInt::get(Builder.getInt64Ty(), Array->size);
 
   if (!gpu_array_is_scalar(Array)) {
-    auto OffsetDimZero =
-        isl_multi_pw_aff_index(Array->bound, 0);
+    auto OffsetDimZero = isl_multi_pw_aff_get_pw_aff(Array->bound, 0);
     isl_ast_expr *Res = isl_ast_build_expr_from_pw_aff(Build, OffsetDimZero);
 
     for (unsigned int i = 1; i < Array->n_index; i++) {
-      isl_pw_aff *Bound_I =
-          isl_multi_pw_aff_index(Array->bound, i);
+      isl_pw_aff *Bound_I = isl_multi_pw_aff_get_pw_aff(Array->bound, i);
       isl_ast_expr *Expr = isl_ast_build_expr_from_pw_aff(Build, Bound_I);
       Res = isl_ast_expr_mul(Res, Expr);
     }
@@ -1065,7 +1056,7 @@ Value *GPUNodeBuilder::getArrayOffset(gpu_array_info *Array) {
 
   for (long i = 0; i < isl_set_dim(Min, isl_dim_set); i++) {
     if (i > 0) {
-      isl_pw_aff *Bound_I = isl_multi_pw_aff_index(Array->bound, i - 1)
+      isl_pw_aff *Bound_I = isl_multi_pw_aff_get_pw_aff(Array->bound, i - 1);
       isl_ast_expr *BExpr = isl_ast_build_expr_from_pw_aff(Build, Bound_I);
       Result = isl_ast_expr_mul(Result, BExpr);
     }
@@ -1166,6 +1157,11 @@ void GPUNodeBuilder::createUser(__isl_take isl_ast_node *UserStmt) {
   const char *Str = isl_id_get_name(Id);
   if (!strcmp(Str, "kernel")) {
     createKernel(UserStmt);
+    isl_ast_expr_free(Expr);
+    return;
+  }
+  // TODO: what should we _actually_ do in this case?
+  if (!strcmp(Str, "init_device") || !strcmp(Str, "clear_device")) {
     isl_ast_expr_free(Expr);
     return;
   }
@@ -1783,7 +1779,7 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     Sizes.push_back(nullptr);
     for (long j = 1; j < Kernel->array[i].array->n_index; j++) {
       isl_ast_expr *DimSize = isl_ast_build_expr_from_pw_aff(
-          Build, isl_multi_pw_aff_index(Kernel->array[i].array->bound, j));
+          Build, isl_multi_pw_aff_get_pw_aff(Kernel->array[i].array->bound, j));
       auto V = ExprBuilder.create(DimSize);
       Sizes.push_back(SE.getSCEV(V));
     }
