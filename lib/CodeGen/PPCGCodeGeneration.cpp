@@ -1162,6 +1162,7 @@ void GPUNodeBuilder::createUser(__isl_take isl_ast_node *UserStmt) {
   }
   // TODO: what should we _actually_ do in this case?
   if (!strcmp(Str, "init_device") || !strcmp(Str, "clear_device")) {
+    isl_ast_node_free(UserStmt);
     isl_ast_expr_free(Expr);
     return;
   }
