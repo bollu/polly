@@ -283,17 +283,6 @@ __isl_give isl_space *ScopArrayInfo::getSpace() const {
   return Space;
 }
 
-__isl_give isl_space *ScopArrayInfo::getSpaceWithParams() const {
-  isl_set *Context = S.getContext();
-  auto *Space = isl_set_get_space(Context);
-  isl_set_free(Context);
-
-  Space = isl_space_drop_dims(Space, isl_dim_set, 0, isl_space_dim(Space, isl_dim_set));
-  Space = isl_space_add_dims(Space, isl_dim_set, getNumberOfDimensions());
-  Space = isl_space_set_tuple_id(Space, isl_dim_set, isl_id_copy(Id));
-  return Space;
-}
-
 bool ScopArrayInfo::isReadOnly() {
   isl::union_set WriteSet = give(S.getWrites()).range();
   isl::space Space = give(getSpace());
@@ -367,25 +356,6 @@ bool ScopArrayInfo::updateSizes(ArrayRef<const SCEV *> NewSizes,
   int ExtraDimsNew = NewSizes.size() - SharedDims;
   int ExtraDimsOld = DimensionSizes.size() - SharedDims;
 
-  errs() << "updateSizes:\n";
-
-  errs() << "DimensionSizes (" << DimensionSizes.size() << "):\n";
-  for(auto It : DimensionSizes) {
-      errs() << "- ";
-      if (It) {
-        errs() << *It;
-
-      }
-      else {
-        errs() << "nullptr";
-      }
-      errs() << "\n";
-
-  }
-  errs() << "===\n";
-
-  // WTF. When DimensionSizes is empty, this will actually fill stuff up in
-  // DimenionSizes
   if (CheckConsistency) {
     for (int i = 0; i < SharedDims; i++) {
       auto *NewSize = NewSizes[i + ExtraDimsNew];
@@ -405,18 +375,11 @@ bool ScopArrayInfo::updateSizes(ArrayRef<const SCEV *> NewSizes,
     isl_pw_aff_free(Size);
   DimensionSizesPw.clear();
   for (const SCEV *Expr : DimensionSizes) {
-    errs() << "Scev: ";
-    if (Expr != nullptr ) errs() << *Expr << "\n"; else errs() << "nullptr\n----\n";
-
     if (!Expr) {
       DimensionSizesPw.push_back(nullptr);
       continue;
     }
     isl_pw_aff *Size = S.getPwAffOnly(Expr);
-    errs() << "SizePwAff: ";
-    isl_pw_aff_dump(Size);
-    errs() << "----\n";
-
     DimensionSizesPw.push_back(Size);
   }
   return true;

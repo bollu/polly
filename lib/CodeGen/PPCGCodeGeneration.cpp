@@ -2424,19 +2424,19 @@ public:
 
     if (isl_union_set_is_empty(AccessUSet)) {
       isl_union_set_free(AccessUSet);
-      return isl_set_empty(Array->getSpaceWithParams());
+      return isl_set_empty(Array->getSpace());
     }
 
     if (Array->getNumberOfDimensions() == 0) {
       isl_union_set_free(AccessUSet);
-      return isl_set_universe(Array->getSpaceWithParams());
+      return isl_set_universe(Array->getSpace());
     }
 
     isl_set *AccessSet =
-        isl_union_set_extract_set(AccessUSet, Array->getSpaceWithParams());
+        isl_union_set_extract_set(AccessUSet, Array->getSpace());
 
     isl_union_set_free(AccessUSet);
-    isl_local_space *LS = isl_local_space_from_space(Array->getSpaceWithParams());
+    isl_local_space *LS = isl_local_space_from_space(Array->getSpace());
 
     isl_pw_aff *Val =
         isl_pw_aff_from_aff(isl_aff_var_on_domain(LS, isl_dim_set, 0));
@@ -2452,7 +2452,7 @@ public:
     OuterMax =
         isl_pw_aff_set_tuple_id(OuterMax, isl_dim_in, Array->getBasePtrId());
 
-    isl_set *Extent = isl_set_universe(Array->getSpaceWithParams());
+    isl_set *Extent = isl_set_universe(Array->getSpace());
 
     Extent = isl_set_intersect(
         Extent, isl_pw_aff_le_set(OuterMin, isl_pw_aff_copy(Val)));
@@ -2473,7 +2473,7 @@ public:
       }
 
       isl_pw_aff *Val = isl_pw_aff_from_aff(isl_aff_var_on_domain(
-          isl_local_space_from_space(Array->getSpaceWithParams()), isl_dim_set, i));
+          isl_local_space_from_space(Array->getSpace()), isl_dim_set, i));
       PwAff = isl_pw_aff_add_dims(PwAff, isl_dim_in,
                                   isl_pw_aff_dim(Val, isl_dim_in));
       PwAff = isl_pw_aff_set_tuple_id(PwAff, isl_dim_in,

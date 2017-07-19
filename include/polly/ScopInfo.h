@@ -382,9 +382,6 @@ public:
   /// Get the space of this array access.
   __isl_give isl_space *getSpace() const;
 
-  /// Get the space of this array access with parameters
-  __isl_give isl_space *getSpaceWithParams() const;
-
   /// If the array is read only
   bool isReadOnly();
 
