@@ -999,16 +999,29 @@ static bool isPrefix(std::string String, std::string Prefix) {
   return String.find(Prefix) == 0;
 }
 
+/// Return the `isl_pw_aff` this `isl_multi_pw_aff` is comprised of.
+///
+/// For now, we assume that this multi_pw_aff only contains one pw_aff.
+/// We use __isl_take semantics on the parameter since it is more natural
+/// for converting between isl objects.
+/// TODO: how do I assert this? I was unable to find a function that
+isl_pw_aff *isl_multi_pw_aff_index(__isl_take isl_multi_pw_aff *mpa, int index) {
+    isl_pw_aff *pwaff = isl_multi_pw_aff_get_pw_aff(mpa, index);
+    isl_multi_pw_aff_free(mpa);
+    return pwaff;
+}
+
+
 Value *GPUNodeBuilder::getArraySize(gpu_array_info *Array) {
   isl_ast_build *Build = isl_ast_build_from_context(S.getContext());
   Value *ArraySize = ConstantInt::get(Builder.getInt64Ty(), Array->size);
 
   if (!gpu_array_is_scalar(Array)) {
-    auto OffsetDimZero = isl_pw_aff_copy(Array->bound[0]);
+    auto OffsetDimZero = isl_pw_aff_copy(isl_multi_pw_aff_index(Array->bound, 0));
     isl_ast_expr *Res = isl_ast_build_expr_from_pw_aff(Build, OffsetDimZero);
 
     for (unsigned int i = 1; i < Array->n_index; i++) {
-      isl_pw_aff *Bound_I = isl_pw_aff_copy(Array->bound[i]);
+      isl_pw_aff *Bound_I = isl_pw_aff_copy(isl_multi_pw_aff_index(Array->bound, i));
       isl_ast_expr *Expr = isl_ast_build_expr_from_pw_aff(Build, Bound_I);
       Res = isl_ast_expr_mul(Res, Expr);
     }
@@ -1048,7 +1061,7 @@ Value *GPUNodeBuilder::getArrayOffset(gpu_array_info *Array) {
 
   for (long i = 0; i < isl_set_dim(Min, isl_dim_set); i++) {
     if (i > 0) {
-      isl_pw_aff *Bound_I = isl_pw_aff_copy(Array->bound[i - 1]);
+      isl_pw_aff *Bound_I = isl_pw_aff_copy(isl_multi_pw_aff_index(Array->bound, i - 1));
       isl_ast_expr *BExpr = isl_ast_build_expr_from_pw_aff(Build, Bound_I);
       Result = isl_ast_expr_mul(Result, BExpr);
     }
@@ -1766,7 +1779,7 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     Sizes.push_back(nullptr);
     for (long j = 1; j < Kernel->array[i].array->n_index; j++) {
       isl_ast_expr *DimSize = isl_ast_build_expr_from_pw_aff(
-          Build, isl_pw_aff_copy(Kernel->array[i].array->bound[j]));
+          Build, isl_pw_aff_copy(isl_multi_pw_aff_index(Kernel->array[i].array->bound, j)));
       auto V = ExprBuilder.create(DimSize);
       Sizes.push_back(SE.getSCEV(V));
     }
@@ -2457,7 +2470,9 @@ public:
   ///
   /// @param PPCGArray The array to compute bounds for.
   /// @param Array The polly array from which to take the information.
-  void setArrayBounds(gpu_array_info &PPCGArray, ScopArrayInfo *Array) {
+  /// @param IslCtx The isl context object.
+  void setArrayBounds(gpu_array_info &PPCGArray, ScopArrayInfo *Array, isl_ctx *IslCtx) {
+    isl_pw_aff_list *BoundsList = isl_pw_aff_list_alloc(IslCtx, PPCGArray.n_index);
     if (PPCGArray.n_index > 0) {
       if (isl_set_is_empty(PPCGArray.extent)) {
         isl_set *Dom = isl_set_copy(PPCGArray.extent);
@@ -2465,7 +2480,7 @@ public:
             isl_space_params(isl_set_get_space(Dom)));
         isl_set_free(Dom);
         isl_aff *Zero = isl_aff_zero_on_domain(LS);
-        PPCGArray.bound[0] = isl_pw_aff_from_aff(Zero);
+        BoundsList = isl_pw_aff_list_insert(BoundsList, 0, isl_pw_aff_from_aff(Zero));
       } else {
         isl_set *Dom = isl_set_copy(PPCGArray.extent);
         Dom = isl_set_project_out(Dom, isl_dim_set, 1, PPCGArray.n_index - 1);
@@ -2478,7 +2493,7 @@ public:
         One = isl_aff_add_constant_si(One, 1);
         Bound = isl_pw_aff_add(Bound, isl_pw_aff_alloc(Dom, One));
         Bound = isl_pw_aff_gist(Bound, S->getContext());
-        PPCGArray.bound[0] = Bound;
+        BoundsList = isl_pw_aff_list_insert(BoundsList, 0, Bound);
       }
     }
 
@@ -2487,8 +2502,11 @@ public:
       auto LS = isl_pw_aff_get_domain_space(Bound);
       auto Aff = isl_multi_aff_zero(LS);
       Bound = isl_pw_aff_pullback_multi_aff(Bound, Aff);
-      PPCGArray.bound[i] = Bound;
+      BoundsList = isl_pw_aff_list_insert(BoundsList, i, Bound);
     }
+
+    isl_space *BoundsSpace = Array->getSpace();
+    PPCGArray.bound = isl_multi_pw_aff_from_pw_aff_list(BoundsSpace,BoundsList);
   }
 
   /// Create the arrays for @p PPCGProg.
@@ -2511,8 +2529,8 @@ public:
       PPCGArray.name = strdup(Array->getName().c_str());
       PPCGArray.extent = nullptr;
       PPCGArray.n_index = Array->getNumberOfDimensions();
-      PPCGArray.bound =
-          isl_alloc_array(S->getIslCtx(), isl_pw_aff *, PPCGArray.n_index);
+      // PPCGArray.bound =
+      //    isl_alloc_array(S->getIslCtx(), isl_pw_aff *, PPCGArray.n_index);
       PPCGArray.extent = getExtent(Array);
       PPCGArray.n_ref = 0;
       PPCGArray.refs = nullptr;
@@ -2527,7 +2545,8 @@ public:
       PPCGArray.dep_order = nullptr;
       PPCGArray.user = Array;
 
-      setArrayBounds(PPCGArray, Array);
+      PPCGArray.bound = nullptr;
+      setArrayBounds(PPCGArray, Array, S->getIslCtx());
       i++;
 
       collect_references(PPCGProg, &PPCGArray);
