@@ -1,12 +1,16 @@
 #include "assert.h"
 #include "stdio.h"
 #include "stdlib.h"
+#define __isl_give
+#define __isl_take
+#define __isl_keep
 
 #define die() { \
   fprintf(stderr, "Dummy function %s called\n", __FUNCTION__); \
   abort(); \
 }
 
+/*
 void ppcg_start_block() {
   die();
 }
@@ -16,6 +20,7 @@ void ppcg_end_block(){
 void ppcg_print_macros(){
   die();
 }
+*/
 void pet_scop_compute_outer_to_any(){
   die();
 }
@@ -55,12 +60,14 @@ void pet_expr_access_get_ref_id(){
 void print_cpu(){
   die();
 }
+/*
 void ppcg_print_exposed_declarations(){
   die();
 }
 void ppcg_print_declaration(){
   die();
 }
+*/
 void pet_stmt_print_body(){
   die();
 }
@@ -139,3 +146,33 @@ void generate_cpu() {
 void pet_stmt_build_ast_exprs() {
   die();
 }
+__isl_give void *pet_scop_get_tagged_may_reads(
+	__isl_keep void *scop) { die(); }
+__isl_give void *pet_scop_get_may_reads(
+	__isl_keep void *scop) { die(); }
+/* Return the potential write access relation. */
+__isl_give void *pet_scop_get_may_writes(__isl_keep void *scop) { die(); }
+/* Return the definite write access relation. */
+__isl_give void *pet_scop_get_must_writes(__isl_keep void *scop) { die(); }
+/* Return the tagged potential write access relation. */
+__isl_give void *pet_scop_get_tagged_may_writes(
+	__isl_keep void *scop) { die(); }
+/* Return the tagged definite write access relation. */
+__isl_give void *pet_scop_get_tagged_must_writes(
+	__isl_keep void *scop) { die(); }
+/* Return the definite kill access relation. */
+__isl_give void *pet_scop_get_must_kills(__isl_keep void *scop) { die(); }
+/* Return the tagged definite kill access relation. */
+__isl_give void *pet_scop_get_tagged_must_kills(
+	__isl_keep void *scop) { die(); }
+
+void pet_expr_call_get_name() { die(); }
+void pet_expr_call_set_name() { die(); }
+void pet_expr_get_arg() { die(); }
+void pet_expr_new_cast() { die(); }
+void pet_expr_set_arg() { die(); }
+void pet_tree_copy() { die(); }
+void pet_tree_free() { die(); }
+void pet_tree_map_call_expr() { die(); }
+void pet_expr_access_get_may_read() { die(); }
+void pet_expr_access_get_may_write() { die(); }
