@@ -1,4 +1,26 @@
 /*
+# ppcg/cpu.c
+# ppcg/cuda.c
+# ppcg/cuda_common.c
+# ppcg/external.c
+# ppcg/gpu.c
+# ppcg/gpu_array_tile.c
+# ppcg/gpu_group.c
+# ppcg/gpu_hybrid.c
+# ppcg/gpu_print.c
+# ppcg/gpu_tree.c
+# ppcg/grouping.c
+# ppcg/hybrid.h
+# ppcg/ocl_utilities.c
+# ppcg/opencl.c
+# ppcg/ppcg.c
+# ppcg/ppcg_options.c
+# ppcg/print.c
+# ppcg/print.h
+# ppcg/schedule.c
+# ppcg/test-driver
+# ppcg/tests
+# ppcg/util.c
  * Copyright 2012      Ecole Normale Superieure
  *
  * Use of this software is governed by the MIT license
@@ -178,20 +200,20 @@ static __isl_give isl_printer *copy_array_from_device(
 	return p;
 }
 
-static void print_reverse_list(FILE *out, int len, int *list)
+static __isl_give isl_printer* print_reverse_list(__isl_take isl_printer *p, int len, int *list)
 {
 	int i;
 
-	if (!out || len == 0)
-		return;
+	if (len == 0)
+		return p;
 
-	fprintf(out, "(");
+    p = isl_printer_print_str(p, "(");
 	for (i = 0; i < len; ++i) {
 		if (i)
-			fprintf(out, ", ");
-		fprintf(out, "%d", list[len - 1 - i]);
+             p = isl_printer_print_str(p, ", ");
+        p = isl_printer_print_int(p, list[len - 1 - i]);
 	}
-	fprintf(out, ")");
+    return isl_printer_print_str(p, ")");
 }
 
 /* Print the effective grid size as a list of the sizes in each
@@ -627,8 +649,7 @@ __isl_give isl_printer *print_host_user(__isl_take isl_printer *p,
 	p = isl_printer_print_str(p, "dim3 k");
 	p = isl_printer_print_int(p, kernel->id);
 	p = isl_printer_print_str(p, "_dimBlock");
-	print_reverse_list(isl_printer_get_file(p),
-				kernel->n_block, kernel->block_dim);
+	print_reverse_list(p, kernel->n_block, kernel->block_dim);
 	p = isl_printer_print_str(p, ";");
 	p = isl_printer_end_line(p);
 
