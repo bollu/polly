@@ -649,7 +649,7 @@ __isl_give isl_printer *print_host_user(__isl_take isl_printer *p,
 	p = isl_printer_print_str(p, "dim3 k");
 	p = isl_printer_print_int(p, kernel->id);
 	p = isl_printer_print_str(p, "_dimBlock");
-	print_reverse_list(p, kernel->n_block, kernel->block_dim);
+	p = print_reverse_list(p, kernel->n_block, kernel->block_dim);
 	p = isl_printer_print_str(p, ";");
 	p = isl_printer_end_line(p);
 
@@ -676,7 +676,9 @@ __isl_give isl_printer *print_host_user(__isl_take isl_printer *p,
 	p = isl_printer_start_line(p);
 	p = isl_printer_end_line(p);
 
+#if 0
 	print_kernel(data->prog, kernel, data->cuda);
+#endif
 
 	return p;
 }

@@ -10,17 +10,6 @@
   abort(); \
 }
 
-/*
-void ppcg_start_block() {
-  die();
-}
-void ppcg_end_block(){
-  die();
-}
-void ppcg_print_macros(){
-  die();
-}
-*/
 void pet_scop_compute_outer_to_any(){
   die();
 }
@@ -176,3 +165,4 @@ void pet_tree_free() { die(); }
 void pet_tree_map_call_expr() { die(); }
 void pet_expr_access_get_may_read() { die(); }
 void pet_expr_access_get_may_write() { die(); }
+
