@@ -769,7 +769,7 @@ void compute_dependences(struct ppcg_scop *scop)
  * hull of the live iterations (bounded to the original iteration
  * domains) each time we have added extra iterations.
  */
-static void eliminate_dead_code(struct ppcg_scop *ps)
+void eliminate_dead_code(struct ppcg_scop *ps)
 {
 	isl_union_set *live;
 	isl_union_map *dep;

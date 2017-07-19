@@ -123,5 +123,6 @@ __isl_give isl_schedule *ppcg_compute_schedule(
 
 void compute_tagger(struct ppcg_scop *ps);
 void compute_dependences(struct ppcg_scop *scop);
+void eliminate_dead_code(struct ppcg_scop *ps);
 void *ppcg_scop_free(struct ppcg_scop *ps);
 #endif
