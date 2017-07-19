@@ -2158,7 +2158,7 @@ public:
     Options->target = PPCG_TARGET_CUDA;
     Options->openmp = false;
     Options->linearize_device_arrays = true;
-    Options->live_range_reordering = false;
+    Options->live_range_reordering = true;
 
     Options->opencl_compiler_options = nullptr;
     Options->opencl_use_gpu = false;
@@ -2278,7 +2278,7 @@ public:
 
     PPCGScop->options = createPPCGOptions();
     // enable live range reordering
-    PPCGScop->options->live_range_reordering = 0;
+    PPCGScop->options->live_range_reordering = 1;
 
     PPCGScop->start = 0;
     PPCGScop->end = 0;
@@ -2993,7 +2993,7 @@ public:
     Builder.SetInsertPoint(&*StartBlock->begin());
 
     NodeBuilder.initializeAfterRTH();
-    // NodeBuilder.preloadInvariantLoads();
+    NodeBuilder.preloadInvariantLoads();
     NodeBuilder.create(Root);
     NodeBuilder.finalize();
 
