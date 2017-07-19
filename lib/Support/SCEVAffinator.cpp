@@ -96,9 +96,8 @@ static __isl_give isl_pw_aff *getWidthExpValOnDomain(unsigned Width,
 }
 
 static isl_space *construct_default_space(Scop *S, int NumIterators) {
-  isl_set *Context = S->getContext();
-  isl_space *Space = isl_set_get_space(Context);
-  isl_set_free(Context);
+  isl_space *Space = S->getParamSpace();
+  errs() << "\t\tContext: "; isl_space_dump(Space);
 
   // Drop all the old dimensions
   Space = isl_space_drop_dims(Space, isl_dim_set, 0,
@@ -139,6 +138,7 @@ void SCEVAffinator::takeNonNegativeAssumption(PWACtx &PWAC) {
 }
 
 __isl_give PWACtx SCEVAffinator::getPWACtxFromPWA(__isl_take isl_pw_aff *PWA) {
+  errs() << "PWA: "; isl_pw_aff_dump(PWA);
   return std::make_pair(
       PWA, isl_set_empty(construct_default_space(S, NumIterators)));
 }
@@ -249,11 +249,18 @@ __isl_give PWACtx SCEVAffinator::visit(const SCEV *Expr) {
   if (isl_id *Id = S->getIdForParam(Expr)) {
     isl_space *Space = construct_default_space(S, NumIterators);
     isl_set *Domain = isl_set_universe(isl_space_copy(Space));
-    isl_aff *Affine = isl_aff_zero_on_domain(isl_local_space_from_space(Space));
+    isl_aff *Affine = isl_aff_zero_on_domain(
+        isl_local_space_from_space(isl_space_copy(Space)));
 
     // Find the dimension that corresponds to this parameter.
     int IdLoc = isl_space_find_dim_by_id(Space, isl_dim_param, Id);
+    isl_space_free(Space);
+    isl_id_free(Id);
+
     Affine = isl_aff_add_coefficient_si(Affine, isl_dim_param, IdLoc, 1);
+
+    errs() << "Parameter SCEV:\n";
+    errs() << "\tAffine: "; isl_aff_dump(Affine);
 
     PWAC = getPWACtxFromPWA(isl_pw_aff_alloc(Domain, Affine));
   } else {
@@ -298,6 +305,10 @@ __isl_give PWACtx SCEVAffinator::visitConstant(const SCEVConstant *Expr) {
 
   isl_space *Space = construct_default_space(S, NumIterators);
   isl_local_space *ls = isl_local_space_from_space(Space);
+
+  errs() << "Visitconstant:\n";
+  errs() << "\t"; isl_local_space_dump(ls);
+  errs() << "\n";
   return getPWACtxFromPWA(isl_pw_aff_from_aff(isl_aff_val_on_domain(ls, v)));
 }
 

@@ -1,0 +1,488 @@
+diff --git a/lib/External/ppcg/cuda.c b/lib/External/ppcg/cuda.c
+index 3063f6d..1b605f5 100644
+--- a/lib/External/ppcg/cuda.c
++++ b/lib/External/ppcg/cuda.c
+@@ -153,20 +153,20 @@ static __isl_give isl_printer *copy_array_from_device(
+ 	return p;
+ }
+ 
+-static void print_reverse_list(FILE *out, int len, int *list)
++static isl_printer *print_reverse_list(isl_printer *p, int len, int *list)
+ {
+ 	int i;
+ 
+ 	if (len == 0)
+-		return;
++		return p;
+ 
+-	fprintf(out, "(");
++        p = isl_printer_print_str(p, "(");
+ 	for (i = 0; i < len; ++i) {
+ 		if (i)
+-			fprintf(out, ", ");
+-		fprintf(out, "%d", list[len - 1 - i]);
++                        p = isl_printer_print_str(p, ", ");
++                p = isl_printer_print_int(p, list[len - 1 - i]);
+ 	}
+-	fprintf(out, ")");
++        return isl_printer_print_str(p, ")");
+ }
+ 
+ /* Print the effective grid size as a list of the sizes in each
+@@ -534,7 +534,7 @@ struct print_host_user_data {
+  * In case of a kernel launch, print a block of statements that
+  * defines the grid and the block and then launches the kernel.
+  */
+-static __isl_give isl_printer *print_host_user(__isl_take isl_printer *p,
++__isl_give isl_printer *print_host_user(__isl_take isl_printer *p,
+ 	__isl_take isl_ast_print_options *print_options,
+ 	__isl_keep isl_ast_node *node, void *user)
+ {
+@@ -569,8 +569,7 @@ static __isl_give isl_printer *print_host_user(__isl_take isl_printer *p,
+ 	p = isl_printer_print_str(p, "dim3 k");
+ 	p = isl_printer_print_int(p, kernel->id);
+ 	p = isl_printer_print_str(p, "_dimBlock");
+-	print_reverse_list(isl_printer_get_file(p),
+-				kernel->n_block, kernel->block_dim);
++	p = print_reverse_list(p, kernel->n_block, kernel->block_dim);
+ 	p = isl_printer_print_str(p, ";");
+ 	p = isl_printer_end_line(p);
+ 
+@@ -600,7 +599,9 @@ static __isl_give isl_printer *print_host_user(__isl_take isl_printer *p,
+ 	p = isl_printer_start_line(p);
+ 	p = isl_printer_end_line(p);
+ 
++#if 0
+ 	print_kernel(data->prog, kernel, data->cuda);
++#endif
+ 
+ 	return p;
+ }
+diff --git a/lib/External/ppcg/cuda.h b/lib/External/ppcg/cuda.h
+index 89175fd..bd8dd3d 100644
+--- a/lib/External/ppcg/cuda.h
++++ b/lib/External/ppcg/cuda.h
+@@ -6,5 +6,8 @@
+ 
+ int generate_cuda(isl_ctx *ctx, struct ppcg_options *options,
+ 	const char *input);
++__isl_give isl_printer *print_host_user(__isl_take isl_printer *p,
++	__isl_take isl_ast_print_options *print_options,
++	__isl_keep isl_ast_node *node, void *user);
+ 
+ #endif
+diff --git a/lib/External/ppcg/external.c b/lib/External/ppcg/external.c
+index 0e9f5e3..b22e53a 100644
+--- a/lib/External/ppcg/external.c
++++ b/lib/External/ppcg/external.c
+@@ -1,44 +1,141 @@
+-void ppcg_start_block(){}
+-void ppcg_end_block(){}
+-void ppcg_print_macros(){}
+-void pet_scop_compute_outer_to_any(){}
+-void pet_scop_compute_outer_to_inner(){}
+-void pet_tree_get_type(){}
+-void pet_tree_foreach_access_expr(){}
+-void pet_expr_get_ctx(){}
+-void pet_expr_access_is_read(){}
+-void pet_expr_access_is_write(){}
+-void pet_expr_access_get_tagged_may_read(){}
+-void pet_expr_access_get_tagged_may_write(){}
+-void pet_expr_access_get_must_write(){}
+-void pet_expr_access_get_index(){}
+-void pet_expr_access_get_ref_id(){}
+-void print_cpu(){}
+-void ppcg_print_exposed_declarations(){}
+-void ppcg_print_declaration(){}
+-void pet_stmt_print_body(){}
+-void pet_loc_get_start(){}
+-void pet_loc_get_end(){}
+-void pet_scop_collect_tagged_may_reads(){}
+-void pet_scop_collect_may_reads(){}
+-void pet_scop_collect_tagged_may_writes(){}
+-void pet_scop_collect_may_writes(){}
+-void pet_scop_collect_tagged_must_writes(){}
+-void pet_scop_collect_must_writes(){}
+-void pet_scop_collect_tagged_must_kills(){}
+-void pet_transform_C_source(){}
+-void pet_scop_print_original(){}
+-void pet_scop_free(){}
+-void pet_scop_align_params(){}
+-void pet_scop_can_build_ast_exprs(){}
+-void pet_scop_has_data_dependent_conditions(){}
+-void pet_tree_foreach_expr(){}
+-void pet_expr_foreach_call_expr(){}
+-void pet_stmt_is_kill(){}
+-void pet_options_args() {}
+-void ppcg_print_guarded() {}
+-void ppcg_version() {}
+-void pet_options_set_encapsulate_dynamic_control() {}
+-void generate_opencl() {}
+-void generate_cpu() {}
+-void pet_stmt_build_ast_exprs() {}
++#include "assert.h"
++#include "stdio.h"
++#include "stdlib.h"
++
++#define die() { \
++  fprintf(stderr, "Dummy function %s called\n", __FUNCTION__); \
++  abort(); \
++}
++
++void ppcg_start_block() {
++  die();
++}
++void ppcg_end_block(){
++  die();
++}
++void ppcg_print_macros(){
++  die();
++}
++void pet_scop_compute_outer_to_any(){
++  die();
++}
++void pet_scop_compute_outer_to_inner(){
++  die();
++}
++void pet_tree_get_type(){
++  die();
++}
++void pet_tree_foreach_access_expr(){
++  die();
++}
++void pet_expr_get_ctx(){
++  die();
++}
++void pet_expr_access_is_read(){
++  die();
++}
++void pet_expr_access_is_write(){
++  die();
++}
++void pet_expr_access_get_tagged_may_read(){
++  die();
++}
++void pet_expr_access_get_tagged_may_write(){
++  die();
++}
++void pet_expr_access_get_must_write(){
++  die();
++}
++void pet_expr_access_get_index(){
++  die();
++}
++void pet_expr_access_get_ref_id(){
++  die();
++}
++void print_cpu(){
++  die();
++}
++void ppcg_print_exposed_declarations(){
++  die();
++}
++void ppcg_print_declaration(){
++  die();
++}
++void pet_stmt_print_body(){
++  die();
++}
++void pet_loc_get_start(){
++  die();
++}
++void pet_loc_get_end(){
++  die();
++}
++void pet_scop_collect_tagged_may_reads(){
++  die();
++}
++void pet_scop_collect_may_reads(){
++  die();
++}
++void pet_scop_collect_tagged_may_writes(){
++  die();
++}
++void pet_scop_collect_may_writes(){
++  die();
++}
++void pet_scop_collect_tagged_must_writes(){
++  die();
++}
++void pet_scop_collect_must_writes(){
++  die();
++}
++void pet_scop_collect_tagged_must_kills(){
++  die();
++}
++void pet_transform_C_source(){
++  die();
++}
++void pet_scop_print_original(){
++  die();
++}
++void pet_scop_free(){
++  die();
++}
++void pet_scop_align_params(){
++  die();
++}
++void pet_scop_can_build_ast_exprs(){
++  die();
++}
++void pet_scop_has_data_dependent_conditions(){
++  die();
++}
++void pet_tree_foreach_expr(){
++  die();
++}
++void pet_expr_foreach_call_expr(){
++  die();
++}
++void pet_stmt_is_kill(){
++  die();
++}
++void pet_options_args() {
++  die();
++}
++void ppcg_print_guarded() {
++  die();
++}
++void ppcg_version() {
++  die();
++}
++void pet_options_set_encapsulate_dynamic_control() {
++  die();
++}
++void generate_opencl() {
++  die();
++}
++void generate_cpu() {
++  die();
++}
++void pet_stmt_build_ast_exprs() {
++  die();
++}
+diff --git a/lib/External/ppcg/gpu.c b/lib/External/ppcg/gpu.c
+index 3aff938..8916d2d 100644
+--- a/lib/External/ppcg/gpu.c
++++ b/lib/External/ppcg/gpu.c
+@@ -55,7 +55,7 @@ static const char *get_outer_array_name(__isl_keep isl_map *access)
+ /* Collect all references to the given array and store pointers to them
+  * in array->refs.
+  */
+-static void collect_references(struct gpu_prog *prog,
++void collect_references(struct gpu_prog *prog,
+ 	struct gpu_array_info *array)
+ {
+ 	int i;
+@@ -1453,6 +1453,7 @@ static int find_array_index(struct ppcg_kernel *kernel, const char *name)
+  * to the current kernel.
+  */
+ struct ppcg_transform_data {
++        struct ppcg_options *options;
+ 	struct ppcg_kernel *kernel;
+ 	struct gpu_stmt_access *accesses;
+ 	isl_pw_multi_aff *iterator_map;
+@@ -1787,7 +1788,8 @@ static __isl_give isl_ast_expr *transform_expr(__isl_take isl_ast_expr *expr,
+  */
+ static __isl_give isl_ast_node *create_domain_leaf(
+ 	struct ppcg_kernel *kernel, __isl_take isl_ast_node *node,
+-	__isl_keep isl_ast_build *build, struct gpu_stmt *gpu_stmt)
++	__isl_keep isl_ast_build *build, struct gpu_stmt *gpu_stmt,
++        struct gpu_gen *gen)
+ {
+ 	struct ppcg_transform_data data;
+ 	struct ppcg_kernel_stmt *stmt;
+@@ -1822,10 +1824,9 @@ static __isl_give isl_ast_node *create_domain_leaf(
+ 	data.accesses = stmt->u.d.stmt->accesses;
+ 	data.iterator_map = iterator_map;
+ 	data.sched2shared = sched2shared;
+-	stmt->u.d.ref2expr = pet_stmt_build_ast_exprs(stmt->u.d.stmt->stmt,
++	stmt->u.d.ref2expr = gen->build_ast_expr(stmt->u.d.stmt->stmt,
+ 					    build, &transform_index, &data,
+ 					    &transform_expr, &data);
+-
+ 	isl_pw_multi_aff_free(iterator_map);
+ 	isl_pw_multi_aff_free(sched2shared);
+ 
+@@ -1944,6 +1945,7 @@ static __isl_give isl_ast_node *create_sync_leaf(
+  */
+ struct ppcg_at_domain_data {
+ 	struct gpu_prog *prog;
++	struct gpu_gen *gen;
+ 	struct ppcg_kernel *kernel;
+ };
+ 
+@@ -1985,7 +1987,8 @@ static __isl_give isl_ast_node *at_domain(__isl_take isl_ast_node *node,
+ 	isl_id_free(id);
+ 
+ 	if (gpu_stmt)
+-		return create_domain_leaf(data->kernel, node, build, gpu_stmt);
++		return create_domain_leaf(data->kernel, node, build, gpu_stmt,
++                                          data->gen);
+ 
+ 	if (!prefixcmp(name, "to_device_") || !prefixcmp(name, "from_device_"))
+ 		return node;
+@@ -2294,7 +2297,7 @@ static isl_bool update_depth(__isl_keep isl_schedule_node *node, void *user)
+  * The ASTs for the device code are embedded in ppcg_kernel objects
+  * attached to the leaf nodes that call "kernel".
+  */
+-static __isl_give isl_ast_node *generate_code(struct gpu_gen *gen,
++__isl_give isl_ast_node *generate_code(struct gpu_gen *gen,
+ 	__isl_take isl_schedule *schedule)
+ {
+ 	struct ppcg_at_domain_data data;
+@@ -2304,6 +2307,7 @@ static __isl_give isl_ast_node *generate_code(struct gpu_gen *gen,
+ 	int depth;
+ 
+ 	data.prog = gen->prog;
++	data.gen = gen;
+ 	data.kernel = NULL;
+ 
+ 	depth = 0;
+@@ -2375,7 +2379,7 @@ static isl_bool set_permutable(__isl_keep isl_schedule_node *node, void *user)
+ /* Does "schedule" contain any permutable band with at least one coincident
+  * member?
+  */
+-static int has_any_permutable_node(__isl_keep isl_schedule *schedule)
++int has_any_permutable_node(__isl_keep isl_schedule *schedule)
+ {
+ 	int any_permutable = 0;
+ 
+@@ -4265,7 +4269,7 @@ static __isl_give isl_schedule *determine_properties_original_schedule(
+  * a file, by computing one or by determining the properties
+  * of the original schedule.
+  */
+-static __isl_give isl_schedule *get_schedule(struct gpu_gen *gen)
++__isl_give isl_schedule *get_schedule(struct gpu_gen *gen)
+ {
+ 	isl_schedule *schedule;
+ 
+@@ -4938,7 +4942,7 @@ static __isl_give isl_schedule_node *add_to_from_device(
+  * are separated from the other children and are not mapped to
+  * the device.
+  */
+-static __isl_give isl_schedule *map_to_device(struct gpu_gen *gen,
++__isl_give isl_schedule *map_to_device(struct gpu_gen *gen,
+ 	__isl_take isl_schedule *schedule)
+ {
+ 	isl_schedule_node *node;
+@@ -5305,7 +5309,7 @@ int generate_gpu(isl_ctx *ctx, const char *input, FILE *out,
+  * arrays that are not local to "prog" and remove those elements that
+  * are definitely killed or definitely written by "prog".
+  */
+-static __isl_give isl_union_set *compute_may_persist(struct gpu_prog *prog)
++__isl_give isl_union_set *compute_may_persist(struct gpu_prog *prog)
+ {
+ 	int i;
+ 	isl_union_set *may_persist, *killed;
+diff --git a/lib/External/ppcg/gpu.h b/lib/External/ppcg/gpu.h
+index 204cf6b..35faabe 100644
+--- a/lib/External/ppcg/gpu.h
++++ b/lib/External/ppcg/gpu.h
+@@ -54,6 +54,8 @@ struct gpu_array_info {
+ 	 * It is set to NULL otherwise.
+ 	 */
+ 	isl_union_map *dep_order;
++
++        void *user;
+ };
+ 
+ /* Represents an outer array accessed by a ppcg_kernel, localized
+@@ -148,6 +150,17 @@ struct gpu_gen {
+ 		struct gpu_types *types, void *user);
+ 	void *print_user;
+ 
++        isl_id_to_ast_expr *(*build_ast_expr)(void *stmt,
++	        isl_ast_build *build,
++        	isl_multi_pw_aff *(*fn_index)(
++	        	__isl_take isl_multi_pw_aff *mpa, isl_id *id,
++		        void *user),
++                void *user_index,
++        	isl_ast_expr *(*fn_expr)(isl_ast_expr *expr,
++		        isl_id *id, void *user),
++        void *user_expr);
++
++
+ 	struct gpu_prog *prog;
+ 	/* The generated AST. */
+ 	isl_ast_node *tree;
+@@ -352,4 +365,13 @@ int generate_gpu(isl_ctx *ctx, const char *input, FILE *out,
+ 		struct gpu_prog *prog, __isl_keep isl_ast_node *tree,
+ 		struct gpu_types *types, void *user), void *user);
+ 
++__isl_give isl_schedule *get_schedule(struct gpu_gen *gen);
++int has_any_permutable_node(__isl_keep isl_schedule *schedule);
++__isl_give isl_schedule *map_to_device(struct gpu_gen *gen,
++                                       __isl_take isl_schedule *schedule);
++__isl_give isl_ast_node *generate_code(struct gpu_gen *gen,
++                                       __isl_take isl_schedule *schedule);
++
++__isl_give isl_union_set *compute_may_persist(struct gpu_prog *prog);
++void collect_references(struct gpu_prog *prog, struct gpu_array_info *array);
+ #endif
+diff --git a/lib/External/ppcg/ppcg.c b/lib/External/ppcg/ppcg.c
+index 3417902..0fbf3cc 100644
+--- a/lib/External/ppcg/ppcg.c
++++ b/lib/External/ppcg/ppcg.c
+@@ -99,6 +99,8 @@ int ppcg_scop_any_hidden_declarations(struct ppcg_scop *scop)
+ 	if (!scop)
+ 		return 0;
+ 
++        // This is a pet feature not available in Polly.
++        return 0;
+ 	for (i = 0; i < scop->pet->n_array; ++i)
+ 		if (scop->pet->arrays[i]->declared &&
+ 		    !scop->pet->arrays[i]->exposed)
+@@ -336,7 +338,7 @@ static __isl_give isl_union_map *project_out_tags(
+  *
+  *	{ [S[i,j] -> R_1[]] -> S[i,j]; [S[i,j] -> R_2[]] -> S[i,j] }
+  */
+-static void compute_tagger(struct ppcg_scop *ps)
++void compute_tagger(struct ppcg_scop *ps)
+ {
+ 	isl_union_map *tagged;
+ 	isl_union_pw_multi_aff *tagger;
+@@ -694,7 +696,7 @@ static void compute_flow_dep(struct ppcg_scop *ps)
+  * set of order dependences and a set of external false dependences
+  * in compute_live_range_reordering_dependences.
+  */
+-static void compute_dependences(struct ppcg_scop *scop)
++void compute_dependences(struct ppcg_scop *scop)
+ {
+ 	isl_union_map *may_source;
+ 	isl_union_access_info *access;
+@@ -813,7 +815,7 @@ static __isl_give isl_set *set_intersect_str(__isl_take isl_set *set,
+ 	return set;
+ }
+ 
+-static void *ppcg_scop_free(struct ppcg_scop *ps)
++void *ppcg_scop_free(struct ppcg_scop *ps)
+ {
+ 	if (!ps)
+ 		return NULL;
+@@ -1007,6 +1009,7 @@ static int check_options(isl_ctx *ctx)
+ 	return 0;
+ }
+ 
++#if 0
+ int main(int argc, char **argv)
+ {
+ 	int r;
+@@ -1037,3 +1040,4 @@ int main(int argc, char **argv)
+ 
+ 	return r;
+ }
++#endif
+diff --git a/lib/External/ppcg/ppcg.h b/lib/External/ppcg/ppcg.h
+index d64ea67..ef4ab20 100644
+--- a/lib/External/ppcg/ppcg.h
++++ b/lib/External/ppcg/ppcg.h
+@@ -114,4 +114,8 @@ int ppcg_transform(isl_ctx *ctx, const char *input, FILE *out,
+ 	__isl_give isl_printer *(*fn)(__isl_take isl_printer *p,
+ 		struct ppcg_scop *scop, void *user), void *user);
+ 
++void compute_tagger(struct ppcg_scop *ps);
++void compute_dependences(struct ppcg_scop *scop);
++void *ppcg_scop_free(struct ppcg_scop *ps);
++
+ #endif

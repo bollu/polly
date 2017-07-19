@@ -1,0 +1,40 @@
+********************
+PASS: Polly :: GPGPU/unknown-fn-call-not-copied-into-kernel.ll (45 of 49)
+PASS: Polly :: GPGPU/untouched-arrays.ll (46 of 49)
+PASS: Polly :: GPGPU/shared-memory-two-dimensional.ll (48 of 49)
+PASS: Polly :: GPGPU/scheduler-timeout.ll (49 of 49)
+Testing Time: 3.47s
+********************
+Failing Tests (13):
+    Polly :: GPGPU/host-control-flow.ll
+    Polly :: GPGPU/kernel-params-only-some-arrays.ll
+    Polly :: GPGPU/mostly-sequential.ll
+
+Broken because of Bounds
+    Polly :: GPGPU/run-time-check.ll
+    Polly :: GPGPU/run-time-check.ll
+    Polly :: GPGPU/remove-dead-instructions-in-stmt.ll
+    Polly :: GPGPU/host-statement.ll
+    Polly :: GPGPU/invariant-load-hoisting.ll
+
+Simple-Done:
+    Polly :: GPGPU/privatization-simple.ll
+    Polly :: GPGPU/privatization.ll
+    Polly :: GPGPU/size-cast.ll
+    Polly :: GPGPU/untouched-arrays.ll
+    Polly :: GPGPU/scheduler-timeout.ll
+    Polly :: GPGPU/region-stmt.ll
+    Polly :: GPGPU/private-memory.ll
+    Polly :: GPGPU/parametric-loop-bound.ll
+    Polly :: GPGPU/non-zero-array-offset.ll
+    Polly :: GPGPU/invalid-kernel.ll
+
+
+Require review, seems incorrect:
+    Polly :: GPGPU/non-read-only-scalars.ll
+        PPCG added two new  user nodes called "init_device" and "clear_device".
+        Perhaps we are expected to transfer data between these? The flow of data
+        does not look correct.
+
+Require review-Done:
+    Polly :: GPGPU/phi-nodes-in-kernel.ll
