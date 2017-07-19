@@ -141,7 +141,7 @@ struct MustKillsInfo {
   /// [params] -> { Stmt_phantom[]  -> scalar_to_kill[] }
   isl::union_map MustKills;
 
-  MustKillsInfo() : KillsSchedule(nullptr), MustKills(nullptr){};
+  MustKillsInfo() : KillsSchedule(nullptr) {}
 };
 
 /// Check if SAI's uses are entirely contained within Scop S.
@@ -183,6 +183,7 @@ static MustKillsInfo computeMustKillsInfo(const Scop &S) {
   }
 
   Info.TaggedMustKills = isl::union_map::empty(isl::space(ParamSpace));
+  Info.MustKills = isl::union_map::empty(isl::space(ParamSpace));
 
   // Initialising KillsSchedule to `isl_set_empty` creates an empty node in the
   // schedule:
@@ -1007,15 +1008,9 @@ static bool isPrefix(std::string String, std::string Prefix) {
 }
 
 /// Return the `isl_pw_aff` this `isl_multi_pw_aff` is comprised of.
-///
-/// For now, we assume that this multi_pw_aff only contains one pw_aff.
-/// We use __isl_take semantics on the parameter since it is more natural
-/// for converting between isl objects.
-/// TODO: how do I assert this? I was unable to find a function that
-isl_pw_aff *isl_multi_pw_aff_index(__isl_take isl_multi_pw_aff *mpa,
+isl_pw_aff *isl_multi_pw_aff_index(__isl_keep isl_multi_pw_aff *mpa,
                                    int index) {
   isl_pw_aff *pwaff = isl_multi_pw_aff_get_pw_aff(mpa, index);
-  isl_multi_pw_aff_free(mpa);
   return pwaff;
 }
 
@@ -1025,12 +1020,12 @@ Value *GPUNodeBuilder::getArraySize(gpu_array_info *Array) {
 
   if (!gpu_array_is_scalar(Array)) {
     auto OffsetDimZero =
-        isl_pw_aff_copy(isl_multi_pw_aff_index(Array->bound, 0));
+        isl_multi_pw_aff_index(Array->bound, 0);
     isl_ast_expr *Res = isl_ast_build_expr_from_pw_aff(Build, OffsetDimZero);
 
     for (unsigned int i = 1; i < Array->n_index; i++) {
       isl_pw_aff *Bound_I =
-          isl_pw_aff_copy(isl_multi_pw_aff_index(Array->bound, i));
+          isl_multi_pw_aff_index(Array->bound, i);
       isl_ast_expr *Expr = isl_ast_build_expr_from_pw_aff(Build, Bound_I);
       Res = isl_ast_expr_mul(Res, Expr);
     }
@@ -1070,8 +1065,7 @@ Value *GPUNodeBuilder::getArrayOffset(gpu_array_info *Array) {
 
   for (long i = 0; i < isl_set_dim(Min, isl_dim_set); i++) {
     if (i > 0) {
-      isl_pw_aff *Bound_I =
-          isl_pw_aff_copy(isl_multi_pw_aff_index(Array->bound, i - 1));
+      isl_pw_aff *Bound_I = isl_multi_pw_aff_index(Array->bound, i - 1)
       isl_ast_expr *BExpr = isl_ast_build_expr_from_pw_aff(Build, Bound_I);
       Result = isl_ast_expr_mul(Result, BExpr);
     }
@@ -1789,8 +1783,7 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     Sizes.push_back(nullptr);
     for (long j = 1; j < Kernel->array[i].array->n_index; j++) {
       isl_ast_expr *DimSize = isl_ast_build_expr_from_pw_aff(
-          Build, isl_pw_aff_copy(
-                     isl_multi_pw_aff_index(Kernel->array[i].array->bound, j)));
+          Build, isl_multi_pw_aff_index(Kernel->array[i].array->bound, j));
       auto V = ExprBuilder.create(DimSize);
       Sizes.push_back(SE.getSCEV(V));
     }
@@ -3003,7 +2996,7 @@ public:
     Builder.SetInsertPoint(&*StartBlock->begin());
 
     NodeBuilder.initializeAfterRTH();
-    NodeBuilder.preloadInvariantLoads();
+    // NodeBuilder.preloadInvariantLoads();
     NodeBuilder.create(Root);
     NodeBuilder.finalize();
 
