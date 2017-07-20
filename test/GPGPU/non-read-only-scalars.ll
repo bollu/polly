@@ -32,7 +32,7 @@
 ; }
 
 ; Data flow seems wrong. For example, we never use sum_0.
-; CODE-NEXT:     dim3 k0_dimBlock(32);
+; CODE:          dim3 k0_dimBlock(32);
 ; CODE-NEXT:     dim3 k0_dimGrid(1);
 ; CODE-NEXT:     kernel0 <<<k0_dimGrid, k0_dimBlock>>> (dev_MemRef_A);
 ; CODE-NEXT:     cudaCheckKernel();
@@ -51,10 +51,12 @@
 ; CODE-NEXT:       kernel2 <<<k2_dimGrid, k2_dimBlock>>> (dev_MemRef_A, dev_MemRef_sum_0__phi, dev_MemRef_sum_0);
 ; CODE-NEXT:       cudaCheckKernel();
 ; CODE-NEXT:     }
-; CODE:   }
 
 ; CODE:        cudaCheckReturn(cudaMemcpy(MemRef_A, dev_MemRef_A, (32) * sizeof(float), cudaMemcpyDeviceToHost));
 ; CODE-NEXT:   cudaCheckReturn(cudaMemcpy(&MemRef_sum_0, dev_MemRef_sum_0, sizeof(float), cudaMemcpyDeviceToHost));
+; CODE-NEXT:   cudaCheckReturn(cudaFree(dev_MemRef_A));
+; CODE-NEXT:   cudaCheckReturn(cudaFree(dev_MemRef_sum_0__phi));
+; CODE-NEXT:   cudaCheckReturn(cudaFree(dev_MemRef_sum_0));
 ; CODE-NEXT: }
 
 ; CODE: # kernel0
@@ -81,6 +83,21 @@
 ; KERNEL-IR-NEXT:  [[REGD:%.+]] = load float, float* %sum.0.s2a
 ; KERNEL-IR-NEXT:  store float [[REGD]], float* [[REGC]]
 ; KERNEL-IR-NEXT:  ret void
+
+; New Kernel IR
+;   %sum.0.phiops = alloca float
+;   %0 = addrspacecast i8 addrspace(1)* %MemRef_sum_0__phi to float*
+;   %1 = load float, float* %0
+;   store float %1, float* %sum.0.phiops
+;   br label %polly.stmt.bb17
+; 
+; polly.stmt.bb17:                                  ; preds = %entry
+;   store float 0.000000e+00, float* %sum.0.phiops
+;   %2 = addrspacecast i8 addrspace(1)* %MemRef_sum_0__phi to float*
+;   %3 = load float, float* %sum.0.phiops
+;   store float %3, float* %2
+;   ret void
+; }
 
 target datalayout = "e-m:e-i64:64-f80:128-n8:16:32:64-S128"
 
