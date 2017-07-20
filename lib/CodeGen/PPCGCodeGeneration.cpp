@@ -95,6 +95,11 @@ static cl::opt<bool> ManagedMemory("polly-acc-codegen-managed-memory",
                                    cl::cat(PollyCategory));
 
 static cl::opt<bool>
+    FailOnStoredScalar("polly-acc-fail-on-stored-scalar",
+                       cl::desc("fail if stored scalar is true."), cl::Hidden,
+                       cl::init(false), cl::ZeroOrMore, cl::cat(PollyCategory));
+
+static cl::opt<bool>
     FailOnVerifyModuleFailure("polly-acc-fail-on-verify-module-failure",
                               cl::desc("Fail and generate a backtrace if"
                                        " verifyModule fails on the GPU "
@@ -248,6 +253,19 @@ static MustKillsInfo computeMustKillsInfo(const Scop &S) {
   }
 
   return Info;
+}
+
+/// HACK: Used to remap "ordinary" functions to their corresponding
+/// intrinsics.
+static std::map<std::string, std::string> getFunctionNameRemaps() {
+  std::map<std::string, std::string> NameMap;
+  NameMap["sqrt"] = "llvm.sqrt.f64";
+  NameMap["copysign"] = "llvm.copysign.f64";
+  NameMap["fabs"] = "llvm.fabs.f64";
+  NameMap["llvm.cos.f64"] = "llvm.sqrt.f64";
+  NameMap["cos"] = "llvm.sqrt.f64";
+  NameMap["exp"] = "llvm.fabs.f64";
+  return NameMap;
 }
 
 /// Create the ast expressions for a ScopStmt.
@@ -1307,9 +1325,26 @@ static bool isValidFunctionInKernel(llvm::Function *F) {
   // all variants of the intrinsic "llvm.sqrt.*", "llvm.fabs", and
   // "llvm.copysign".
   const StringRef Name = F->getName();
-  return F->isIntrinsic() &&
-         (Name.startswith("llvm.sqrt") || Name.startswith("llvm.fabs") ||
-          Name.startswith("llvm.copysign"));
+
+  static std::map<std::string, std::string> FunctionNameRemaps =
+      getFunctionNameRemaps();
+
+  const bool IsRemappedFunction =
+      FunctionNameRemaps.find(Name) != FunctionNameRemaps.end();
+
+  // allow all remapped functions since this a hack and we always remap
+  // these to intrinsics.
+  if (IsRemappedFunction)
+    return true;
+
+  const bool IsValid = F->isIntrinsic() && (Name.startswith("llvm.sqrt") ||
+                                            Name.startswith("llvm.fabs") ||
+                                            Name.startswith("llvm.copysign"));
+
+  if (!IsValid)
+    DEBUG(dbgs() << "invalid function in kernel: " << Name << "\n");
+
+  return IsValid;
 }
 
 /// Do not take `Function` as a subtree value.
@@ -1604,10 +1639,21 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
                          Launch + "_params_i8ptr", Location);
 }
 
+static std::string getClonedFnName(std::string OriginalName) {
+  static std::map<std::string, std::string> FunctionNameRemaps =
+      getFunctionNameRemaps();
+  auto It = FunctionNameRemaps.find(OriginalName);
+  if (It == FunctionNameRemaps.end())
+    return OriginalName;
+
+  return It->second;
+}
+
 void GPUNodeBuilder::setupKernelSubtreeFunctions(
     SetVector<Function *> SubtreeFunctions) {
+
   for (auto Fn : SubtreeFunctions) {
-    const std::string ClonedFnName = Fn->getName();
+    const std::string ClonedFnName = getClonedFnName(Fn->getName());
     Function *Clone = GPUModule->getFunction(ClonedFnName);
     if (!Clone)
       Clone =
@@ -1935,8 +1981,10 @@ void GPUNodeBuilder::finalizeKernelArguments(ppcg_kernel *Kernel) {
     /// code might be incorrect, if we only store at the end of the kernel.
     /// To support this case we need to store these scalars back at each
     /// memory store or at least before each kernel barrier.
-    if (Kernel->n_block != 0 || Kernel->n_grid != 0)
+    if (Kernel->n_block != 0 || Kernel->n_grid != 0) {
+      assert(!FailOnStoredScalar && "storedScalar = true");
       BuildSuccessful = 0;
+    }
 }
 
 void GPUNodeBuilder::createKernelVariables(ppcg_kernel *Kernel, Function *FN) {
@@ -3059,6 +3107,7 @@ public:
     // This also allows us to prevent codegen from trying to take the
     // address of an intrinsic function to send to the kernel.
     if (containsInvalidKernelFunction(CurrentScop)) {
+      llvm_unreachable("we have an invalid function in the scop.\n");
       DEBUG(
           dbgs()
               << "Scop contains function which cannot be materialised in a GPU "
