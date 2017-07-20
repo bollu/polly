@@ -2499,12 +2499,7 @@ public:
     std::vector<isl::pw_aff> PwAffs;
 
     isl_space *AlignSpace = S->getParamSpace();
-    errs() << "AlignSpace(Param): ";
-    isl_space_dump(AlignSpace);
     AlignSpace = isl_space_add_dims(AlignSpace, isl_dim_set, 1);
-
-    errs() << "AlignSpace(With dims): ";
-    isl_space_dump(AlignSpace);
 
     if (PPCGArray.n_index > 0) {
       if (isl_set_is_empty(PPCGArray.extent)) {
@@ -2550,32 +2545,8 @@ public:
     assert(BoundsSpace && "unable to access space of array");
     assert(BoundsList && "unable to access list of bounds");
 
-    PPCGArray.bound = isl_multi_pw_aff_from_pw_aff_list(
-        isl_space_copy(BoundsSpace), isl_pw_aff_list_copy(BoundsList));
-    // DEBUG CODE----
-    if (!PPCGArray.bound || PrintBoundsDebugInfo) {
-      if (!PPCGArray.bound)
-        errs() << "# Bounds are WRECKED for: " << Array->getName() << "\n";
-
-      errs() << "#### BoundsSpace: ";
-      isl_space_dump(BoundsSpace);
-      errs() << "#### BoundsList: ";
-      isl_pw_aff_list_dump(BoundsList);
-      errs() << "#### SAI: ";
-      Array->dump();
-
-      errs() << "#### Bounds per pw aff:\n";
-      for (isl::pw_aff &PwAff : PwAffs) {
-        errs() << "- pwaff: ";
-        PwAff.dump();
-        errs() << "\t";
-        errs() << "- space: ";
-        PwAff.get_space().dump();
-        errs() << "\n\n";
-      }
-    }
-    isl_space_free(BoundsSpace);
-    isl_pw_aff_list_free(BoundsList);
+    PPCGArray.bound =
+        isl_multi_pw_aff_from_pw_aff_list(BoundsSpace, BoundsList);
     assert(PPCGArray.bound && "PPCGArray.bound was not constructed correctly");
   }
 
