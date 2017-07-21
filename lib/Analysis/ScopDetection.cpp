@@ -275,7 +275,7 @@ void DiagnosticScopFound::print(DiagnosticPrinter &DP) const {
 
 static bool IsFnNameListedInOnlyFunctions(StringRef FnName) {
   for (auto Name : OnlyFunctions)
-    if (FnName.count(Name) > 0)
+    if (FnName.equals(Name))
       return true;
   return false;
 }
