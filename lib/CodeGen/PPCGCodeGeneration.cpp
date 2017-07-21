@@ -266,13 +266,7 @@ static MustKillsInfo computeMustKillsInfo(const Scop &S) {
 /// intrinsics.
 static std::map<std::string, std::string> getFunctionNameRemaps() {
   std::map<std::string, std::string> NameMap;
-  /*
-  NameMap["sqrt"] = "llvm.sqrt.f64";
   NameMap["copysign"] = "llvm.copysign.f64";
-  NameMap["fabs"] = "llvm.fabs.f64";
-  NameMap["cos"] = "llvm.cos.f64";
-  NameMap["exp"] = "llvm.exp.f64";
-  */
   return NameMap;
 }
 
