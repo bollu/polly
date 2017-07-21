@@ -46,6 +46,7 @@ static void debug_print(const char *format, ...) {
   va_end(args);
 }
 #define dump_function() debug_print("-> %s\n", __func__)
+#define dump_line() debug_print("\t\tline: %d\n", __LINE__)
 
 #define KERNEL_CACHE_SIZE 10
 
@@ -1340,15 +1341,22 @@ static void freeDeviceMemoryCUDA(PollyGPUDevicePtr *Allocation) {
 
 static PollyGPUDevicePtr *allocateMemoryForDeviceCUDA(long MemSize) {
   dump_function();
-
   PollyGPUDevicePtr *DevData = malloc(sizeof(PollyGPUDevicePtr));
   if (DevData == 0) {
-    fprintf(stderr, "Allocate memory for GPU device memory pointer failed.\n");
+    dump_line();
+    fprintf(
+        stderr,
+        "Allocate memory for GPU device memory pointer failed. MemSize: %ld\n",
+        MemSize);
     exit(-1);
   }
   DevData->DevicePtr = (CUDADevicePtr *)malloc(sizeof(CUDADevicePtr));
   if (DevData->DevicePtr == 0) {
-    fprintf(stderr, "Allocate memory for GPU device memory pointer failed.\n");
+    dump_line();
+    fprintf(
+        stderr,
+        "Allocate memory for GPU device memory pointer failed. MemSize: %ld\n",
+        MemSize);
     exit(-1);
   }
 
@@ -1356,7 +1364,11 @@ static PollyGPUDevicePtr *allocateMemoryForDeviceCUDA(long MemSize) {
       CuMemAllocFcnPtr(&(((CUDADevicePtr *)DevData->DevicePtr)->Cuda), MemSize);
 
   if (Res != CUDA_SUCCESS) {
-    fprintf(stderr, "Allocate memory for GPU device memory pointer failed.\n");
+    dump_line();
+    fprintf(
+        stderr,
+        "Allocate memory for GPU device memory pointer failed. MemSize: %ld\n",
+        MemSize);
     exit(-1);
   }
 
