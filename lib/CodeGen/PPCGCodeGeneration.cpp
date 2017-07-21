@@ -754,6 +754,7 @@ void GPUNodeBuilder::allocateDeviceArrays() {
 
     Value *ArraySize = getArraySize(Array);
     Value *Offset = getArrayOffset(Array);
+
     if (Offset)
       ArraySize = Builder.CreateSub(
           ArraySize,
@@ -1025,14 +1026,33 @@ static bool isPrefix(std::string String, std::string Prefix) {
   return String.find(Prefix) == 0;
 }
 
+static bool isPwAffZero(__isl_keep isl_pw_aff *aff) {
+  isl_set *NonZeroSet = isl_pw_aff_non_zero_set(isl_pw_aff_copy(aff));
+  bool ZeroEverywhere = isl_set_is_empty(NonZeroSet);
+  isl_set_free(NonZeroSet);
+  // a pw_aff that is zero at one point and is a constant is necessarily zero
+  // everywhere.
+  return ZeroEverywhere;
+}
+
 Value *GPUNodeBuilder::getArraySize(gpu_array_info *Array) {
   isl_ast_build *Build = isl_ast_build_from_context(S.getContext());
   Value *ArraySize = ConstantInt::get(Builder.getInt64Ty(), Array->size);
 
   if (!gpu_array_is_scalar(Array)) {
     auto OffsetDimZero = isl_multi_pw_aff_get_pw_aff(Array->bound, 0);
-    isl_ast_expr *Res = isl_ast_build_expr_from_pw_aff(Build, OffsetDimZero);
 
+    // If the array is scalar, then it will be of the form:
+    // Number of dimensions: 1
+    // 0th dimension: [params] -> { [(0)] }
+    // In that case, just return the array size.
+    if (Array->n_index == 1 && isPwAffZero(OffsetDimZero)) {
+      isl_pw_aff_free(OffsetDimZero);
+      isl_ast_build_free(Build);
+      return ArraySize;
+    }
+
+    isl_ast_expr *Res = isl_ast_build_expr_from_pw_aff(Build, OffsetDimZero);
     for (unsigned int i = 1; i < Array->n_index; i++) {
       isl_pw_aff *Bound_I = isl_multi_pw_aff_get_pw_aff(Array->bound, i);
       isl_ast_expr *Expr = isl_ast_build_expr_from_pw_aff(Build, Bound_I);
