@@ -1304,8 +1304,12 @@ isl_bool collectReferencesInGPUStmt(__isl_keep isl_ast_node *Node, void *User) {
 static bool isValidFunctionInKernel(llvm::Function *F) {
   assert(F && "F is an invalid pointer");
   // We string compare against the name of the function to allow
-  // all variants of the intrinsic "llvm.sqrt.*"
-  return F->isIntrinsic() && F->getName().startswith("llvm.sqrt");
+  // all variants of the intrinsic "llvm.sqrt.*", "llvm.fabs", and
+  // "llvm.copysign".
+  const StringRef Name = F->getName();
+  return F->isIntrinsic() &&
+         (Name.startswith("llvm.sqrt") || Name.startswith("llvm.fabs") ||
+          Name.startswith("llvm.copysign"));
 }
 
 /// Do not take `Function` as a subtree value.
@@ -2080,6 +2084,8 @@ std::string GPUNodeBuilder::finalizeKernelFunction() {
   if (verifyModule(*GPUModule)) {
     DEBUG(dbgs() << "verifyModule failed on module:\n";
           GPUModule->print(dbgs(), nullptr); dbgs() << "\n";);
+    DEBUG(dbgs() << "verifyModule Error:\n";
+          verifyModule(*GPUModule, &dbgs()););
 
     if (FailOnVerifyModuleFailure)
       llvm_unreachable("VerifyModule failed.");
@@ -2939,7 +2945,7 @@ public:
   ///
   /// If this basic block does something with a `Function` other than calling
   /// a function that we support in a kernel, return true.
-  bool containsInvalidKernelFunctionInBllock(const BasicBlock *BB) {
+  bool containsInvalidKernelFunctionInBlock(const BasicBlock *BB) {
     for (const Instruction &Inst : *BB) {
       const CallInst *Call = dyn_cast<CallInst>(&Inst);
       if (Call && isValidFunctionInKernel(Call->getCalledFunction())) {
@@ -2961,13 +2967,13 @@ public:
   bool containsInvalidKernelFunction(const Scop &S) {
     for (auto &Stmt : S) {
       if (Stmt.isBlockStmt()) {
-        if (containsInvalidKernelFunctionInBllock(Stmt.getBasicBlock()))
+        if (containsInvalidKernelFunctionInBlock(Stmt.getBasicBlock()))
           return true;
       } else {
         assert(Stmt.isRegionStmt() &&
                "Stmt was neither block nor region statement");
         for (const BasicBlock *BB : Stmt.getRegion()->blocks())
-          if (containsInvalidKernelFunctionInBllock(BB))
+          if (containsInvalidKernelFunctionInBlock(BB))
             return true;
       }
     }
