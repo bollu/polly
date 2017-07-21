@@ -1363,7 +1363,7 @@ isl_bool collectReferencesInGPUStmt(__isl_keep isl_ast_node *Node, void *User) {
 
 /// A list of functions that are available in NVIDIA's libdevice.
 std::vector<std::string> LibDeviceFunctions = {"exp", "expf", "expl", "cos",
-                                               "cosf"};
+                                               "cosf", "sqrt"};
 
 /// Return the corresponding CUDA libdevice function name for @p F.
 ///
@@ -1484,6 +1484,7 @@ GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
                                         ValidSubtreeValuesIt.end());
 
   bool AllowLibDevice = Arch == GPUArch::NVPTX64;
+  DEBUG(dbgs() << "AllowLibDevice: " << AllowLibDevice << "\n";);
 
   SetVector<Function *> ValidSubtreeFunctions(
       getFunctionsFromRawSubtreeValues(SubtreeValues, AllowLibDevice));
