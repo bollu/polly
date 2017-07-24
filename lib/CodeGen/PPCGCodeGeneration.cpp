@@ -2501,7 +2501,6 @@ public:
     Options->unroll_gpu_tile = false;
     Options->live_range_reordering = true;
 
-    Options->live_range_reordering = true;
     Options->hybrid = false;
     Options->opencl_compiler_options = nullptr;
     Options->opencl_use_gpu = false;
@@ -2694,6 +2693,11 @@ public:
       Access->next = Accesses;
       Access->n_index = Acc->getScopArrayInfo()->getNumberOfDimensions();
       Accesses = Access;
+      Access->fixed_element =
+          Acc->isFixedElement() ? isl_bool_true : isl_bool_false;
+      errs() << "Access: ";
+      Acc->print(errs());
+      errs() << " | Fixed_element: " << Acc->isFixedElement() << "\n";
     }
 
     return Accesses;
@@ -2927,6 +2931,7 @@ public:
       i++;
 
       collect_references(PPCGProg, &PPCGArray);
+      PPCGArray.only_fixed_element = only_fixed_element_accessed(&PPCGArray);
     }
   }
 
@@ -2998,6 +3003,7 @@ public:
     createArrays(PPCGProg, ValidSAIs);
 
     PPCGProg->may_persist = compute_may_persist(PPCGProg);
+    collect_order_dependences(PPCGProg);
     return PPCGProg;
   }
 

@@ -780,6 +780,9 @@ public:
   bool isReductionLike() const { return RedType != RT_NONE; }
 
   /// Is this a read memory access?
+  bool isFixedElement() const { return this->getNumSubscripts() == 0; }
+
+  /// Is this a read memory access?
   bool isRead() const { return AccType == MemoryAccess::READ; }
 
   /// Is this a must-write memory access?
