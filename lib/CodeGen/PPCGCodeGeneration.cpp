@@ -1365,7 +1365,7 @@ std::vector<std::string> LibDeviceFunctions = {"exp", "expf", "expl", "cos",
 std::string getLibDeviceFuntion(Function *F) {
   for (auto Name : LibDeviceFunctions) {
     const StringRef CanonicalName = getCanonicalizedFnName(F);
-    if (CanonicalName.contains(Name))
+    if (CanonicalName.equals(Name))
       return "__nv_" + Name;
   }
 
