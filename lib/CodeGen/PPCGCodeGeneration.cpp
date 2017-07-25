@@ -266,7 +266,7 @@ static MustKillsInfo computeMustKillsInfo(const Scop &S) {
 /// intrinsics.
 static std::map<std::string, std::string> getFunctionNameRemaps() {
   std::map<std::string, std::string> NameMap;
-  NameMap["copysign"] = "llvm.copysign.f64";
+  //NameMap["copysign"] = "llvm.copysign.f64";
   return NameMap;
 }
 
@@ -1357,7 +1357,7 @@ isl_bool collectReferencesInGPUStmt(__isl_keep isl_ast_node *Node, void *User) {
 
 /// A list of functions that are available in NVIDIA's libdevice.
 std::vector<std::string> LibDeviceFunctions = {"exp", "expf", "expl", "cos",
-                                               "cosf", "sqrt"};
+                                               "cosf", "sqrt", "copysign"};
 
 /// Return the corresponding CUDA libdevice function name for @p F.
 ///
