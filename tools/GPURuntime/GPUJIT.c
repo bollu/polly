@@ -1250,6 +1250,9 @@ static PollyGPUFunction *getKernelCUDA(const char *BinaryBuffer,
 
   debug_print("CUDA Link Completed in %fms. Linker Output:\n%s\n", Walltime,
               InfoLog);
+  debug_print("Function: %p, Function->Kernel: %p, Function->Kernel->CudaModule: %p\n",
+            Function, Function->Kernel,
+            ((CUDAKernel *)Function->Kernel)->CudaModule);
 
   Res = CuModuleLoadDataFcnPtr(&(((CUDAKernel *)Function->Kernel)->CudaModule),
                                CuOut);
@@ -1257,6 +1260,7 @@ static PollyGPUFunction *getKernelCUDA(const char *BinaryBuffer,
     fprintf(stderr, "Loading ptx assembly text failed.\n");
     exit(-1);
   }
+  fprintf(stderr, "\tacquired cudaModuleLoadData...\n");
 
   Res = CuModuleGetFunctionFcnPtr(&(((CUDAKernel *)Function->Kernel)->Cuda),
                                   ((CUDAKernel *)Function->Kernel)->CudaModule,
@@ -1265,6 +1269,7 @@ static PollyGPUFunction *getKernelCUDA(const char *BinaryBuffer,
     fprintf(stderr, "Loading kernel function failed.\n");
     exit(-1);
   }
+  fprintf(stderr, "\tcuModuleGetFunction succeeded...\n");
 
   CuLinkDestroyFcnPtr(LState);
 
@@ -1278,6 +1283,7 @@ static PollyGPUFunction *getKernelCUDA(const char *BinaryBuffer,
 
     NextCacheItem = (NextCacheItem + 1) % KERNEL_CACHE_SIZE;
   }
+  fprintf(stderr, "\treturning Function...\n");
 
   return Function;
 }
