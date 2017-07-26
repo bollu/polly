@@ -1098,7 +1098,8 @@ static int initialDeviceAPIsCUDA() {
 }
 #pragma GCC diagnostic pop
 
-static PollyGPUContext *initContextCUDA() {
+
+static PollyGPUContext * initContextCUDA() {
   dump_function();
   PollyGPUContext *Context;
   CUdevice Device;
@@ -1109,8 +1110,12 @@ static PollyGPUContext *initContextCUDA() {
 
   static __thread PollyGPUContext *CurrentContext = NULL;
 
-  if (CurrentContext)
+  if (CurrentContext) {
+    fprintf(stderr, "Using cached context...\n");
     return CurrentContext;
+  }
+  fprintf(stderr, "Creating new context...\n");
+
 
   /* Get API handles. */
   if (initialDeviceAPIsCUDA() == 0) {
@@ -1150,11 +1155,20 @@ static PollyGPUContext *initContextCUDA() {
   }
   CuCtxCreateFcnPtr(&(((CUDAContext *)Context->Context)->Cuda), 0, Device);
 
-  if (CacheMode)
-    CurrentContext = Context;
+  // if (CacheMode)
+  CurrentContext = Context;
+  fprintf(stderr, "CurrentContext initialized to: %p\n", CurrentContext);
 
-  return Context;
+  return CurrentContext;
 }
+
+__attribute__ ((constructor)) 
+static void InitializeGlobalGPUContextBeforeMain() {
+    fprintf(stderr, "initializing CUDA context before main()...\n");
+    initContextCUDA();
+    fprintf(stderr, "done initializing CUDA context...\n");
+}
+
 
 static void freeKernelCUDA(PollyGPUFunction *Kernel) {
   dump_function();
