@@ -927,6 +927,9 @@ static CuInitFcnTy *CuInitFcnPtr;
 typedef CUresult CUDAAPI CuDeviceGetCountFcnTy(int *);
 static CuDeviceGetCountFcnTy *CuDeviceGetCountFcnPtr;
 
+typedef CUresult CUDAAPI CuCtxGetCurrentFcnTy(CUcontext *);
+static CuCtxGetCurrentFcnTy *CuCtxGetCurrentFcnPtr;
+
 typedef CUresult CUDAAPI CuCtxCreateFcnTy(CUcontext *, unsigned int, CUdevice);
 static CuCtxCreateFcnTy *CuCtxCreateFcnPtr;
 
@@ -1056,6 +1059,9 @@ static int initialDeviceAPIsCUDA() {
   CuDeviceGetFcnPtr =
       (CuDeviceGetFcnTy *)getAPIHandleCUDA(HandleCuda, "cuDeviceGet");
 
+  CuCtxGetCurrentFcnPtr =
+      (CuCtxGetCurrentFcnTy *)getAPIHandleCUDA(HandleCuda, "cuCtxGetCurrent");
+
   CuCtxCreateFcnPtr =
       (CuCtxCreateFcnTy *)getAPIHandleCUDA(HandleCuda, "cuCtxCreate_v2");
 
@@ -1099,6 +1105,8 @@ static int initialDeviceAPIsCUDA() {
 #pragma GCC diagnostic pop
 
 
+static PollyGPUContext *CurrentContext = NULL;
+
 static PollyGPUContext * initContextCUDA() {
   dump_function();
   PollyGPUContext *Context;
@@ -1108,13 +1116,12 @@ static PollyGPUContext * initContextCUDA() {
   char DeviceName[256];
   int DeviceCount = 0;
 
-  static __thread PollyGPUContext *CurrentContext = NULL;
 
   if (CurrentContext) {
     fprintf(stderr, "Using cached context...\n");
     return CurrentContext;
   }
-  fprintf(stderr, "Creating new context...\n");
+
 
 
   /* Get API handles. */
@@ -1153,21 +1160,38 @@ static PollyGPUContext * initContextCUDA() {
     fprintf(stderr, "Allocate memory for Polly CUDA context failed.\n");
     exit(-1);
   }
-  CuCtxCreateFcnPtr(&(((CUDAContext *)Context->Context)->Cuda), 0, Device);
+  fprintf(stderr, "->cuCtxGetCurrent\n");
+  CUcontext MaybeRuntimeAPIContext;
+  if(CuCtxGetCurrentFcnPtr(&MaybeRuntimeAPIContext) != CUDA_SUCCESS) {
+      fprintf(stderr, "cuCtxGetCurrent failed");
+      exit(-1);
 
-  // if (CacheMode)
+  }
+
+  // NOT SURE HOW CORRECT THIS IS. SEEMS DUBIOUS A F.
+  if (MaybeRuntimeAPIContext == NULL) {
+      fprintf(stderr, "\t no current CUDA context found");
+      CuCtxCreateFcnPtr(&(((CUDAContext *)Context->Context)->Cuda), 0, Device);
+      cudaSetDevice(0);
+  } else {
+      fprintf(stderr, "\t current CUDA context found!");
+      ((CUDAContext *)Context->Context)->Cuda = MaybeRuntimeAPIContext;
+  }
+
   CurrentContext = Context;
-  fprintf(stderr, "CurrentContext initialized to: %p\n", CurrentContext);
+  fprintf(stderr, "CurrentContext initialized to: %p\n", (void *)CurrentContext);
 
   return CurrentContext;
 }
 
+/*
 __attribute__ ((constructor)) 
 static void InitializeGlobalGPUContextBeforeMain() {
     fprintf(stderr, "initializing CUDA context before main()...\n");
     initContextCUDA();
     fprintf(stderr, "done initializing CUDA context...\n");
 }
+*/
 
 
 static void freeKernelCUDA(PollyGPUFunction *Kernel) {
