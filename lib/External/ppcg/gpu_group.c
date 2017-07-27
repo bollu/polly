@@ -1100,7 +1100,6 @@ static int compute_group_bounds_core(struct ppcg_kernel *kernel,
 	int use_shared = !force_private && kernel->options->use_shared_memory &&
 				data->n_thread > 0;
 	int use_private = force_private || kernel->options->use_private_memory;
-    printf("USE_PRIVATE: %d\n", use_private);
 	int r = 0;
 	int requires_unroll;
 	int unique_depth;
@@ -1523,18 +1522,12 @@ static void check_can_be_private_live_ranges(struct ppcg_kernel *kernel,
 		if (!gpu_array_can_be_private(local->array))
 			continue;
 		order = isl_union_map_copy(local->array->dep_order);
-        DEBUG_PRINT("order = local->array->dep_order", order, union_map);
 		order = isl_union_map_intersect_domain(order,
 						    isl_union_set_copy(domain));
-        DEBUG_PRINT("domain", domain, union_map);
-        DEBUG_PRINT("order = order \cap_domain domain", order, union_map);
 		order = isl_union_map_intersect_range(order,
 						    isl_union_set_copy(domain));
-        DEBUG_PRINT("order = order \cap_range domain", order, union_map);
 		order = isl_union_map_eq_at_multi_union_pw_aff(order,
 					isl_multi_union_pw_aff_copy(prefix));
-        DEBUG_PRINT("prefix ", prefix, multi_union_pw_aff);
-        DEBUG_PRINT("order = order / prefix ", order, union_map);
 		if (!isl_union_map_is_empty(order)) {
 			local->force_private = 1;
 			kernel->any_force_private = 1;

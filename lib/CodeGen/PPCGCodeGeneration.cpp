@@ -2695,9 +2695,6 @@ public:
       Accesses = Access;
       Access->fixed_element =
           Acc->isFixedElement() ? isl_bool_true : isl_bool_false;
-      errs() << "Access: ";
-      Acc->print(errs());
-      errs() << " | Fixed_element: " << Acc->isFixedElement() << "\n";
     }
 
     return Accesses;
@@ -2932,7 +2929,6 @@ public:
 
       collect_references(PPCGProg, &PPCGArray);
       PPCGArray.only_fixed_element = only_fixed_element_accessed(&PPCGArray);
-      errs() << PPCGArray.name <<  "->only_fixed_element: " << PPCGArray.only_fixed_element << "\n";
     }
   }
 
@@ -2976,11 +2972,10 @@ public:
     PPCGProg->any_to_outer = nullptr;
 
     // this needs to be set when live range reordering is enabled.
-    // NOTE: I believe that is conservatively correct. I'm not sure
-    //       what the semantics of this is.
-    // Quoting PPCG/gpu.h: "Order dependences on non-scalars."
-    PPCGProg->array_order =
-        isl_union_map_empty(isl_set_get_space(PPCGScop->context));
+    // This is computed by collect_ordered_dependences.
+    PPCGProg->array_order = nullptr;
+    // PPCGProg->array_order =
+    //    isl_union_map_empty(isl_set_get_space(PPCGScop->context));
     PPCGProg->n_stmts = std::distance(S->begin(), S->end());
     PPCGProg->stmts = getStatements();
 
@@ -2996,15 +2991,19 @@ public:
     SmallVector<ScopArrayInfo *, 4> ValidSAIs(ValidSAIsRange.begin(),
                                               ValidSAIsRange.end());
 
-    PPCGProg->n_array =
-        ValidSAIs.size(); // std::distance(S->array_begin(), S->array_end());
+    PPCGProg->n_array = ValidSAIs.size();
     PPCGProg->array = isl_calloc_array(S->getIslCtx(), struct gpu_array_info,
                                        PPCGProg->n_array);
 
     createArrays(PPCGProg, ValidSAIs);
 
     PPCGProg->may_persist = compute_may_persist(PPCGProg);
+    // What we compute here is conservatively correct, since we do not take into
+    // account independences. (?)
+    // Collect order dependences.
     collect_order_dependences(PPCGProg);
+    assert(PPCGProg->array_order != nullptr &&
+           "collect_order_dependences did not initialize array_order");
     return PPCGProg;
   }
 

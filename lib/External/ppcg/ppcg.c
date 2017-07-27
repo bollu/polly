@@ -720,22 +720,6 @@ void compute_dependences(struct ppcg_scop *scop)
 	isl_union_access_info *access;
 	isl_union_flow *flow;
 
-
-
-    // compute_tagged_dep_flow_only
-    DEBUG_PRINT("scop->tagged_must_kills",scop->tagged_must_kills, union_map);
-    DEBUG_PRINT("scop->tagged_must_writes",scop->tagged_must_writes, union_map);
-    DEBUG_PRINT("scop->tagged_reads", scop->tagged_reads, union_map);
-    DEBUG_PRINT("scop->tagged_may_writes", scop->tagged_may_writes, union_map);
-    //remove_independences_from_tagged_flow
-    DEBUG_PRINT("scop->tagged_dep_flow", scop->tagged_dep_flow, union_map);
-    DEBUG_PRINT("scop->independence", scop->independence, union_map);
-    // compute_order_dependences
-    DEBUG_PRINT("scop->schedule", scop->schedule, schedule);
-    // forced dependences
-    DEBUG_PRINT("scop->live_out", scop->live_out, union_map);
-    DEBUG_PRINT("scop->live_in", scop->live_out, union_map);
-
 	if (!scop)
 		return;
 

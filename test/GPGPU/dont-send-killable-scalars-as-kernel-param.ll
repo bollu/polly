@@ -1,11 +1,11 @@
 ; RUN: opt %loadPolly -analyze -polly-scops < %s | FileCheck %s -check-prefix=SCOP
 ; RUN: opt %loadPolly -S -polly-codegen-ppcg -polly-acc-fail-on-verify-module-failure < %s | FileCheck %s -check-prefix=HOST-IR
-; RUN: opt %loadPolly -analyze -polly-codegen-ppcg -polly-acc-fail-on-verify-module-failure -polly-acc-dump-kernel-ir < %s | FileCheck %s -check-prefix=KERNEL-IR
+; RUN: opt %loadPolly -analyze -polly-codegen-ppcg -polly-acc-fail-on-verify-module-failure -polly-acc-dump-kernel-ir  < %s | FileCheck %s -check-prefix=KERNEL-IR
 
 ; REQUIRES: pollyacc
 
 ; SCOP:      Function: f
-; SCOP-NEXT: Region: %for.body---%for.end
+; SCOP-NEXT: Region: %ifcond---%for.end
 ; SCOP-NEXT: Max Loop Depth:  1
 
 ; Check that kernel launch is generated in host IR.
@@ -23,7 +23,7 @@
 ; #pragma scop
 ;     for(int i = 0; i < 1000; i ++) {
 ;         x = 0;
-;         if(control) x = C[i];
+;         if(control > 4) x = C[i];
 ;         B[i] = x * A[i];
 ;
 ;     }
@@ -35,7 +35,7 @@ source_filename = "test.c"
 target datalayout = "e-m:o-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx10.12.0"
 
-define void @checkPrivatization(i32* %A, i32* %B, i32* %C, i32 %control) {
+define void @f(i32* %A, i32* %B, i32* %C, i32 %control) {
 entry:
   br label %entry.split
 
