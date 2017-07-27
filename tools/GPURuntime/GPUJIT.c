@@ -958,6 +958,10 @@ static CuMemFreeFcnTy *CuMemFreeFcnPtr;
 typedef CUresult CUDAAPI CuModuleUnloadFcnTy(CUmodule);
 static CuModuleUnloadFcnTy *CuModuleUnloadFcnPtr;
 
+
+typedef CUresult CUDAAPI CuProfilerStopFcnTy();
+static CuProfilerStopFcnTy *CuProfilerStopFcnPtr;
+
 typedef CUresult CUDAAPI CuCtxDestroyFcnTy(CUcontext);
 static CuCtxDestroyFcnTy *CuCtxDestroyFcnPtr;
 
@@ -1084,6 +1088,9 @@ static int initialDeviceAPIsCUDA() {
 
   CuModuleUnloadFcnPtr =
       (CuModuleUnloadFcnTy *)getAPIHandleCUDA(HandleCuda, "cuModuleUnload");
+
+  CuProfilerStopFcnPtr =
+      (CuProfilerStopFcnTy *)getAPIHandleCUDA(HandleCuda, "cuProfilerStop");
 
   CuCtxDestroyFcnPtr =
       (CuCtxDestroyFcnTy *)getAPIHandleCUDA(HandleCuda, "cuCtxDestroy");
@@ -1416,6 +1423,7 @@ static void freeContextCUDA(PollyGPUContext *Context) {
 
   CUDAContext *Ctx = (CUDAContext *)Context->Context;
   if (Ctx->Cuda) {
+    CuProfilerStopFcnPtr();
     CuCtxDestroyFcnPtr(Ctx->Cuda);
     free(Ctx);
     free(Context);
