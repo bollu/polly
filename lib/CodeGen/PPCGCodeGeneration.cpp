@@ -2932,6 +2932,7 @@ public:
 
       collect_references(PPCGProg, &PPCGArray);
       PPCGArray.only_fixed_element = only_fixed_element_accessed(&PPCGArray);
+      errs() << PPCGArray.name <<  "->only_fixed_element: " << PPCGArray.only_fixed_element << "\n";
     }
   }
 
