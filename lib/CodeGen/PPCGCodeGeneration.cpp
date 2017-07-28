@@ -1413,11 +1413,7 @@ GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
   // @see IslNodeBuilder::getReferencesInSubtree
   SetVector<Value *> ReplacedValues;
   for (Value *V : ValidSubtreeValues) {
-    auto It = ValueMap.find(V);
-    if (It == ValueMap.end())
-      ReplacedValues.insert(V);
-    else
-      ReplacedValues.insert(It->second);
+    ReplacedValues.insert(getLatestValue(V));
   }
   return std::make_pair(ReplacedValues, ValidSubtreeFunctions);
 }
@@ -1584,9 +1580,7 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
 
   for (long i = 0; i < NumVars; i++) {
     isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_param, i);
-    Value *Val = IDToValue[Id];
-    if (ValueMap.count(Val))
-      Val = ValueMap[Val];
+    Value *Val = getLatestValue(IDToValue[Id]);
     isl_id_free(Id);
 
     ArgSizes[Index] = computeSizeInBytes(Val->getType());
