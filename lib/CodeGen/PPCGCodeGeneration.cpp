@@ -95,6 +95,13 @@ static cl::opt<bool> ManagedMemory("polly-acc-codegen-managed-memory",
                                             " declared as managed memory"),
                                    cl::Hidden, cl::init(false), cl::ZeroOrMore,
                                    cl::cat(PollyCategory));
+static cl::opt<bool>
+    FailOnStoredScalar("polly-acc-fail-on-stored-scalar",
+                       cl::desc("Fail and generate a backtrace if"
+                                " we have scalar stores in a kernel that "
+                                " prevents us from parallelising "),
+                       cl::Hidden, cl::init(false), cl::ZeroOrMore,
+                       cl::cat(PollyCategory));
 
 static cl::opt<bool>
     FailOnVerifyModuleFailure("polly-acc-fail-on-verify-module-failure",
@@ -2086,6 +2093,10 @@ void GPUNodeBuilder::finalizeKernelArguments(ppcg_kernel *Kernel) {
     Value *Val = Builder.CreateLoad(Alloca);
     Builder.CreateStore(Val, TypedArgPtr);
     StoredScalar = true;
+    if (FailOnStoredScalar)
+      report_fatal_error("Failed because of stored Scalar in Scop: " +
+                         S.getFunction().getName() +
+                         " | Region: " + S.getName());
 
     Arg++;
   }
