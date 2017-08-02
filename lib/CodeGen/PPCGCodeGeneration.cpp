@@ -2732,12 +2732,7 @@ public:
   /// @param PPCGArray The array to compute bounds for.
   /// @param Array The polly array from which to take the information.
   void setArrayBounds(gpu_array_info &PPCGArray, ScopArrayInfo *Array) {
-    isl_pw_aff_list *BoundsList =
-        isl_pw_aff_list_alloc(S->getIslCtx(), PPCGArray.n_index);
-    std::vector<isl::pw_aff> PwAffs;
-
-    isl_space *AlignSpace = S->getParamSpace();
-    AlignSpace = isl_space_add_dims(AlignSpace, isl_dim_set, 1);
+    std::vector<isl_pw_aff *> PwAffs;
 
     if (PPCGArray.n_index > 0) {
       if (isl_set_is_empty(PPCGArray.extent)) {
@@ -2746,9 +2741,7 @@ public:
             isl_space_params(isl_set_get_space(Dom)));
         isl_set_free(Dom);
         isl_pw_aff *Zero = isl_pw_aff_from_aff(isl_aff_zero_on_domain(LS));
-        Zero = isl_pw_aff_align_params(Zero, isl_space_copy(AlignSpace));
-        PwAffs.push_back(isl::manage(isl_pw_aff_copy(Zero)));
-        BoundsList = isl_pw_aff_list_insert(BoundsList, 0, Zero);
+        PwAffs.push_back(Zero);
       } else {
         isl_set *Dom = isl_set_copy(PPCGArray.extent);
         Dom = isl_set_project_out(Dom, isl_dim_set, 1, PPCGArray.n_index - 1);
@@ -2761,9 +2754,7 @@ public:
         One = isl_aff_add_constant_si(One, 1);
         Bound = isl_pw_aff_add(Bound, isl_pw_aff_alloc(Dom, One));
         Bound = isl_pw_aff_gist(Bound, S->getContext());
-        Bound = isl_pw_aff_align_params(Bound, isl_space_copy(AlignSpace));
-        PwAffs.push_back(isl::manage(isl_pw_aff_copy(Bound)));
-        BoundsList = isl_pw_aff_list_insert(BoundsList, 0, Bound);
+        PwAffs.push_back(Bound);
       }
     }
 
@@ -2772,13 +2763,29 @@ public:
       auto LS = isl_pw_aff_get_domain_space(Bound);
       auto Aff = isl_multi_aff_zero(LS);
       Bound = isl_pw_aff_pullback_multi_aff(Bound, Aff);
-      Bound = isl_pw_aff_align_params(Bound, isl_space_copy(AlignSpace));
-      PwAffs.push_back(isl::manage(isl_pw_aff_copy(Bound)));
-      BoundsList = isl_pw_aff_list_insert(BoundsList, i, Bound);
+      PwAffs.push_back(Bound);
     }
 
-    isl_space_free(AlignSpace);
+    isl_space *AlignSpace = S->getParamSpace();
+    AlignSpace = isl_space_add_dims(AlignSpace, isl_dim_set, 1);
+    for (isl_pw_aff *PwAff : PwAffs) {
+      isl_space *PwAffSpace = isl_pw_aff_get_domain_space(PwAff);
+      AlignSpace = isl_space_align_params(AlignSpace, PwAffSpace);
+    }
+
+    isl_pw_aff_list *BoundsList =
+        isl_pw_aff_list_alloc(S->getIslCtx(), PPCGArray.n_index);
+
+    for (unsigned i = 0; i < PwAffs.size(); i++) {
+      isl_pw_aff *Adjusted = PwAffs[i];
+      Adjusted = isl_pw_aff_align_params(Adjusted, isl_space_copy(AlignSpace));
+      BoundsList = isl_pw_aff_list_insert(BoundsList, i, Adjusted);
+    }
+
     isl_space *BoundsSpace = isl_set_get_space(PPCGArray.extent);
+    BoundsSpace =
+        isl_space_align_params(BoundsSpace, isl_space_copy(AlignSpace));
+    isl_space_free(AlignSpace);
 
     assert(BoundsSpace && "Unable to access space of array.");
     assert(BoundsList && "Unable to access list of bounds.");
@@ -2786,6 +2793,9 @@ public:
     PPCGArray.bound =
         isl_multi_pw_aff_from_pw_aff_list(BoundsSpace, BoundsList);
     assert(PPCGArray.bound && "PPCGArray.bound was not constructed correctly.");
+
+    errs() << "Bound: ";
+    isl_multi_pw_aff_dump(PPCGArray.bound);
   }
 
   /// Create the arrays for @p PPCGProg.
