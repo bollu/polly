@@ -52,8 +52,9 @@ for.body:                                         ; preds = %for.body.lr.ph, %fo
   %A.arr.i.val = load float, float* %A.arr.i, align 4
   ; Call to intrinsics that should be part of the kernel.
   %expf = tail call float @expf(float %A.arr.i.val)
+  %cos = tail call float @cos(float %expf)
   %B.arr.i = getelementptr inbounds float, float* %B, i64 %indvars.iv
-  store float %expf, float* %B.arr.i, align 4
+  store float %cos, float* %B.arr.i, align 4
 
   %indvars.iv.next = add nuw nsw i64 %indvars.iv, 1
   %wide.trip.count = zext i32 %N to i64
@@ -70,5 +71,7 @@ for.end:                                          ; preds = %for.cond.for.end_cr
 ; Function Attrs: nounwind readnone
 declare float @expf(float) #0
 
+; Function Attrs: nounwind readnone
+declare float @cos(float) #0
 attributes #0 = { nounwind readnone }
 
