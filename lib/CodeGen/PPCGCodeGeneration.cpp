@@ -2793,9 +2793,6 @@ public:
     PPCGArray.bound =
         isl_multi_pw_aff_from_pw_aff_list(BoundsSpace, BoundsList);
     assert(PPCGArray.bound && "PPCGArray.bound was not constructed correctly.");
-
-    errs() << "Bound: ";
-    isl_multi_pw_aff_dump(PPCGArray.bound);
   }
 
   /// Create the arrays for @p PPCGProg.
