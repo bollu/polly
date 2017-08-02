@@ -2,17 +2,17 @@
 ; RUN: -polly-ignore-parameter-bounds \
 ; RUN: -polly-invariant-load-hoisting < %s| FileCheck %s -check-prefix=HOST-IR
 
-When we have `-polly-ignore-parameter-bounds`, `Scop::Context` does not contain
-all the paramters present in the program.
-
-The construction of the `isl_multi_pw_aff` requires all the indivisual `pw_aff`
-to have the same parameter dimensions. To achieve this, we used to realign
-every `pw_aff` with `Scop::Context`. However, in conjunction with
-`-polly-ignore-parameter-bounds`, this is now incorrect, since `Scop::Context`
-does not contain all parameters.
-
-We check that Polly does the right thing in this case and sets up the parameter
-dimensions correctly.
+; When we have `-polly-ignore-parameter-bounds`, `Scop::Context` does not contain
+; all the parameters present in the program.
+;
+; The construction of the `isl_multi_pw_aff` requires all the indivisual `pw_aff`
+; to have the same parameter dimensions. To achieve this, we used to realign
+; every `pw_aff` with `Scop::Context`. However, in conjunction with
+; `-polly-ignore-parameter-bounds`, this is now incorrect, since `Scop::Context`
+; does not contain all parameters.
+;
+; We check that Polly does the right thing in this case and sets up the parameter
+; dimensions correctly.
 
 
 ; Check that kernel launch is generated in host IR.
