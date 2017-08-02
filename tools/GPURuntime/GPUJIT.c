@@ -26,7 +26,6 @@
 #endif /* __APPLE__ */
 #endif /* HAS_LIBOPENCL */
 
-#include <assert.h>
 #include <dlfcn.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -1214,13 +1213,17 @@ static PollyGPUContext *initContextCUDA() {
   // The possible pre-existing context from previous runtime API calls.
   CUcontext MaybeRuntimeAPIContext;
   if (CuCtxGetCurrentFcnPtr(&MaybeRuntimeAPIContext) != CUDA_SUCCESS) {
-    fprintf(stderr, "cuCtxGetCurrent failed");
+    fprintf(stderr, "cuCtxGetCurrent failed.\n");
     exit(-1);
   }
 
   // There was no previous context, initialise it.
   if (MaybeRuntimeAPIContext == NULL) {
-    CuCtxCreateFcnPtr(&(((CUDAContext *)Context->Context)->Cuda), 0, Device);
+    if(CuCtxCreateFcnPtr(&(((CUDAContext *)Context->Context)->Cuda), 0, Device) != CUDA_SUCCESS)  {
+        fprintf(stderr, "cuCtxCreateFcnPtr failed.\n");
+        exit(-1);
+
+    }
   } else {
     ((CUDAContext *)Context->Context)->Cuda = MaybeRuntimeAPIContext;
   }
