@@ -417,7 +417,7 @@ private:
   ///          referenced by the kernel, and whose second element contains the
   ///          set of functions referenced by the kernel. All functions in the
   ///          second set satisfy isValidFunctionInKernel.
-  std::pair<SetVector<Value *>, SetVector<Function *>>
+  std::tuple<SetVector<Value *>, SetVector<Function *>, SetVector<const Loop *>>
   getReferencesInKernel(ppcg_kernel *Kernel);
 
   /// Compute the sizes of the execution grid for a given kernel.
@@ -1389,10 +1389,11 @@ getFunctionsFromRawSubtreeValues(SetVector<Value *> RawSubtreeValues,
   return SubtreeFunctions;
 }
 
-std::pair<SetVector<Value *>, SetVector<Function *>>
+std::tuple<SetVector<Value *>, SetVector<Function *>, SetVector<const Loop *>>
 GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
   SetVector<Value *> SubtreeValues;
   SetVector<const SCEV *> SCEVs;
+  // TODO: Populate this.
   SetVector<const Loop *> Loops;
   SubtreeReferences References = {
       LI, SE, S, ValueMap, SubtreeValues, SCEVs, getBlockGenerator()};
@@ -1403,8 +1404,18 @@ GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
   isl_ast_node_foreach_descendant_top_down(
       Kernel->tree, collectReferencesInGPUStmt, &References);
 
-  for (const SCEV *Expr : SCEVs)
+  for (const SCEV *Expr : SCEVs) {
     findValues(Expr, SE, SubtreeValues);
+    findLoops(Expr, Loops);
+  }
+
+  Loops.remove_if([this](const Loop *L) {
+    // Note: I do not understand why this condition exists in IslNodeBuilder
+    //       in the first place. I need to investigate this. Intuitively, I
+    //       don't understand why we would skip a loop if it contains the entry
+    //       BB of a Scop.
+    return S.contains(L); // || L->contains(S.getEntry());
+  });
 
   for (auto &SAI : S.arrays())
     SubtreeValues.remove(SAI->getBasePtr());
@@ -1451,7 +1462,7 @@ GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
     else
       ReplacedValues.insert(It->second);
   }
-  return std::make_pair(ReplacedValues, ValidSubtreeFunctions);
+  return std::make_tuple(ReplacedValues, ValidSubtreeFunctions, Loops);
 }
 
 void GPUNodeBuilder::clearDominators(Function *F) {
@@ -1695,7 +1706,9 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
 
   SetVector<Value *> SubtreeValues;
   SetVector<Function *> SubtreeFunctions;
-  std::tie(SubtreeValues, SubtreeFunctions) = getReferencesInKernel(Kernel);
+  SetVector<const Loop *> Loops;
+  std::tie(SubtreeValues, SubtreeFunctions, Loops) =
+      getReferencesInKernel(Kernel);
 
   assert(Kernel->tree && "Device AST of kernel node is empty");
 
@@ -1704,8 +1717,6 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
   ValueMapT HostValueMap = ValueMap;
   BlockGenerator::AllocaMapTy HostScalarMap = ScalarMap;
   ScalarMap.clear();
-
-  SetVector<const Loop *> Loops;
 
   // Create for all loops we depend on values that contain the current loop
   // iteration. These values are necessary to generate code for SCEVs that
@@ -1831,6 +1842,7 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     }
   }
 
+  // block generator copy, we try to look for SCEV.
   int NumHostIters = isl_space_dim(Kernel->space, isl_dim_set);
 
   for (long i = 0; i < NumHostIters; i++) {
