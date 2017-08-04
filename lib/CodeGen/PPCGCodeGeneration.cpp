@@ -1400,25 +1400,12 @@ GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
   for (const auto &I : IDToValue)
     SubtreeValues.insert(I.second);
 
-  isl_ast_node_foreach_descendant_top_down(
-      Kernel->tree, collectReferencesInGPUStmt, &References);
-
-  Loop *L = LI.getLoopFor(S.getEntry());
-
-  while (L != nullptr && S.contains(L))
-    L = L->getParentLoop();
-
-  while (L != nullptr) {
-    const SCEV *OuterLIV = SE.getAddRecExpr(SE.getUnknown(Builder.getInt64(0)),
-                                            SE.getUnknown(Builder.getInt64(1)),
-                                            L, SCEV::FlagAnyWrap);
-    Value *V = generateSCEV(OuterLIV);
-    OutsideLoopIterations[L] = SE.getUnknown(V);
-    L = L->getParentLoop();
-  }
-
+  // NOTE: this is populated in IslNodeBuilder::addParameters
   for (const auto &I : OutsideLoopIterations)
     SubtreeValues.insert(cast<SCEVUnknown>(I.second)->getValue());
+
+  isl_ast_node_foreach_descendant_top_down(
+      Kernel->tree, collectReferencesInGPUStmt, &References);
 
   for (const SCEV *Expr : SCEVs) {
     findValues(Expr, SE, SubtreeValues);
