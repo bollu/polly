@@ -1538,7 +1538,6 @@ void GPUNodeBuilder::insertStoreParameter(Instruction *Parameters,
 Value *
 GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
                                        SetVector<Value *> SubtreeValues) {
-
   const int NumArgs = F->arg_size();
   std::vector<int> ArgSizes(NumArgs);
 
