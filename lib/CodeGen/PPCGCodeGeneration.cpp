@@ -1393,7 +1393,6 @@ std::tuple<SetVector<Value *>, SetVector<Function *>, SetVector<const Loop *>>
 GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
   SetVector<Value *> SubtreeValues;
   SetVector<const SCEV *> SCEVs;
-  // TODO: Populate this.
   SetVector<const Loop *> Loops;
   SubtreeReferences References = {
       LI, SE, S, ValueMap, SubtreeValues, SCEVs, getBlockGenerator()};
@@ -1404,7 +1403,6 @@ GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
   isl_ast_node_foreach_descendant_top_down(
       Kernel->tree, collectReferencesInGPUStmt, &References);
 
-  // @see IslNodeBuilder::materializeParameters
   Loop *L = LI.getLoopFor(S.getEntry());
 
   while (L != nullptr && S.contains(L))
@@ -1428,11 +1426,6 @@ GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
   }
 
   Loops.remove_if([this](const Loop *L) {
-    // Note: I do not understand why this condition exists in IslNodeBuilder
-    //       in the first place. I need to investigate this. Intuitively, I
-    //       don't understand why we would skip a loop if it contains the entry
-    //       BB of a Scop.
-    // return S.contains(L); // || L->contains(S.getEntry());
     return S.contains(L) || L->contains(S.getEntry());
   });
 
