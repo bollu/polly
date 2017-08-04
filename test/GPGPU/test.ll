@@ -26,23 +26,23 @@ entry:
   br label %for.init
 
 for.init:                                             ; preds = %for.end, %entry.split
-  %indvar = phi i32 [ %indvar.next, %for.end ], [ 0, %entry ]
+  %i = phi i32 [ %i.next, %for.end ], [ 0, %entry ]
   br label %for2.body
 
 for2.body:                                             ; preds = %"65", %"64"
-  %indvar2 = phi i32 [ %indvar2.next, %for2.body ], [ 0, %for.init ]
-  %indvar2.sext = sext i32 %indvar2 to i64
-  %arr.slot = getelementptr i32, i32* %arr, i64 %indvar2.sext
-  store i32 %indvar, i32* %arr.slot, align 4
-  %exitcond = icmp eq i32 %indvar2, 10
-  %indvar2.next = add i32 %indvar2, 1
+  %j = phi i32 [ %j.next, %for2.body ], [ 0, %for.init ]
+  %j.sext = sext i32 %j to i64
+  %arr.slot = getelementptr i32, i32* %arr, i64 %j.sext
+  store i32 %i, i32* %arr.slot, align 4
+  %exitcond = icmp eq i32 %j, 10
+  %j.next = add i32 %j, 1
   br i1 %exitcond, label %for2.body.fence, label %for2.body
 
 for2.body.fence:                                             ; preds = %"65"
   call void @fn_to_fence(i32* %arr) #2
   br i1 %shouldcont, label %for.end, label %exit
 for.end:                                             ; preds = %"69"
-  %indvar.next = add i32 %indvar, 1
+  %i.next = add i32 %i, 1
   br label %for.init
 
 exit:                                             ; preds = %"69"

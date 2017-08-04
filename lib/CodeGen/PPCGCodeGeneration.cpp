@@ -1401,8 +1401,10 @@ GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
   for (const auto &I : IDToValue)
     SubtreeValues.insert(I.second);
 
-  // Get all parameters from outer loops.
-  // @see IslNodeBuilder::addParameters
+  isl_ast_node_foreach_descendant_top_down(
+      Kernel->tree, collectReferencesInGPUStmt, &References);
+
+  // @see IslNodeBuilder::materializeParameters
   Loop *L = LI.getLoopFor(S.getEntry());
 
   while (L != nullptr && S.contains(L))
@@ -1413,14 +1415,12 @@ GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
                                             SE.getUnknown(Builder.getInt64(1)),
                                             L, SCEV::FlagAnyWrap);
     Value *V = generateSCEV(OuterLIV);
-    // SubtreeValues.insert(cast<SCEVUnknown>()->getValue());
-    SubtreeValues.insert(cast<SCEVUnknown>(SE.getUnknown(V))->getValue());
+    OutsideLoopIterations[L] = SE.getUnknown(V);
     L = L->getParentLoop();
   }
 
-
-  isl_ast_node_foreach_descendant_top_down(
-      Kernel->tree, collectReferencesInGPUStmt, &References);
+  for (const auto &I : OutsideLoopIterations)
+    SubtreeValues.insert(cast<SCEVUnknown>(I.second)->getValue());
 
   for (const SCEV *Expr : SCEVs) {
     findValues(Expr, SE, SubtreeValues);
@@ -1839,12 +1839,6 @@ static std::string computeSPIRDataLayout(bool is64Bit) {
 Function *
 GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
                                          SetVector<Value *> &SubtreeValues) {
-
-  // errs() << "\nUsedValues:\n";
-  // for (Value *V : SubtreeValues)
-  //     errs() << "- " << *V << "\n";
-  // errs() << "\n-----\n";
-
   std::vector<Type *> Args;
   std::string Identifier = getKernelFuncName(Kernel->id);
 
@@ -1883,6 +1877,7 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_param, i);
     Value *Val = IDToValue[Id];
     isl_id_free(Id);
+    Args.push_back(Val->getType());
     MemoryType.push_back(
         ConstantAsMetadata::get(ConstantInt::get(Builder.getInt32Ty(), 0)));
   }
@@ -1896,8 +1891,6 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
   auto *FT = FunctionType::get(Builder.getVoidTy(), Args, false);
   auto *FN = Function::Create(FT, Function::ExternalLinkage, Identifier,
                               GPUModule.get());
-
-  // Create a mapping from out
 
   std::vector<Metadata *> EmptyStrings;
 
@@ -1981,8 +1974,7 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
   }
 
   for (auto *V : SubtreeValues) {
-    errs() << "Arg: " << *Arg  << "| Corresponding SubtreeV: " << *V << "\n";
-    Arg->setName(V->getName() + ".subtree.val");
+    Arg->setName(V->getName());
     ValueMap[V] = &*Arg;
     Arg++;
   }
