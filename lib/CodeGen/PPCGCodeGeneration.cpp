@@ -1401,6 +1401,24 @@ GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
   for (const auto &I : IDToValue)
     SubtreeValues.insert(I.second);
 
+  // Get all parameters from outer loops.
+  // @see IslNodeBuilder::addParameters
+  Loop *L = LI.getLoopFor(S.getEntry());
+
+  while (L != nullptr && S.contains(L))
+    L = L->getParentLoop();
+
+  while (L != nullptr) {
+    const SCEV *OuterLIV = SE.getAddRecExpr(SE.getUnknown(Builder.getInt64(0)),
+                                            SE.getUnknown(Builder.getInt64(1)),
+                                            L, SCEV::FlagAnyWrap);
+    Value *V = generateSCEV(OuterLIV);
+    // SubtreeValues.insert(cast<SCEVUnknown>()->getValue());
+    SubtreeValues.insert(cast<SCEVUnknown>(SE.getUnknown(V))->getValue());
+    L = L->getParentLoop();
+  }
+
+
   isl_ast_node_foreach_descendant_top_down(
       Kernel->tree, collectReferencesInGPUStmt, &References);
 
@@ -1414,7 +1432,8 @@ GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
     //       in the first place. I need to investigate this. Intuitively, I
     //       don't understand why we would skip a loop if it contains the entry
     //       BB of a Scop.
-    return S.contains(L); // || L->contains(S.getEntry());
+    // return S.contains(L); // || L->contains(S.getEntry());
+    return S.contains(L) || L->contains(S.getEntry());
   });
 
   for (auto &SAI : S.arrays())
@@ -1539,6 +1558,7 @@ void GPUNodeBuilder::insertStoreParameter(Instruction *Parameters,
 Value *
 GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
                                        SetVector<Value *> SubtreeValues) {
+
   const int NumArgs = F->arg_size();
   std::vector<int> ArgSizes(NumArgs);
 
@@ -1819,6 +1839,12 @@ static std::string computeSPIRDataLayout(bool is64Bit) {
 Function *
 GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
                                          SetVector<Value *> &SubtreeValues) {
+
+  // errs() << "\nUsedValues:\n";
+  // for (Value *V : SubtreeValues)
+  //     errs() << "- " << *V << "\n";
+  // errs() << "\n-----\n";
+
   std::vector<Type *> Args;
   std::string Identifier = getKernelFuncName(Kernel->id);
 
@@ -1857,7 +1883,6 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_param, i);
     Value *Val = IDToValue[Id];
     isl_id_free(Id);
-    Args.push_back(Val->getType());
     MemoryType.push_back(
         ConstantAsMetadata::get(ConstantInt::get(Builder.getInt32Ty(), 0)));
   }
@@ -1871,6 +1896,8 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
   auto *FT = FunctionType::get(Builder.getVoidTy(), Args, false);
   auto *FN = Function::Create(FT, Function::ExternalLinkage, Identifier,
                               GPUModule.get());
+
+  // Create a mapping from out
 
   std::vector<Metadata *> EmptyStrings;
 
@@ -1954,7 +1981,8 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
   }
 
   for (auto *V : SubtreeValues) {
-    Arg->setName(V->getName());
+    errs() << "Arg: " << *Arg  << "| Corresponding SubtreeV: " << *V << "\n";
+    Arg->setName(V->getName() + ".subtree.val");
     ValueMap[V] = &*Arg;
     Arg++;
   }
