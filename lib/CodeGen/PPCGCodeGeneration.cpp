@@ -1842,7 +1842,6 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     }
   }
 
-  // block generator copy, we try to look for SCEV.
   int NumHostIters = isl_space_dim(Kernel->space, isl_dim_set);
 
   for (long i = 0; i < NumHostIters; i++) {
