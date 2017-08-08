@@ -778,6 +778,15 @@ void GPUNodeBuilder::allocateDeviceArrays() {
           ArraySize,
           Builder.CreateMul(Offset,
                             Builder.getInt64(ScopArray->getElemSizeInBytes())));
+    const SCEV *SizeSCEV = SE.getSCEV(ArraySize);
+    if (SizeSCEV->isZero()) {
+      errs() << getUniqueScopName(&S)
+             << " has computed array size 0: " << *ArraySize
+             << " | for array: " << *(ScopArray->getBasePtr())
+             << ". Bailing out.\n";
+      report_fatal_error("array size was computed to be 0");
+    }
+
     Value *DevArray = createCallAllocateMemoryForDevice(ArraySize);
     DevArray->setName(DevArrayName);
     DeviceAllocations[ScopArray] = DevArray;
@@ -2905,7 +2914,7 @@ public:
 
       PPCGArray.space = Array->getSpace().release();
       PPCGArray.type = strdup(TypeName.c_str());
-      PPCGArray.size = Array->getElementType()->getPrimitiveSizeInBits() / 8;
+      PPCGArray.size = DL->getTypeAllocSize(Array->getElementType());
       PPCGArray.name = strdup(Array->getName().c_str());
       PPCGArray.extent = nullptr;
       PPCGArray.n_index = Array->getNumberOfDimensions();
