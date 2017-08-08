@@ -779,11 +779,15 @@ void GPUNodeBuilder::allocateDeviceArrays() {
           Builder.CreateMul(Offset,
                             Builder.getInt64(ScopArray->getElemSizeInBytes())));
     const SCEV *SizeSCEV = SE.getSCEV(ArraySize);
+    // It makes no sense to have an array of size 0. The CUDA API will
+    // throw an error anyway if we invoke `cuMallocManaged` with size `0`. We
+    // choose to be defensive and catch this at the compile phase. It is
+    // most likely that we are doing something wrong with size computation.
     if (SizeSCEV->isZero()) {
       errs() << getUniqueScopName(&S)
              << " has computed array size 0: " << *ArraySize
              << " | for array: " << *(ScopArray->getBasePtr())
-             << ". Bailing out.\n";
+             << ". This is illegal, exiting.\n";
       report_fatal_error("array size was computed to be 0");
     }
 
