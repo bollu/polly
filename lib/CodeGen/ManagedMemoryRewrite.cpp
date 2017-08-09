@@ -89,12 +89,22 @@ static llvm::Function *GetOrCreatePollyFreeManaged(Module &M) {
   return F;
 }
 
+static void RewriteGlobalArray(Module &M, GlobalVariable &Array) {
+      Function *PollyMallocManaged = GetOrCreatePollyMallocManaged(M);
+      Twine Name = Array.getName() + ".constructor";
+      PollyIRBuilder Builder(M.getContext());
+      FunctionType *Ty =
+          FunctionType::get(Builder.getVoidTy(), {}, false);
+      F = Function::Create(Ty, Linkage, Name, &M);
+}
+
 class ManagedMemoryRewritePass : public ModulePass {
 public:
   static char ID;
   GPUArch Architecture;
   GPURuntime Runtime;
   ManagedMemoryRewritePass() : ModulePass(ID) {}
+
   virtual bool runOnModule(Module &M) {
     Function *Malloc = M.getFunction("malloc");
 
@@ -112,6 +122,11 @@ public:
       assert(PollyFreeManaged && "unable to create polly_freeManaged");
       Free->replaceAllUsesWith(PollyFreeManaged);
       Free->eraseFromParent();
+    }
+
+    for(GlobalVariable &Global : M.globals()) {
+        errs() << "Global: " << Global;
+        RewriteGlobalArray(M, Global);
     }
 
     return true;
