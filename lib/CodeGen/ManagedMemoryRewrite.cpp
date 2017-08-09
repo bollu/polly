@@ -91,9 +91,12 @@ static llvm::Function *GetOrCreatePollyFreeManaged(Module &M) {
 }
 
 static void RewriteGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &Array) {
+    static const unsigned AddrSpace = 0;
     // We only want arrays.
-    llvm::ArrayType *ArrayTy = dyn_cast<ArrayType>(Array.getType()->getElementType());
+    ArrayType *ArrayTy = dyn_cast<ArrayType>(Array.getType()->getElementType());
     if (!ArrayTy) return;
+    Type *ElemTy = ArrayTy->getElementType();
+    PointerType *ElemPtrTy = PointerType::get(ElemTy, AddrSpace);
 
     // We only wish to replace stuff with internal linkage. Otherwise,
     // our type edit from [T] to T* would be illegal across modules.
@@ -102,9 +105,9 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &
 
     if (!Array.hasInitializer()|| !isa<ConstantAggregateZero>(Array.getInitializer())) return;
 
-    static const unsigned AddrSpace = 0;
-    llvm::Type *ElementPtrType = PointerType::get(ArrayTy->getElementType(), AddrSpace);
-    Array.mutateType(PointerType::get(ElementPtrType, AddrSpace));
+    std::string NewName = (Array.getName() + Twine(".toptr")).str();
+    GlobalVariable *ReplacementToArr = dyn_cast<GlobalVariable>(M.getOrInsertGlobal(NewName, ElemPtrTy));
+    ReplacementToArr->setInitializer(ConstantPointerNull::get(ElemPtrTy));
 
     Function *PollyMallocManaged = GetOrCreatePollyMallocManaged(M);
     Twine FnName = Array.getName() + ".constructor";
@@ -122,13 +125,29 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &
     ArraySize->setName("array.size");
 
     Value *AllocatedMemRaw = Builder.CreateCall(PollyMallocManaged, { ArraySize }, "mem.raw");
-    Value *AllocatedMemTyped = Builder.CreatePointerCast(AllocatedMemRaw, PointerType::get(ArrayTy->getElementType(), AddrSpace), "mem.typed");
-    Builder.CreateStore(AllocatedMemTyped, &Array);
+    Value *AllocatedMemTyped = Builder.CreatePointerCast(AllocatedMemRaw, ElemPtrTy, "mem.typed");
+    Builder.CreateStore(AllocatedMemTyped, ReplacementToArr);
     Builder.CreateRetVoid();
+
+    // All the array's uses will be GEP
+    for (Use &use: Array.uses()) {
+        //GEPOperator *GEP = dyn_cast<GEPOperator>(use->getUser());
+        GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(use.getUser());
+        if (!GEP) {
+            errs() << "|User of global that is NOT a GEP: " << *use.getUser() << "\n";
+            continue;
+        }
+        // assert(GEP && "Global array is being used without a GEP!");
+        Builder.SetInsertPoint(GEP);
+        Value *BitcastedNewArray = Builder.CreateBitCast(ReplacementToArr, PointerType::get(ArrayTy, AddrSpace));
+        use.set(BitcastedNewArray);
+    }
+    
+
 
     // HACK: refactor this.
     static int priority = 0;
-    appendToGlobalCtors(M, F, priority++, &Array);
+    appendToGlobalCtors(M, F, priority++, ReplacementToArr);
 
 
 
