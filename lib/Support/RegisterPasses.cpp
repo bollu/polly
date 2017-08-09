@@ -349,8 +349,8 @@ void registerPollyPasses(llvm::legacy::PassManagerBase &PM) {
   if (Target == TARGET_HYBRID) {
     PM.add(
         polly::createPPCGCodeGenerationPass(GPUArchChoice, GPURuntimeChoice));
-    PM.add(
-        polly::createManagedMemoryRewritePassPass(GPUArchChoice, GPURuntimeChoice));
+    PM.add(polly::createManagedMemoryRewritePassPass(GPUArchChoice,
+                                                     GPURuntimeChoice));
   }
 #endif
   if (Target == TARGET_CPU || Target == TARGET_HYBRID)

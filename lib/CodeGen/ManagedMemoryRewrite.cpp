@@ -1,4 +1,5 @@
-//===------ ManagedMemoryRewrite.cpp - Rewrite global & malloc'd memory. ---===//
+//===------ ManagedMemoryRewrite.cpp - Rewrite global & malloc'd memory.
+//---===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -16,10 +17,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "polly/CodeGen/PPCGCodeGeneration.h"
 #include "polly/CodeGen/CodeGeneration.h"
 #include "polly/CodeGen/IslAst.h"
 #include "polly/CodeGen/IslNodeBuilder.h"
+#include "polly/CodeGen/PPCGCodeGeneration.h"
 #include "polly/CodeGen/Utils.h"
 #include "polly/DependenceInfo.h"
 #include "polly/LinkAllPasses.h"
@@ -44,86 +45,92 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 namespace {
 
-    static llvm::Function *GetOrCreatePollyMallocManaged(Module &M) {
-        // TODO: should I allow this pass to be a standalone pass that
-        // doesn't care if PollyManagedMemory is enabled or not?
-        assert(PollyManagedMemory && "One should only rewrite malloc & free to"
-                "polly_{malloc,free}Managed with managed memory enabled.");
-        const char *Name = "polly_mallocManaged";
-        Function *F = M.getFunction(Name);
+static llvm::Function *GetOrCreatePollyMallocManaged(Module &M) {
+  // TODO: should I allow this pass to be a standalone pass that
+  // doesn't care if PollyManagedMemory is enabled or not?
+  assert(PollyManagedMemory &&
+         "One should only rewrite malloc & free to"
+         "polly_{malloc,free}Managed with managed memory enabled.");
+  const char *Name = "polly_mallocManaged";
+  Function *F = M.getFunction(Name);
 
-        // If F is not available, declare it.
-        if (!F) {
-            GlobalValue::LinkageTypes Linkage = Function::ExternalLinkage;
-            PollyIRBuilder Builder(M.getContext());
-            // TODO: How do I get `size_t`? I assume from DataLayout?
-            FunctionType *Ty = FunctionType::get(Builder.getInt8PtrTy(), { Builder.getInt64Ty() } , false);
-            F = Function::Create(Ty, Linkage, Name, &M);
+  // If F is not available, declare it.
+  if (!F) {
+    GlobalValue::LinkageTypes Linkage = Function::ExternalLinkage;
+    PollyIRBuilder Builder(M.getContext());
+    // TODO: How do I get `size_t`? I assume from DataLayout?
+    FunctionType *Ty = FunctionType::get(Builder.getInt8PtrTy(),
+                                         {Builder.getInt64Ty()}, false);
+    F = Function::Create(Ty, Linkage, Name, &M);
+  }
 
-        }
-
-        return F;
-    }
-
-    static llvm::Function *GetOrCreatePollyFreeManaged(Module &M) {
-        // TODO: should I allow this pass to be a standalone pass that
-        // doesn't care if PollyManagedMemory is enabled or not?
-        assert(PollyManagedMemory && "One should only rewrite malloc & free to"
-                "polly_{malloc,free}Managed with managed memory enabled.");
-        const char *Name = "polly_freeManaged";
-        Function *F = M.getFunction(Name);
-
-        // If F is not available, declare it.
-        if (!F) {
-            GlobalValue::LinkageTypes Linkage = Function::ExternalLinkage;
-            PollyIRBuilder Builder(M.getContext());
-            // TODO: How do I get `size_t`? I assume from DataLayout?
-            FunctionType *Ty = FunctionType::get(Builder.getVoidTy(), { Builder.getInt8PtrTy() } , false);
-            F = Function::Create(Ty, Linkage, Name, &M);
-        }
-
-        return F;
-    }
-
-    class ManagedMemoryRewritePass : public ModulePass {
-        public:
-            static char ID;
-            GPUArch Architecture;
-            GPURuntime Runtime;
-            ManagedMemoryRewritePass() : ModulePass(ID) {}
-            virtual bool runOnModule(Module &M) {
-                Function *Malloc = M.getFunction("malloc");
-
-                if (Malloc) {
-                    Function *PollyMallocManaged = GetOrCreatePollyMallocManaged(M);
-                    assert(PollyMallocManaged && "unable to create polly_mallocManaged");
-                    Malloc->replaceAllUsesWith(PollyMallocManaged);
-                }
-
-                Function *Free = M.getFunction("free");
-
-                if (Free) {
-                    Function *PollyFreeManaged = GetOrCreatePollyFreeManaged(M);
-                    assert(PollyFreeManaged && "unable to create polly_freeManaged");
-                    Free->replaceAllUsesWith(PollyFreeManaged);
-                }
-
-                return true;
-            }
-    };
-
+  return F;
 }
+
+static llvm::Function *GetOrCreatePollyFreeManaged(Module &M) {
+  // TODO: should I allow this pass to be a standalone pass that
+  // doesn't care if PollyManagedMemory is enabled or not?
+  assert(PollyManagedMemory &&
+         "One should only rewrite malloc & free to"
+         "polly_{malloc,free}Managed with managed memory enabled.");
+  const char *Name = "polly_freeManaged";
+  Function *F = M.getFunction(Name);
+
+  // If F is not available, declare it.
+  if (!F) {
+    GlobalValue::LinkageTypes Linkage = Function::ExternalLinkage;
+    PollyIRBuilder Builder(M.getContext());
+    // TODO: How do I get `size_t`? I assume from DataLayout?
+    FunctionType *Ty =
+        FunctionType::get(Builder.getVoidTy(), {Builder.getInt8PtrTy()}, false);
+    F = Function::Create(Ty, Linkage, Name, &M);
+  }
+
+  return F;
+}
+
+class ManagedMemoryRewritePass : public ModulePass {
+public:
+  static char ID;
+  GPUArch Architecture;
+  GPURuntime Runtime;
+  ManagedMemoryRewritePass() : ModulePass(ID) {}
+  virtual bool runOnModule(Module &M) {
+    Function *Malloc = M.getFunction("malloc");
+
+    if (Malloc) {
+      Function *PollyMallocManaged = GetOrCreatePollyMallocManaged(M);
+      assert(PollyMallocManaged && "unable to create polly_mallocManaged");
+      Malloc->replaceAllUsesWith(PollyMallocManaged);
+    }
+
+    Function *Free = M.getFunction("free");
+
+    if (Free) {
+      Function *PollyFreeManaged = GetOrCreatePollyFreeManaged(M);
+      assert(PollyFreeManaged && "unable to create polly_freeManaged");
+      Free->replaceAllUsesWith(PollyFreeManaged);
+    }
+
+    return true;
+  }
+};
+
+} // namespace
 char ManagedMemoryRewritePass::ID = 42;
 
-Pass *polly::createManagedMemoryRewritePassPass(GPUArch Arch, GPURuntime Runtime) {
+Pass *polly::createManagedMemoryRewritePassPass(GPUArch Arch,
+                                                GPURuntime Runtime) {
   ManagedMemoryRewritePass *pass = new ManagedMemoryRewritePass();
   pass->Runtime = Runtime;
   pass->Architecture = Arch;
   return pass;
 }
 
-INITIALIZE_PASS_BEGIN(ManagedMemoryRewritePass, "polly-acc-rewrite-managed-memory",
-                    "Polly - Rewrite all allocations in heap & data section to managed memory", false, false)
+INITIALIZE_PASS_BEGIN(
+    ManagedMemoryRewritePass, "polly-acc-rewrite-managed-memory",
+    "Polly - Rewrite all allocations in heap & data section to managed memory",
+    false, false)
 INITIALIZE_PASS_DEPENDENCY(PPCGCodeGeneration);
 INITIALIZE_PASS_DEPENDENCY(DependenceInfo);
 INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass);
@@ -131,5 +138,7 @@ INITIALIZE_PASS_DEPENDENCY(LoopInfoWrapperPass);
 INITIALIZE_PASS_DEPENDENCY(RegionInfoPass);
 INITIALIZE_PASS_DEPENDENCY(ScalarEvolutionWrapperPass);
 INITIALIZE_PASS_DEPENDENCY(ScopDetectionWrapperPass);
-INITIALIZE_PASS_END(ManagedMemoryRewritePass, "polly-acc-rewrite-managed-memory",
-                    "Polly - Rewrite all allocations in heap & data section to managed memory", false, false)
+INITIALIZE_PASS_END(
+    ManagedMemoryRewritePass, "polly-acc-rewrite-managed-memory",
+    "Polly - Rewrite all allocations in heap & data section to managed memory",
+    false, false)

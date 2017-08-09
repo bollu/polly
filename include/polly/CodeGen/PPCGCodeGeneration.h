@@ -22,7 +22,7 @@ enum GPUArch { NVPTX64, SPIR32, SPIR64 };
 enum GPURuntime { CUDA, OpenCL };
 
 namespace polly {
-    extern bool PollyManagedMemory;
+extern bool PollyManagedMemory;
 }
 
 #endif // POLLY_PPCGCODEGENERATION_H

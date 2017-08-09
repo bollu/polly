@@ -52,8 +52,9 @@ llvm::Pass *createCodeGenerationPass();
 llvm::Pass *createPPCGCodeGenerationPass(GPUArch Arch = GPUArch::NVPTX64,
                                          GPURuntime Runtime = GPURuntime::CUDA);
 
-llvm::Pass *createManagedMemoryRewritePassPass(GPUArch Arch = GPUArch::NVPTX64,
-                                         GPURuntime Runtime = GPURuntime::CUDA);
+llvm::Pass *
+createManagedMemoryRewritePassPass(GPUArch Arch = GPUArch::NVPTX64,
+                                   GPURuntime Runtime = GPURuntime::CUDA);
 #endif
 llvm::Pass *createIslScheduleOptimizerPass();
 llvm::Pass *createFlattenSchedulePass();

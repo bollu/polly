@@ -91,13 +91,13 @@ static cl::opt<bool> PrivateMemory("polly-acc-use-private",
                                    cl::cat(PollyCategory));
 
 bool polly::PollyManagedMemory;
-static cl::opt<bool, true> XManagedMemory("polly-acc-codegen-managed-memory",
-                                   cl::desc("Generate Host kernel code assuming"
-                                            " that all memory has been"
-                                            " declared as managed memory"),
-                                   cl::location(PollyManagedMemory),
-                                   cl::Hidden, cl::init(false), cl::ZeroOrMore,
-                                   cl::cat(PollyCategory));
+static cl::opt<bool, true>
+    XManagedMemory("polly-acc-codegen-managed-memory",
+                   cl::desc("Generate Host kernel code assuming"
+                            " that all memory has been"
+                            " declared as managed memory"),
+                   cl::location(PollyManagedMemory), cl::Hidden,
+                   cl::init(false), cl::ZeroOrMore, cl::cat(PollyCategory));
 
 static cl::opt<bool>
     FailOnVerifyModuleFailure("polly-acc-fail-on-verify-module-failure",
@@ -763,8 +763,9 @@ void GPUNodeBuilder::finalize() {
 }
 
 void GPUNodeBuilder::allocateDeviceArrays() {
-  assert(!PollyManagedMemory && "Managed memory will directly send host pointers "
-                           "to the kernel. There is no need for device arrays");
+  assert(!PollyManagedMemory &&
+         "Managed memory will directly send host pointers "
+         "to the kernel. There is no need for device arrays");
   isl_ast_build *Build = isl_ast_build_from_context(S.getContext().release());
 
   for (int i = 0; i < Prog->n_array; ++i) {
@@ -934,8 +935,9 @@ void GPUNodeBuilder::createCallFreeKernel(Value *GPUKernel) {
 }
 
 void GPUNodeBuilder::createCallFreeDeviceMemory(Value *Array) {
-  assert(!PollyManagedMemory && "Managed memory does not allocate or free memory "
-                           "for device");
+  assert(!PollyManagedMemory &&
+         "Managed memory does not allocate or free memory "
+         "for device");
   const char *Name = "polly_freeDeviceMemory";
   Module *M = Builder.GetInsertBlock()->getParent()->getParent();
   Function *F = M->getFunction(Name);
@@ -953,8 +955,9 @@ void GPUNodeBuilder::createCallFreeDeviceMemory(Value *Array) {
 }
 
 Value *GPUNodeBuilder::createCallAllocateMemoryForDevice(Value *Size) {
-  assert(!PollyManagedMemory && "Managed memory does not allocate or free memory "
-                           "for device");
+  assert(!PollyManagedMemory &&
+         "Managed memory does not allocate or free memory "
+         "for device");
   const char *Name = "polly_allocateMemoryForDevice";
   Module *M = Builder.GetInsertBlock()->getParent()->getParent();
   Function *F = M->getFunction(Name);
@@ -974,8 +977,9 @@ Value *GPUNodeBuilder::createCallAllocateMemoryForDevice(Value *Size) {
 void GPUNodeBuilder::createCallCopyFromHostToDevice(Value *HostData,
                                                     Value *DeviceData,
                                                     Value *Size) {
-  assert(!PollyManagedMemory && "Managed memory does not transfer memory between "
-                           "device and host");
+  assert(!PollyManagedMemory &&
+         "Managed memory does not transfer memory between "
+         "device and host");
   const char *Name = "polly_copyFromHostToDevice";
   Module *M = Builder.GetInsertBlock()->getParent()->getParent();
   Function *F = M->getFunction(Name);
@@ -997,8 +1001,9 @@ void GPUNodeBuilder::createCallCopyFromHostToDevice(Value *HostData,
 void GPUNodeBuilder::createCallCopyFromDeviceToHost(Value *DeviceData,
                                                     Value *HostData,
                                                     Value *Size) {
-  assert(!PollyManagedMemory && "Managed memory does not transfer memory between "
-                           "device and host");
+  assert(!PollyManagedMemory &&
+         "Managed memory does not transfer memory between "
+         "device and host");
   const char *Name = "polly_copyFromDeviceToHost";
   Module *M = Builder.GetInsertBlock()->getParent()->getParent();
   Function *F = M->getFunction(Name);
@@ -1019,7 +1024,7 @@ void GPUNodeBuilder::createCallCopyFromDeviceToHost(Value *DeviceData,
 
 void GPUNodeBuilder::createCallSynchronizeDevice() {
   assert(PollyManagedMemory && "explicit synchronization is only necessary for "
-                          "managed memory");
+                               "managed memory");
   const char *Name = "polly_synchronizeDevice";
   Module *M = Builder.GetInsertBlock()->getParent()->getParent();
   Function *F = M->getFunction(Name);
@@ -1147,8 +1152,8 @@ Value *GPUNodeBuilder::getArrayOffset(gpu_array_info *Array) {
 Value *GPUNodeBuilder::getManagedDeviceArray(gpu_array_info *Array,
                                              ScopArrayInfo *ArrayInfo) {
   assert(PollyManagedMemory && "Only used when you wish to get a host "
-                          "pointer for sending data to the kernel, "
-                          "with managed memory");
+                               "pointer for sending data to the kernel, "
+                               "with managed memory");
   std::map<ScopArrayInfo *, Value *>::iterator it;
   it = DeviceAllocations.find(ArrayInfo);
   assert(it != DeviceAllocations.end() &&
