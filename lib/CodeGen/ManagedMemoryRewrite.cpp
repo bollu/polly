@@ -43,6 +43,48 @@
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 namespace {
+
+    static llvm::Function *GetOrCreatePollyMallocManaged(Module &M) {
+        // TODO: should I allow this pass to be a standalone pass that
+        // doesn't care if PollyManagedMemory is enabled or not?
+        assert(PollyManagedMemory && "One should only rewrite malloc & free to"
+                "polly_{malloc,free}Managed with managed memory enabled.");
+        const char *Name = "polly_mallocManaged";
+        Function *F = M.getFunction(Name);
+
+        // If F is not available, declare it.
+        if (!F) {
+            GlobalValue::LinkageTypes Linkage = Function::ExternalLinkage;
+            PollyIRBuilder Builder(M.getContext());
+            // TODO: How do I get `size_t`? I assume from DataLayout?
+            FunctionType *Ty = FunctionType::get(Builder.getInt8PtrTy(), { Builder.getInt64Ty() } , false);
+            F = Function::Create(Ty, Linkage, Name, &M);
+
+        }
+
+        return F;
+    }
+
+    static llvm::Function *GetOrCreatePollyFreeManaged(Module &M) {
+        // TODO: should I allow this pass to be a standalone pass that
+        // doesn't care if PollyManagedMemory is enabled or not?
+        assert(PollyManagedMemory && "One should only rewrite malloc & free to"
+                "polly_{malloc,free}Managed with managed memory enabled.");
+        const char *Name = "polly_freeManaged";
+        Function *F = M.getFunction(Name);
+
+        // If F is not available, declare it.
+        if (!F) {
+            GlobalValue::LinkageTypes Linkage = Function::ExternalLinkage;
+            PollyIRBuilder Builder(M.getContext());
+            // TODO: How do I get `size_t`? I assume from DataLayout?
+            FunctionType *Ty = FunctionType::get(Builder.getVoidTy(), { Builder.getInt8PtrTy() } , false);
+            F = Function::Create(Ty, Linkage, Name, &M);
+        }
+
+        return F;
+    }
+
     class ManagedMemoryRewritePass : public ModulePass {
         public:
             static char ID;
@@ -50,8 +92,23 @@ namespace {
             GPURuntime Runtime;
             ManagedMemoryRewritePass() : ModulePass(ID) {}
             virtual bool runOnModule(Module &M) {
-                errs() << "====Running on module:===="; M.dump();
-                return false;
+                Function *Malloc = M.getFunction("malloc");
+
+                if (Malloc) {
+                    Function *PollyMallocManaged = GetOrCreatePollyMallocManaged(M);
+                    assert(PollyMallocManaged && "unable to create polly_mallocManaged");
+                    Malloc->replaceAllUsesWith(PollyMallocManaged);
+                }
+
+                Function *Free = M.getFunction("free");
+
+                if (Free) {
+                    Function *PollyFreeManaged = GetOrCreatePollyFreeManaged(M);
+                    assert(PollyFreeManaged && "unable to create polly_freeManaged");
+                    Free->replaceAllUsesWith(PollyFreeManaged);
+                }
+
+                return true;
             }
     };
 
@@ -65,14 +122,14 @@ Pass *polly::createManagedMemoryRewritePassPass(GPUArch Arch, GPURuntime Runtime
   return pass;
 }
 
-INITIALIZE_PASS_BEGIN(ManagedMemoryRewritePass, "polly-managed-memory-rewrite",
+INITIALIZE_PASS_BEGIN(ManagedMemoryRewritePass, "polly-acc-rewrite-managed-memory",
                     "Polly - Rewrite all allocations in heap & data section to managed memory", false, false)
-//INITIALIZE_PASS_DEPENDENCY(PPCGCodeGeneration);
-//INITIALIZE_PASS_DEPENDENCY(DependenceInfo);
-//INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass);
-//INITIALIZE_PASS_DEPENDENCY(LoopInfoWrapperPass);
-//INITIALIZE_PASS_DEPENDENCY(RegionInfoPass);
-//INITIALIZE_PASS_DEPENDENCY(ScalarEvolutionWrapperPass);
-//INITIALIZE_PASS_DEPENDENCY(ScopDetectionWrapperPass);
-INITIALIZE_PASS_END(ManagedMemoryRewritePass, "polly-managed-memory-rewrite",
+INITIALIZE_PASS_DEPENDENCY(PPCGCodeGeneration);
+INITIALIZE_PASS_DEPENDENCY(DependenceInfo);
+INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass);
+INITIALIZE_PASS_DEPENDENCY(LoopInfoWrapperPass);
+INITIALIZE_PASS_DEPENDENCY(RegionInfoPass);
+INITIALIZE_PASS_DEPENDENCY(ScalarEvolutionWrapperPass);
+INITIALIZE_PASS_DEPENDENCY(ScopDetectionWrapperPass);
+INITIALIZE_PASS_END(ManagedMemoryRewritePass, "polly-acc-rewrite-managed-memory",
                     "Polly - Rewrite all allocations in heap & data section to managed memory", false, false)
