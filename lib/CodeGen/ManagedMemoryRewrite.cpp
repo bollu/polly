@@ -43,6 +43,7 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include "llvm/Transforms/Utils/ModuleUtils.h"
 namespace {
 
 static llvm::Function *GetOrCreatePollyMallocManaged(Module &M) {
@@ -89,13 +90,48 @@ static llvm::Function *GetOrCreatePollyFreeManaged(Module &M) {
   return F;
 }
 
-static void RewriteGlobalArray(Module &M, GlobalVariable &Array) {
-      Function *PollyMallocManaged = GetOrCreatePollyMallocManaged(M);
-      Twine Name = Array.getName() + ".constructor";
-      PollyIRBuilder Builder(M.getContext());
-      FunctionType *Ty =
-          FunctionType::get(Builder.getVoidTy(), {}, false);
-      F = Function::Create(Ty, Linkage, Name, &M);
+static void RewriteGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &Array) {
+    // We only want arrays.
+    llvm::ArrayType *ArrayTy = dyn_cast<ArrayType>(Array.getType()->getElementType());
+    if (!ArrayTy) return;
+
+    // We only wish to replace stuff with internal linkage. Otherwise,
+    // our type edit from [T] to T* would be illegal across modules.
+    // It is interesting that most arrays don't seem to be tagged with internal linkage?
+    if (GlobalValue::isWeakForLinker(Array.getLinkage()) && false) {return; }
+
+    if (!Array.hasInitializer()|| !isa<ConstantAggregateZero>(Array.getInitializer())) return;
+
+    static const unsigned AddrSpace = 0;
+    llvm::Type *ElementPtrType = PointerType::get(ArrayTy->getElementType(), AddrSpace);
+    Array.mutateType(PointerType::get(ElementPtrType, AddrSpace));
+
+    Function *PollyMallocManaged = GetOrCreatePollyMallocManaged(M);
+    Twine FnName = Array.getName() + ".constructor";
+    PollyIRBuilder Builder(M.getContext());
+    FunctionType *Ty =
+        FunctionType::get(Builder.getVoidTy(), {}, false);
+    const GlobalValue::LinkageTypes Linkage = Function::ExternalLinkage;
+    Function *F = Function::Create(Ty, Linkage, FnName, &M);
+    BasicBlock *Start = BasicBlock::Create(M.getContext(), "entry", F);
+    Builder.SetInsertPoint(Start);
+
+
+    int ArraySizeInt = DL.getTypeAllocSizeInBits(ArrayTy);
+    Value *ArraySize = ConstantInt::get(Builder.getInt64Ty(), ArraySizeInt);
+    ArraySize->setName("array.size");
+
+    Value *AllocatedMemRaw = Builder.CreateCall(PollyMallocManaged, { ArraySize }, "mem.raw");
+    Value *AllocatedMemTyped = Builder.CreatePointerCast(AllocatedMemRaw, PointerType::get(ArrayTy->getElementType(), AddrSpace), "mem.typed");
+    Builder.CreateStore(AllocatedMemTyped, &Array);
+    Builder.CreateRetVoid();
+
+    // HACK: refactor this.
+    static int priority = 0;
+    appendToGlobalCtors(M, F, priority++, &Array);
+
+
+
 }
 
 class ManagedMemoryRewritePass : public ModulePass {
@@ -103,9 +139,13 @@ public:
   static char ID;
   GPUArch Architecture;
   GPURuntime Runtime;
+  const DataLayout *DL;
+
   ManagedMemoryRewritePass() : ModulePass(ID) {}
 
   virtual bool runOnModule(Module &M) {
+    DL = &M.getDataLayout();
+
     Function *Malloc = M.getFunction("malloc");
 
     if (Malloc) {
@@ -125,8 +165,7 @@ public:
     }
 
     for(GlobalVariable &Global : M.globals()) {
-        errs() << "Global: " << Global;
-        RewriteGlobalArray(M, Global);
+        RewriteGlobalArray(M, *DL, Global);
     }
 
     return true;
