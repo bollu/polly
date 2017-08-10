@@ -90,24 +90,41 @@ static llvm::Function *GetOrCreatePollyFreeManaged(Module &M) {
   return F;
 }
 
-static void replaceUsesOfWithRecursively(Instruction *I, Value *Old,
-                                         Value *New) {}
+static void recursivelyEditAllUses(User *U, Value *Old, Value *New) {
+    for(unsigned i = 0; i < U->getNumOperands(); i++) {
+        Value *V = U->getOperand(i);
+        User *ValueUser = dyn_cast<User>(V);
+        if (!ValueUser) {
+            errs() << *V << " obtained from: " << *U << "is not a user!."
+            " Trying to replace: " << *Old << " with: " << *New << "failed.\n";
+            report_fatal_error("recursivelyEditAllUses failed with value that was not user");
+        }
+        if (V == Old)
+            U->setOperand(i, New);
+        else
+            recursivelyEditAllUses(ValueUser, Old, New);
+    }
+}
 
-static void rewriteValueWithGlobalValue(Value *Current, Value *Old,
-                                        GlobalValue *New) {
+// Given a value `Current`, return all Instructions that may contain `Current`
+// in an expression.
+static void getContainingInstructions(Value *Current, std::vector<Instruction*> Owners) {
   Instruction *I;
   Constant *C;
   if ((I = dyn_cast<Instruction>(Current))) {
-
+      Owners.push_back(I);
   } else if ((C = dyn_cast<Constant>(Current))) {
+      for(Use &CUse : C->uses()) {
+          getContainingInstructions(CUse.get(), Owners);
+      }
   } else {
     errs() << "(" << *Current
            << ") is neither an instruction nor a constant!.\n"
-              "Trying to replace: ("
-           << *Old << ") With: (" << *New << "). Quitting.\n";
-    report_fatal_error(
-        "Value replacement reached node with unknown replacement strategy");
+        "The process of finding the owning instruction reached a node with unknown replacement strategy";
+    report_fatal_error("unable to find owning instruction");
   }
+  llvm_unreachable("should never reach here from getContainingInstruction");
+
 }
 
 static void RewriteGlobalArray(Module &M, const DataLayout &DL,
@@ -131,6 +148,9 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL,
   if (!Array.hasInitializer() ||
       !isa<ConstantAggregateZero>(Array.getInitializer()))
     return;
+
+  // At this point, we have committed to replacing this array.
+  ReplacedGlobals.push_back(&Array);
 
   std::string NewName = (Array.getName() + Twine(".toptr")).str();
   GlobalVariable *ReplacementToArr =
@@ -160,11 +180,26 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL,
   // HACK: refactor the priority stuff.
   static int priority = 0;
   appendToGlobalCtors(M, F, priority++, ReplacementToArr);
+
+  std::vector<Instruction *> ArrayUserInstructions;
+  // Get all instructions that use array. We need to do this weird thing
+  // because `Constant`s that contain
+  for(Use &ArrayUse : Array.uses()) {
+      getContainingInstructions(ArrayUse.get(), ArrayUserInstructions);
+  }
+
+  for(Instruction *UserOfArrayInst : ArrayUserInstructions) {
+      Builder.SetInsertPoint(UserOfArrayInst);
+      Value *ArrPtrLoaded =  Builder.CreateLoad(ReplacementToArr, "arrptr.load");
+
+     recursivelyEditAllUses(UserOfArrayInst, &Array, ArrPtrLoaded);
+
+  }
+  /*
   Constant *BitcastedNewArrExpr = ConstantExpr::getBitCast(
       ReplacementToArr, PointerType::get(ArrayTy, AddrSpace));
   Array.replaceAllUsesWith(BitcastedNewArrExpr);
-  // TODO: understand why this crashes.
-  ReplacedGlobals.push_back(&Array);
+  */
 }
 
 class ManagedMemoryRewritePass : public ModulePass {
