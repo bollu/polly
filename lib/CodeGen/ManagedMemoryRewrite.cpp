@@ -35,6 +35,7 @@
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/IR/LegacyPassManager.h"
+#include "llvm/IR/DerivedUser.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/Linker/Linker.h"
@@ -90,22 +91,77 @@ static llvm::Function *GetOrCreatePollyFreeManaged(Module &M) {
   return F;
 }
 
-static void recursivelyEditAllUses(User *U, Value *Old, Value *New) {
-    for(unsigned i = 0; i < U->getNumOperands(); i++) {
-        errs() << "rewriting " << i << "th operand of: " << *U << "\n";
-        Value *V = U->getOperand(i);
-        User *ValueUser = dyn_cast<User>(V);
-        if (!ValueUser) {
-            errs() << *V << " obtained from: " << *U << "is not a user!."
-            " Trying to replace: " << *Old << " with: " << *New << "failed.\n";
-            report_fatal_error("recursivelyEditAllUses failed with value that was not user");
-        }
-        if (V == Old) {
-            U->setOperand(i, New);
-        } else {
-            recursivelyEditAllUses(ValueUser, Old, New);
-        }
+// Expand the constant expression Cur using Builder. This will recursively
+// expand Instruction. `Expands` contains all the expanded instructions.
+static Instruction* ExpandConstantExpr(ConstantExpr *Cur,
+        PollyIRBuilder &Builder, std::vector<Instruction *> &Expands)  {
+    std::vector<std::pair<int, Instruction*> > Replacements;
+    for(unsigned i = 0; i < Cur->getNumOperands(); i++) {
+        Constant *C = dyn_cast<Constant >(C->getOperand(i));
+        assert (C && "constant must have a constant operand");
+        if (isa<ConstantExpr>(Cur)) {
+            Instruction *Replacement = ExpandConstantExpr(Cur, Builder, Expands);
+            Replacements.push_back(std::make_pair(i, Replacement));
+        };
     }
+
+    Instruction *I = Cur->getAsInstruction();
+    for(std::pair<int, Instruction *> &Replacement : Replacements) {
+        I->setOperand(Replacement.first, Replacement.second);
+    }
+    Expands.push_back(I);
+    Builder.Insert(I);
+    return I;
+}
+
+static void editAllUses(Instruction *Inst, Value *Old, Value *New,
+        PollyIRBuilder &Builder) {
+
+    std::vector<Instruction *>Next;
+    std::vector<Instruction *>Current = {Inst};
+
+    for(Instruction *CurInst : Current) {
+
+        for(unsigned i = 0; i < CurInst->getNumOperands(); i++) {
+            User *ValueUser = dyn_cast<User>(CurInst->getOperand(i));
+
+            if (!ValueUser) {
+                errs() << "\t\t" << *ValueUser << " obtained from: " << *CurInst << "is not a user!."
+                    " Trying to replace: " << *Old << " with: " << *New << "failed.\n";
+                report_fatal_error("editAllUses failed with value that was not user");
+            }
+            assert (!isa<DerivedUser>(ValueUser) && "Value should not be a DerivedUser");
+
+            // Only choice in User Instruction, Constant
+            // NOTE: does this even make sense?
+            if (isa<Instruction>(ValueUser) && ValueUser == Old) {
+                    CurInst->setOperand(i, New);
+            }
+            else {
+                assert(isa<Constant>(ValueUser));
+
+                if (isa<BlockAddress>(ValueUser) ||
+                        isa<ConstantAggregate>(ValueUser) ||
+                        isa<ConstantData>(ValueUser) || isa<GlobalValue>(ValueUser))  continue;
+
+                if (isa<GlobalValue>(ValueUser) && ValueUser == Old) {
+                    CurInst->setOperand(i, New);
+                    continue;
+                }
+
+                // Only things that can contain a reference is a ConstantExpr
+                ConstantExpr *ValueConstExpr = dyn_cast<ConstantExpr>(ValueUser);
+                assert (ValueConstExpr && "this must be a ValueConstExpr");
+
+                ExpandConstantExpr(ValueConstExpr, Builder, Next);
+
+            }// end else
+        }// end operands for
+ 
+        // TODO: move.
+        Current = Next;
+        Next.clear();
+    }// end worklist
 }
 
 // Given a value `Current`, return all Instructions that may contain `Current`
@@ -199,8 +255,8 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL,
       Builder.SetInsertPoint(UserOfArrayInst);
       Value *ArrPtrLoaded =  Builder.CreateLoad(ReplacementToArr, "arrptr.load");
 
-     recursivelyEditAllUses(UserOfArrayInst, &Array, ArrPtrLoaded);
-
+     std::set<Value *> SeenSet; 
+     editAllUses(UserOfArrayInst, &Array, ArrPtrLoaded, Builder);
   }
 }
 
