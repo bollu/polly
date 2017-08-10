@@ -112,6 +112,7 @@ static void getContainingInstructions(Value *Current, std::vector<Instruction*> 
   Instruction *I;
   Constant *C;
   if ((I = dyn_cast<Instruction>(Current))) {
+      errs() << "Found owner for: " << *Current << " - " << *I << "\n";
       Owners.push_back(I);
   } else if ((C = dyn_cast<Constant>(Current))) {
       for(Use &CUse : C->uses()) {
@@ -181,6 +182,8 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL,
   static int priority = 0;
   appendToGlobalCtors(M, F, priority++, ReplacementToArr);
 
+  errs() << "Done appending to global ctors\n";
+
   std::vector<Instruction *> ArrayUserInstructions;
   // Get all instructions that use array. We need to do this weird thing
   // because `Constant`s that contain
@@ -188,6 +191,7 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL,
       getContainingInstructions(ArrayUse.get(), ArrayUserInstructions);
   }
 
+  return;
   for(Instruction *UserOfArrayInst : ArrayUserInstructions) {
       Builder.SetInsertPoint(UserOfArrayInst);
       Value *ArrPtrLoaded =  Builder.CreateLoad(ReplacementToArr, "arrptr.load");
@@ -195,11 +199,6 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL,
      recursivelyEditAllUses(UserOfArrayInst, &Array, ArrPtrLoaded);
 
   }
-  /*
-  Constant *BitcastedNewArrExpr = ConstantExpr::getBitCast(
-      ReplacementToArr, PointerType::get(ArrayTy, AddrSpace));
-  Array.replaceAllUsesWith(BitcastedNewArrExpr);
-  */
 }
 
 class ManagedMemoryRewritePass : public ModulePass {
