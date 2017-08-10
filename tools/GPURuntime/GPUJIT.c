@@ -33,8 +33,8 @@
 #include <string.h>
 #include <unistd.h>
 
-static int DebugMode;
-static int CacheMode;
+static int DebugMode = 1;
+static int CacheMode = 1;
 
 static PollyGPURuntime Runtime = RUNTIME_NONE;
 
