@@ -92,6 +92,7 @@ static llvm::Function *GetOrCreatePollyFreeManaged(Module &M) {
 
 static void recursivelyEditAllUses(User *U, Value *Old, Value *New) {
     for(unsigned i = 0; i < U->getNumOperands(); i++) {
+        errs() << "rewriting " << i << "th operand of: " << *U << "\n";
         Value *V = U->getOperand(i);
         User *ValueUser = dyn_cast<User>(V);
         if (!ValueUser) {
@@ -99,32 +100,34 @@ static void recursivelyEditAllUses(User *U, Value *Old, Value *New) {
             " Trying to replace: " << *Old << " with: " << *New << "failed.\n";
             report_fatal_error("recursivelyEditAllUses failed with value that was not user");
         }
-        if (V == Old)
+        if (V == Old) {
             U->setOperand(i, New);
-        else
+        } else {
             recursivelyEditAllUses(ValueUser, Old, New);
+        }
     }
 }
 
 // Given a value `Current`, return all Instructions that may contain `Current`
 // in an expression.
-static void getContainingInstructions(Value *Current, std::vector<Instruction*> Owners) {
+static void getContainingInstructions(Value *Current, std::vector<Instruction*> &Owners) {
   Instruction *I;
   Constant *C;
   if ((I = dyn_cast<Instruction>(Current))) {
-      errs() << "Found owner for: " << *Current << " - " << *I << "\n";
+      errs() << "#Found owner for: " << *Current << "\n\t- " << *I << "\n\n";
       Owners.push_back(I);
   } else if ((C = dyn_cast<Constant>(Current))) {
       for(Use &CUse : C->uses()) {
-          getContainingInstructions(CUse.get(), Owners);
+          // if (CUse == C) continue;
+          getContainingInstructions(CUse.getUser(), Owners);
       }
   } else {
     errs() << "(" << *Current
            << ") is neither an instruction nor a constant!.\n"
         "The process of finding the owning instruction reached a node with unknown replacement strategy";
     report_fatal_error("unable to find owning instruction");
+    llvm_unreachable("should never reach here from getContainingInstruction");
   }
-  llvm_unreachable("should never reach here from getContainingInstruction");
 
 }
 
@@ -182,17 +185,17 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL,
   static int priority = 0;
   appendToGlobalCtors(M, F, priority++, ReplacementToArr);
 
-  errs() << "Done appending to global ctors\n";
 
+  errs() << "Done appending to global ctors\n";
   std::vector<Instruction *> ArrayUserInstructions;
   // Get all instructions that use array. We need to do this weird thing
   // because `Constant`s that contain
   for(Use &ArrayUse : Array.uses()) {
-      getContainingInstructions(ArrayUse.get(), ArrayUserInstructions);
+      getContainingInstructions(ArrayUse.getUser(), ArrayUserInstructions);
   }
 
-  return;
   for(Instruction *UserOfArrayInst : ArrayUserInstructions) {
+      errs() << "\n\nrewriting: " << *UserOfArrayInst << "\n";
       Builder.SetInsertPoint(UserOfArrayInst);
       Value *ArrPtrLoaded =  Builder.CreateLoad(ReplacementToArr, "arrptr.load");
 
@@ -237,8 +240,8 @@ public:
     }
 
     // Erase all globals from the parent
-    for(GlobalVariable *GV : GlobalsToErase)
-        GV->eraseFromParent();
+    for(GlobalVariable *GV : GlobalsToErase) {};
+        //GV->eraseFromParent();
 
     return true;
   }
