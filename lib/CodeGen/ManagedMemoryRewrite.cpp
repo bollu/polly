@@ -90,54 +90,81 @@ static llvm::Function *GetOrCreatePollyFreeManaged(Module &M) {
   return F;
 }
 
-static void RewriteGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &Array) {
-    static const unsigned AddrSpace = 0;
-    // We only want arrays.
-    ArrayType *ArrayTy = dyn_cast<ArrayType>(Array.getType()->getElementType());
-    if (!ArrayTy) return;
-    Type *ElemTy = ArrayTy->getElementType();
-    PointerType *ElemPtrTy = PointerType::get(ElemTy, AddrSpace);
+static void replaceUsesOfWithRecursively(Instruction *I, Value *Old,
+                                         Value *New) {}
 
-    // We only wish to replace stuff with internal linkage. Otherwise,
-    // our type edit from [T] to T* would be illegal across modules.
-    // It is interesting that most arrays don't seem to be tagged with internal linkage?
-    if (GlobalValue::isWeakForLinker(Array.getLinkage()) && false) {return; }
+static void rewriteValueWithGlobalValue(Value *Current, Value *Old,
+                                        GlobalValue *New) {
+  Instruction *I;
+  Constant *C;
+  if ((I = dyn_cast<Instruction>(Current))) {
 
-    if (!Array.hasInitializer()|| !isa<ConstantAggregateZero>(Array.getInitializer())) return;
+  } else if ((C = dyn_cast<Constant>(Current))) {
+  } else {
+    errs() << "(" << *Current
+           << ") is neither an instruction nor a constant!.\n"
+              "Trying to replace: ("
+           << *Old << ") With: (" << *New << "). Quitting.\n";
+    report_fatal_error(
+        "Value replacement reached node with unknown replacement strategy");
+  }
+}
 
-    std::string NewName = (Array.getName() + Twine(".toptr")).str();
-    GlobalVariable *ReplacementToArr = dyn_cast<GlobalVariable>(M.getOrInsertGlobal(NewName, ElemPtrTy));
-    ReplacementToArr->setInitializer(ConstantPointerNull::get(ElemPtrTy));
+static void RewriteGlobalArray(Module &M, const DataLayout &DL,
+                               GlobalVariable &Array, std::vector<GlobalVariable*> &ReplacedGlobals) {
+  static const unsigned AddrSpace = 0;
+  // We only want arrays.
+  ArrayType *ArrayTy = dyn_cast<ArrayType>(Array.getType()->getElementType());
+  if (!ArrayTy)
+    return;
+  Type *ElemTy = ArrayTy->getElementType();
+  PointerType *ElemPtrTy = PointerType::get(ElemTy, AddrSpace);
 
-    Function *PollyMallocManaged = GetOrCreatePollyMallocManaged(M);
-    Twine FnName = Array.getName() + ".constructor";
-    PollyIRBuilder Builder(M.getContext());
-    FunctionType *Ty =
-        FunctionType::get(Builder.getVoidTy(), {}, false);
-    const GlobalValue::LinkageTypes Linkage = Function::ExternalLinkage;
-    Function *F = Function::Create(Ty, Linkage, FnName, &M);
-    BasicBlock *Start = BasicBlock::Create(M.getContext(), "entry", F);
-    Builder.SetInsertPoint(Start);
+  // We only wish to replace stuff with internal linkage. Otherwise,
+  // our type edit from [T] to T* would be illegal across modules.
+  // It is interesting that most arrays don't seem to be tagged with internal
+  // linkage?
+  if (GlobalValue::isWeakForLinker(Array.getLinkage()) && false) {
+    return;
+  }
 
+  if (!Array.hasInitializer() ||
+      !isa<ConstantAggregateZero>(Array.getInitializer()))
+    return;
 
-    int ArraySizeInt = DL.getTypeAllocSizeInBits(ArrayTy) * 100;
-    Value *ArraySize = ConstantInt::get(Builder.getInt64Ty(), ArraySizeInt);
-    ArraySize->setName("array.size");
+  std::string NewName = (Array.getName() + Twine(".toptr")).str();
+  GlobalVariable *ReplacementToArr =
+      dyn_cast<GlobalVariable>(M.getOrInsertGlobal(NewName, ElemPtrTy));
+  ReplacementToArr->setInitializer(ConstantPointerNull::get(ElemPtrTy));
 
-    Value *AllocatedMemRaw = Builder.CreateCall(PollyMallocManaged, { ArraySize }, "mem.raw");
-    Value *AllocatedMemTyped = Builder.CreatePointerCast(AllocatedMemRaw, ElemPtrTy, "mem.typed");
-    Builder.CreateStore(AllocatedMemTyped, ReplacementToArr);
-    Builder.CreateRetVoid();
+  Function *PollyMallocManaged = GetOrCreatePollyMallocManaged(M);
+  Twine FnName = Array.getName() + ".constructor";
+  PollyIRBuilder Builder(M.getContext());
+  FunctionType *Ty = FunctionType::get(Builder.getVoidTy(), {}, false);
+  const GlobalValue::LinkageTypes Linkage = Function::ExternalLinkage;
+  Function *F = Function::Create(Ty, Linkage, FnName, &M);
+  BasicBlock *Start = BasicBlock::Create(M.getContext(), "entry", F);
+  Builder.SetInsertPoint(Start);
 
-    
+  int ArraySizeInt = DL.getTypeAllocSizeInBits(ArrayTy) * 100;
+  Value *ArraySize = ConstantInt::get(Builder.getInt64Ty(), ArraySizeInt);
+  ArraySize->setName("array.size");
 
-    // HACK: refactor the priority stuff.
-    static int priority = 0;
-    appendToGlobalCtors(M, F, priority++, ReplacementToArr);
-    Constant *BitcastedNewArrExpr = ConstantExpr::getBitCast(ReplacementToArr, PointerType::get(ArrayTy, AddrSpace));
-    Array.replaceAllUsesWith(BitcastedNewArrExpr);
-    // TODO: understand why this crashes.
-    // Array.eraseFromParent();
+  Value *AllocatedMemRaw =
+      Builder.CreateCall(PollyMallocManaged, {ArraySize}, "mem.raw");
+  Value *AllocatedMemTyped =
+      Builder.CreatePointerCast(AllocatedMemRaw, ElemPtrTy, "mem.typed");
+  Builder.CreateStore(AllocatedMemTyped, ReplacementToArr);
+  Builder.CreateRetVoid();
+
+  // HACK: refactor the priority stuff.
+  static int priority = 0;
+  appendToGlobalCtors(M, F, priority++, ReplacementToArr);
+  Constant *BitcastedNewArrExpr = ConstantExpr::getBitCast(
+      ReplacementToArr, PointerType::get(ArrayTy, AddrSpace));
+  Array.replaceAllUsesWith(BitcastedNewArrExpr);
+  // TODO: understand why this crashes.
+  ReplacedGlobals.push_back(&Array);
 }
 
 class ManagedMemoryRewritePass : public ModulePass {
@@ -170,9 +197,14 @@ public:
       Free->eraseFromParent();
     }
 
-    for(GlobalVariable &Global : M.globals()) {
-        RewriteGlobalArray(M, *DL, Global);
+    std::vector<GlobalVariable*> GlobalsToErase;
+    for (GlobalVariable &Global : M.globals()) {
+      RewriteGlobalArray(M, *DL,Global, GlobalsToErase);
     }
+
+    // Erase all globals from the parent
+    for(GlobalVariable *GV : GlobalsToErase)
+        GV->eraseFromParent();
 
     return true;
   }

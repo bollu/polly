@@ -1455,6 +1455,7 @@ void polly_freeManaged(void *mem) {
 }
 
 void *polly_mallocManaged(size_t size) {
+  polly_initContextCUDA();
   dump_function();
   void *a;
   if (cudaMallocManaged(&a, size, cudaMemAttachGlobal) != cudaSuccess) {
@@ -1462,6 +1463,8 @@ void *polly_mallocManaged(size_t size) {
     exit(-1);
   }
   addManagedPtr(a);
+
+  fprintf(stderr, "\n *** cudaMallocManaged return value: %p\n", a);
   return a;
 }
 
