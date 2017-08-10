@@ -90,6 +90,14 @@ static llvm::Function *GetOrCreatePollyFreeManaged(Module &M) {
   return F;
 }
 
+static bool doesInstUseValue(const Instruction &Inst, const Value &Needle) {
+    for (unsigned i = 0, E = Inst.getNumOperands(); i != E; ++i)
+        if (Inst.getOperand(i) == &Needle) {
+            return true;
+        }
+    return false;
+}
+
 static void RewriteGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &Array) {
     static const unsigned AddrSpace = 0;
     // We only want arrays.
@@ -129,6 +137,25 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &
     Builder.CreateStore(AllocatedMemTyped, ReplacementToArr);
     Builder.CreateRetVoid();
 
+    // HACK: refactor this.
+    static int priority = 0;
+    appendToGlobalCtors(M, F, priority++, ReplacementToArr);
+
+    // NOTE: this is O(N^2) roughly, don't do this
+    // Collect all globals to be replaced along with their replacements
+    // and then walk in O(N * G) where g == # of globals.
+    for(Function &f : M) {
+        for(BasicBlock &bb : f) {
+            for(Instruction &Inst : bb) {
+                if (!doesInstUseValue(Inst, Array)) continue;
+                errs() << "\nUse of Array: " << Inst << "\n";
+                Builder.SetInsertPoint(&Inst);
+                Value *BitcastedNewArray = Builder.CreateBitCast(ReplacementToArr, PointerType::get(ArrayTy, AddrSpace));
+                Inst.replaceUsesOfWith(&Array, BitcastedNewArray);
+            }
+        }
+    }
+    /*
     // All the array's uses will be GEP
     for (Use &use: Array.uses()) {
         //GEPOperator *GEP = dyn_cast<GEPOperator>(use->getUser());
@@ -142,12 +169,9 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &
         Value *BitcastedNewArray = Builder.CreateBitCast(ReplacementToArr, PointerType::get(ArrayTy, AddrSpace));
         use.set(BitcastedNewArray);
     }
-    
+    */
 
 
-    // HACK: refactor this.
-    static int priority = 0;
-    appendToGlobalCtors(M, F, priority++, ReplacementToArr);
 
 
 
