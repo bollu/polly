@@ -110,7 +110,7 @@ static void expandConstantExpr(ConstantExpr *Cur,
   Builder.SetInsertPoint(Parent);
   Builder.Insert(I);
 
-  errs() << "Expanded: " << *I << "\n";
+  DEBUG(dbgs() << "Expanded: " << *I << "\n";);
   for (unsigned i = 0; i < Cur->getNumOperands(); i++) {
     Constant *COp = dyn_cast<Constant>(Cur->getOperand(i));
     assert(COp && "constant must have a constant operand");
@@ -131,14 +131,13 @@ static void expandConstantExpr(ConstantExpr *Cur,
 static bool rewriteGEP(Instruction *MaybeGEP, Instruction *Parent, Value *ArrToRewrite, Value *NewLoadedPtr,
                        PollyIRBuilder &IRBuilder,
                        std::set<Instruction *> &InstsToBeDeleted ) {
-    DEBUG(dbgs() << "\n\n\n";
-    dbgs() << "CurInst: " << *MaybeGEP << "\n");
+    DEBUG(dbgs() << "\n\n\n";);
+    DEBUG(dbgs() << "CurInst: " << *MaybeGEP << "\n";);
     if (Parent)
-        dbgs() << "Owning Inst: " << *Parent << "\n";
+        DEBUG(dbgs() << "Owning Inst: " << *Parent << "\n";);
     else
-        dbgs() << "Owning Inst: " << "NONE" << "\n";
-
-    dbgs() << "TargerArr: " << *ArrToRewrite << "\n";
+        DEBUG(dbgs() << "Owning Inst: " << "NONE" << "\n";);
+    DEBUG(dbgs() << "TargerArr: " << *ArrToRewrite << "\n";);
   GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(MaybeGEP);
 
   if (!GEP)
@@ -391,9 +390,9 @@ public:
     dbgs() << "=====\n";);
 
     for(Instruction *Inst : InstsToBeDeleted) {
-        errs() << "\n\nRemoving: " << *Inst << "...\n";
+        DEBUG(dbgs() << "\n\nRemoving: " << *Inst << "...\n";);
         Inst->eraseFromParent();
-        errs() << "Successful\n";
+        DEBUG(dbgs() << "Successful\n";);
     }
     // Erase all globals from the parent
     for(GlobalVariable *G : GlobalsToErase) {
