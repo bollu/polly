@@ -116,6 +116,34 @@ static Instruction* ExpandConstantExpr(ConstantExpr *Cur,
     return I;
 }
 
+// rewrite a GEP to strip of the first index
+// We need to do this because earlier it used to be @[i32 x <size>]
+// It is now i32*. We don't need an extra "@" dereference
+static bool rewriteGEP(User *MaybeGEP, Value *ArrToRewrite, Value *New, PollyIRBuilder &IRBuilder) {
+    GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(MaybeGEP);
+    if (!GEP) return false;
+    if (!(GEP->getPointerOperand() == ArrToRewrite)) return false;
+
+    auto Indices = GEP->indices();
+    std::vector<Value *>NewIndices(Indices.begin() + 1, Indices.end());
+    errs() << "\n===\n";
+    errs() << " ***GEP: " << *GEP << " | type: " << *GEP->getType() << "\n";
+    for(auto Idx : NewIndices) {
+        errs() << " - " << *Idx << "\n";
+
+    }
+
+    errs() << "New->getType()" << *New->getType() << "\n";
+    errs() << "New->getType()->getScalarType(): " << *New->getType()->getScalarType() << "\n";
+    errs() << "*dyn_cast<PointerType>(New->getType()->getScalarType())->getElementType()" << *dyn_cast<PointerType>(New->getType()->getScalarType())->getElementType() << "\n";
+    errs() << "\n===\n";
+    Value *NewGEP = IRBuilder.CreateGEP(New, NewIndices, "newgep");
+    GEP->replaceAllUsesWith(NewGEP);
+    GEP->eraseFromParent();
+    return true;
+
+}
+
 static void editAllUses(Instruction *Inst, Value *Old, Value *New,
         PollyIRBuilder &Builder) {
 
@@ -124,7 +152,11 @@ static void editAllUses(Instruction *Inst, Value *Old, Value *New,
     std::set<User *>Current = {Inst};
 
     while (!Current.empty()) {
+
         for(User *CurUser : Current) {
+            // Try to rewrite the current as a GEP
+            if (rewriteGEP(CurUser, Old, New, Builder)) continue;
+
             for(unsigned i = 0; i < CurUser->getNumOperands(); i++) {
                 User *OperandAsUser = dyn_cast<User>(CurUser->getOperand(i));
                 // if (Visited.count(OperandAsUser)) continue;
@@ -267,12 +299,12 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL,
 
   for(Instruction *UserOfArrayInst : ArrayUserInstructions) {
       Builder.SetInsertPoint(UserOfArrayInst);
-      Value *ArrPtrBitcast =  Builder.CreateBitCast(ReplacementToArr,
-              PointerType::get(ArrayTy, AddrSpace), "arrptr.bitcast");
-      Value *ArrPtrLoaded =  Builder.CreateLoad(ArrPtrBitcast, "arrptr.bitcast.load");
+      // Value *ArrPtrBitcast =  Builder.CreateBitCast(ReplacementToArr,
+      //         PointerType::get(ArrayTy, AddrSpace), "arrptr.bitcast");
+      Value *ArrPtrLoaded =  Builder.CreateLoad(ReplacementToArr, "arrptr.load");
 
      std::set<Value *> SeenSet;
-     editAllUses(UserOfArrayInst, &Array, ArrPtrBitcast, Builder);
+     editAllUses(UserOfArrayInst, &Array, ArrPtrLoaded, Builder);
   }
 }
 
@@ -312,8 +344,9 @@ public:
     }
 
     // Erase all globals from the parent
-    for(GlobalVariable *GV : GlobalsToErase) {};
-        //GV->eraseFromParent();
+    for(GlobalVariable *GV : GlobalsToErase) {
+        GV->eraseFromParent();
+    }
 
     return true;
   }
