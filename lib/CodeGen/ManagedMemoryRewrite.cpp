@@ -92,10 +92,13 @@ static llvm::Function *GetOrCreatePollyFreeManaged(Module &M) {
 }
 
 // Expand the constant expression Cur using Builder. This will recursively
-// expand Instruction. `Expands` contains all the expanded instructions.
-static Instruction *ExpandConstantExpr(ConstantExpr *Cur,
+// expand `Cur` to arrive at a set of instructions.
+// `Expands` is populated all the expanded instructions.
+// NOTE: this simply `insert`s into Expands.
+static Instruction *expandConstantExpr(ConstantExpr *Cur,
                                        PollyIRBuilder &Builder,
-                                       std::set<User *> &Expands) {
+                                       Instruction *CurInst,
+                                       std::set<std::pair<Instruction *, User *>> &Expands) {
   assert(Cur && "invalid constant expression passed");
   std::vector<std::pair<int, Instruction *>> Replacements;
   for (unsigned i = 0; i < Cur->getNumOperands(); i++) {
@@ -103,7 +106,7 @@ static Instruction *ExpandConstantExpr(ConstantExpr *Cur,
     assert(COp && "constant must have a constant operand");
     if (isa<ConstantExpr>(COp)) {
       Instruction *Replacement =
-          ExpandConstantExpr(dyn_cast<ConstantExpr>(COp), Builder, Expands);
+          expandConstantExpr(dyn_cast<ConstantExpr>(COp), Builder, CurInst, Expands);
       Replacements.push_back(std::make_pair(i, Replacement));
     };
   }
@@ -112,15 +115,20 @@ static Instruction *ExpandConstantExpr(ConstantExpr *Cur,
   for (std::pair<int, Instruction *> &Replacement : Replacements) {
     I->setOperand(Replacement.first, Replacement.second);
   }
-  Expands.insert(I);
+  Expands.insert({ CurInst, I});
   Builder.Insert(I);
   return I;
 }
 
 // rewrite a GEP to strip of the first index
 // We need to do this because earlier it used to be @[i32 x <size>]
-// It is now i32*. We don't need an extra "@" dereference
-static bool rewriteGEP(User *MaybeGEP, Value *ArrToRewrite, Value *New,
+// It is now i32*. We don't need an extra "@" dereference.
+// Parameters:
+// MaybeGEP: A `User` that might be a GEP
+// ArrToRewrite: Global array we wish to rewrite to a pointer (@A)
+// NewPtr: New pointer value to rewrite the global array with (A.toptr that has been loaded)
+// IRBuilder: IRBuilder instance
+static bool rewriteGEP(User *MaybeGEP, Instruction *OwningInst, Value *ArrToRewrite, Value *NewPtr,
                        PollyIRBuilder &IRBuilder) {
   GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(MaybeGEP);
   if (!GEP)
@@ -131,49 +139,56 @@ static bool rewriteGEP(User *MaybeGEP, Value *ArrToRewrite, Value *New,
   auto Indices = GEP->indices();
   std::vector<Value *> NewIndices(Indices.begin() + 1, Indices.end());
 
-  Value *NewGEP = IRBuilder.CreateGEP(New, NewIndices, "newgep");
-  GEP->replaceAllUsesWith(NewGEP);
-  GEP->eraseFromParent();
+  Value *NewGEP = IRBuilder.CreateGEP(NewPtr, NewIndices, "newgep");
+
+  // Either the owning instruction is a GEP, or is an instruction that
+  // contains a GEP.
+  if (OwningInst == GEP)  GEP->replaceAllUsesWith(NewGEP);
+  else {
+      OwningInst->replaceUsesOfWith(GEP, NewGEP);
+  }
+  // GEP can be used by other people, so we can't remove it.
+  if (GEP->getNumUses() == 0) { GEP->eraseFromParent(); }
   return true;
 }
 
-static void editAllUses(Instruction *Inst, Value *Old, Value *New,
+// Edit all uses of `ArrPtrToRewrite` to `NewPtr` in `Inst`.
+// This will change all `GEP`s into `ArrPtrToRewrite` to `NewPtr`, re-indexing
+// the GEPs correctly as well.
+static void rewriteArrToPtr(Instruction *Inst, Value *ArrPtrToRewrite, Value *NewPtr,
                         PollyIRBuilder &Builder) {
 
-  std::set<User *> Visited;
-  std::set<User *> Next;
-  std::set<User *> Current = {Inst};
+  // We use a worklist based algorithm that keep the frontier of
+  // `User`s we need to rewrite in `Next`, and the current iterations
+  // in `Current`.
+  std::set<std::pair<Instruction *, User*>> Next;
+  std::set<std::pair<Instruction *, User *>> Current = {std::make_pair(Inst, Inst)};
 
   while (!Current.empty()) {
 
-    for (User *CurUser : Current) {
-      // Try to rewrite the current as a GEP
-      if (rewriteGEP(CurUser, Old, New, Builder))
+    for (const std::pair<Instruction *, User *> &InstUserPair : Current) {
+        Instruction *CurInst = InstUserPair.first;
+        User *CurUser = InstUserPair.second;
+      // Try to rewrite the current as a GEP.
+      // If we can generate a GEP from the instruction, then we are done,
+      // because we have replaced the old array with the new pointer.
+      if (rewriteGEP(CurUser, CurInst, ArrPtrToRewrite, NewPtr, Builder))
         continue;
 
       for (unsigned i = 0; i < CurUser->getNumOperands(); i++) {
         User *OperandAsUser = dyn_cast<User>(CurUser->getOperand(i));
-        // if (Visited.count(OperandAsUser)) continue;
-        // Visited.insert(OperandAsUser);
 
         if (!OperandAsUser) {
           errs() << "\t\t" << *OperandAsUser << " obtained from: " << *CurUser
-                 << "is not a user!."
-                    " Trying to replace: "
-                 << *Old << " with: " << *New << "failed.\n";
-          report_fatal_error("editAllUses failed with value that was not user");
+                 << "is not a user!. Trying to replace: "
+                 << *ArrPtrToRewrite << " with: " << *NewPtr << "failed.\n";
+          report_fatal_error("rewriteArrToPtr failed with value that was not user");
         }
+        assert(OperandAsUser && "operandAsUser uninitialized");
 
-        // if (isa<DerivedUser>) continue;
-        // assert (!isa<DerivedUser>(OperandAsUser) && "Value should not be a
-        // DerivedUser");
-
-        // Only choice in User Instruction,DerivedUser,  Constant
-        // NOTE: does this even make sense?
-        if ((isa<Instruction>(
-                OperandAsUser))) { // || isa<DerivedUser>(ValueUser))) {
-          if (OperandAsUser == Old) {
-            CurUser->setOperand(i, New);
+        if (isa<Instruction>(OperandAsUser)) {
+          if (OperandAsUser == ArrPtrToRewrite) {
+            CurUser->setOperand(i, NewPtr);
           }
         } else {
           assert(isa<Constant>(OperandAsUser));
@@ -184,8 +199,8 @@ static void editAllUses(Instruction *Inst, Value *Old, Value *New,
             continue;
 
           if (isa<GlobalValue>(OperandAsUser)) {
-            if (OperandAsUser == Old) {
-              CurUser->setOperand(i, New);
+            if (OperandAsUser == ArrPtrToRewrite) {
+              CurUser->setOperand(i, NewPtr);
             }
             continue;
           }
@@ -194,22 +209,17 @@ static void editAllUses(Instruction *Inst, Value *Old, Value *New,
           ConstantExpr *ValueConstExpr = dyn_cast<ConstantExpr>(OperandAsUser);
           assert(ValueConstExpr && "this must be a ValueConstExpr");
 
-          Instruction *I = ExpandConstantExpr(ValueConstExpr, Builder, Next);
+          Instruction *I = expandConstantExpr(ValueConstExpr, Builder,CurInst,  Next);
           CurUser->setOperand(i, I);
 
         } // end else
       }   // end operands for
     }     // end for current
 
-    // TODO: Visited += Current
     Current.clear();
-    // Current = Next - Visited
-    // std::set_difference(Next.begin(), Next.end(), Visited.begin(),
-    // Visited.end(),
-    //        std::inserter(Current, Current.end()));
     Current = Next;
+
     Next.clear();
-    Visited.clear();
   } // end worklist
 }
 
@@ -223,7 +233,6 @@ static void getContainingInstructions(Value *Current,
     Owners.push_back(I);
   } else if ((C = dyn_cast<Constant>(Current))) {
     for (Use &CUse : C->uses()) {
-      // if (CUse == C) continue;
       getContainingInstructions(CUse.getUser(), Owners);
     }
   } else {
@@ -291,7 +300,6 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL,
   static int priority = 0;
   appendToGlobalCtors(M, F, priority++, ReplacementToArr);
 
-  errs() << "Done appending to global ctors\n";
   std::vector<Instruction *> ArrayUserInstructions;
   // Get all instructions that use array. We need to do this weird thing
   // because `Constant`s that contain
@@ -301,12 +309,8 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL,
 
   for (Instruction *UserOfArrayInst : ArrayUserInstructions) {
     Builder.SetInsertPoint(UserOfArrayInst);
-    // Value *ArrPtrBitcast =  Builder.CreateBitCast(ReplacementToArr,
-    //         PointerType::get(ArrayTy, AddrSpace), "arrptr.bitcast");
     Value *ArrPtrLoaded = Builder.CreateLoad(ReplacementToArr, "arrptr.load");
-
-    std::set<Value *> SeenSet;
-    editAllUses(UserOfArrayInst, &Array, ArrPtrLoaded, Builder);
+    rewriteArrToPtr(UserOfArrayInst, &Array, ArrPtrLoaded, Builder);
   }
 }
 
