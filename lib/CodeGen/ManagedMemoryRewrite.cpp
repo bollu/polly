@@ -97,7 +97,6 @@ static Instruction *ExpandConstantExpr(ConstantExpr *Cur,
                                        PollyIRBuilder &Builder,
                                        std::set<User *> &Expands) {
   assert(Cur && "invalid constant expression passed");
-  errs() << "ExpandConstantExpr: " << *Cur << "\n\n";
   std::vector<std::pair<int, Instruction *>> Replacements;
   for (unsigned i = 0; i < Cur->getNumOperands(); i++) {
     Constant *COp = dyn_cast<Constant>(Cur->getOperand(i));
@@ -131,21 +130,7 @@ static bool rewriteGEP(User *MaybeGEP, Value *ArrToRewrite, Value *New,
 
   auto Indices = GEP->indices();
   std::vector<Value *> NewIndices(Indices.begin() + 1, Indices.end());
-  errs() << "\n===\n";
-  errs() << " ***GEP: " << *GEP << " | type: " << *GEP->getType() << "\n";
-  for (auto Idx : NewIndices) {
-    errs() << " - " << *Idx << "\n";
-  }
 
-  errs() << "New->getType()" << *New->getType() << "\n";
-  errs() << "New->getType()->getScalarType(): "
-         << *New->getType()->getScalarType() << "\n";
-  errs() << "*dyn_cast<PointerType>(New->getType()->getScalarType())->"
-            "getElementType()"
-         << *dyn_cast<PointerType>(New->getType()->getScalarType())
-                 ->getElementType()
-         << "\n";
-  errs() << "\n===\n";
   Value *NewGEP = IRBuilder.CreateGEP(New, NewIndices, "newgep");
   GEP->replaceAllUsesWith(NewGEP);
   GEP->eraseFromParent();
@@ -179,7 +164,6 @@ static void editAllUses(Instruction *Inst, Value *Old, Value *New,
           report_fatal_error("editAllUses failed with value that was not user");
         }
 
-        errs() << " -" << *OperandAsUser << "\n";
         // if (isa<DerivedUser>) continue;
         // assert (!isa<DerivedUser>(OperandAsUser) && "Value should not be a
         // DerivedUser");
@@ -236,7 +220,6 @@ static void getContainingInstructions(Value *Current,
   Instruction *I;
   Constant *C;
   if ((I = dyn_cast<Instruction>(Current))) {
-    errs() << "#Found owner for: " << *Current << "\n\t- " << *I << "\n\n";
     Owners.push_back(I);
   } else if ((C = dyn_cast<Constant>(Current))) {
     for (Use &CUse : C->uses()) {
