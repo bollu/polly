@@ -1,5 +1,4 @@
-//===------ ManagedMemoryRewrite.cpp - Rewrite global & malloc'd memory.
-//---===//
+//===---- ManagedMemoryRewrite.cpp - Rewrite global & malloc'd memory -----===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -153,7 +152,7 @@ static bool rewriteGEP(User *MaybeGEP, Instruction *OwningInst, Value *ArrToRewr
   if (OwningInst == GEP) {   
       DEBUG(dbgs() << "Replacing OwningInst(" << *OwningInst << ")\n\twith NewGEP(" << *NewGEP << ")...\n");
       OwningInst->replaceAllUsesWith(NewGEP);
-      OwningInst->eraseFromParent();
+      InstsToBeDeleted.insert(OwningInst);
   }
   else {
       DEBUG(dbgs() << "Replacing GEP(" << *GEP << ")\n\twith NewGEP(" << *NewGEP << ")\n\tin OwningInst(" << *OwningInst << ")...\n");
@@ -264,7 +263,8 @@ static void getContainingInstructions(Value *Current,
 
 static void RewriteGlobalArray(Module &M, const DataLayout &DL,
                                GlobalVariable &Array,
-                               std::vector<GlobalVariable *> &ReplacedGlobals) {
+                               std::set<GlobalVariable *> &ReplacedGlobals,
+                               std::set<Instruction *> &InstsToBeDeleted) {
   static const unsigned AddrSpace = 0;
   // We only want arrays.
   ArrayType *ArrayTy = dyn_cast<ArrayType>(Array.getType()->getElementType());
@@ -286,7 +286,7 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL,
     return;
 
   // At this point, we have committed to replacing this array.
-  ReplacedGlobals.push_back(&Array);
+  ReplacedGlobals.insert(&Array);
 
   std::string NewName = (Array.getName() + Twine(".toptr")).str();
   GlobalVariable *ReplacementToArr =
@@ -324,7 +324,6 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL,
     getContainingInstructions(ArrayUse.getUser(), ArrayUserInstructions);
   }
 
-  std::set<Instruction *> InstsToBeDeleted;
   for (Instruction *UserOfArrayInst : ArrayUserInstructions) {
       if (InstsToBeDeleted.count(UserOfArrayInst)) continue;
 
@@ -370,15 +369,20 @@ public:
       Free->eraseFromParent();
     }
 
-    std::vector<GlobalVariable *> GlobalsToErase;
+    std::set<Instruction *>InstsToBeDeleted;
+    std::set<GlobalVariable *> GlobalsToErase;
     for (GlobalVariable &Global : M.globals()) {
-      RewriteGlobalArray(M, *DL, Global, GlobalsToErase);
+      RewriteGlobalArray(M, *DL, Global, GlobalsToErase, InstsToBeDeleted);
     }
 
-    // Erase all globals from the parent
-    for (GlobalVariable *GV : GlobalsToErase) {
-      GV->eraseFromParent();
+    for(Instruction *Inst : InstsToBeDeleted) {
+        Inst->eraseFromParent();
     }
+    // Erase all globals from the parent
+    for(GlobalVariable *G : GlobalsToErase) { 
+        G->eraseFromParent();
+    }
+
 
     return true;
   }
