@@ -334,9 +334,6 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL,
         Builder, InstsToBeDeleted);
   }
 
-  for(Instruction *D : InstsToBeDeleted) {
-    D->eraseFromParent();
-  }
 }
 
 class ManagedMemoryRewritePass : public ModulePass {
@@ -371,6 +368,7 @@ public:
 
     std::set<Instruction *>InstsToBeDeleted;
     std::set<GlobalVariable *> GlobalsToErase;
+
     for (GlobalVariable &Global : M.globals()) {
       RewriteGlobalArray(M, *DL, Global, GlobalsToErase, InstsToBeDeleted);
     }
