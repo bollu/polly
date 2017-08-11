@@ -130,12 +130,16 @@ static Instruction *expandConstantExpr(ConstantExpr *Cur,
 // ArrToRewrite: Global array we wish to rewrite to a pointer (@A)
 // NewLoadedPtr: New pointer value to rewrite the global array with (A.toptr that has been loaded)
 // IRBuilder: IRBuilder instance
-static bool rewriteGEP(User *MaybeGEP, Instruction *Parent, Value *ArrToRewrite, Value *NewLoadedPtr,
+static bool rewriteGEP(Instruction *MaybeGEP, Instruction *Parent, Value *ArrToRewrite, Value *NewLoadedPtr,
                        PollyIRBuilder &IRBuilder,
                        std::set<Instruction *> &InstsToBeDeleted ) {
     DEBUG(dbgs() << "\n\n\n";
-    dbgs() << "CurUser: " << *MaybeGEP << "\n");
-    dbgs() << "Owning Inst: " << *Parent << "\n";
+    dbgs() << "CurInst: " << *MaybeGEP << "\n");
+    if (Parent)
+        dbgs() << "Owning Inst: " << Parent << "\n";
+    else
+        dbgs() << "Owning Inst: " << "NONE" << "\n";
+
     dbgs() << "TargerArr: " << *ArrToRewrite << "\n";
   GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(MaybeGEP);
 
@@ -186,20 +190,22 @@ static void rewriteArrToPtr(Instruction *Inst, Value *ArrPtrToRewrite, Value *Ne
 
   while (!Current.empty()) {
 
-    for (const std::pair<Instruction *, User *> &InstUserPair : Current) {
-        Instruction *Parent = InstUserPair.first;
-        User *CurUser = InstUserPair.second;
+    for (const std::pair<Instruction *, Instruction *> &ParentInstPair : Current) {
+        Instruction *CurInst = ParentInstPair.second;
+        Instruction *Parent = ParentInstPair.first;
+
+        Builder.SetInsertPoint(CurInst);
       // Try to rewrite the current as a GEP.
       // If we can generate a GEP from the instruction, then we are done,
       // because we have replaced the old array with the new pointer.
-      if (rewriteGEP(CurUser, Parent, ArrPtrToRewrite, NewLoadedPtr, Builder, InstsToBeDeleted))
+      if (rewriteGEP(CurInst, Parent, ArrPtrToRewrite, NewLoadedPtr, Builder, InstsToBeDeleted))
         continue;
 
-      for (unsigned i = 0; i < CurUser->getNumOperands(); i++) {
-        User *OperandAsUser = dyn_cast<User>(CurUser->getOperand(i));
+      for (unsigned i = 0; i < CurInst->getNumOperands(); i++) {
+        User *OperandAsUser = dyn_cast<User>(CurInst->getOperand(i));
 
         if (!OperandAsUser) {
-          errs() << "\t\t" << *OperandAsUser << " obtained from: " << *CurUser
+          errs() << "\t\t" << *OperandAsUser << " obtained from: " << *CurInst
                  << "is not a user!. Trying to replace: "
                  << *ArrPtrToRewrite << " with: " << *NewBitcastedPtr << "failed.\n";
           report_fatal_error("rewriteArrToPtr failed with value that was not user");
@@ -208,7 +214,7 @@ static void rewriteArrToPtr(Instruction *Inst, Value *ArrPtrToRewrite, Value *Ne
 
         if (isa<Instruction>(OperandAsUser)) {
           if (OperandAsUser == ArrPtrToRewrite) {
-            CurUser->setOperand(i, NewBitcastedPtr);
+            CurInst->setOperand(i, NewBitcastedPtr);
           }
         } else {
           assert(isa<Constant>(OperandAsUser));
@@ -220,7 +226,7 @@ static void rewriteArrToPtr(Instruction *Inst, Value *ArrPtrToRewrite, Value *Ne
 
           if (isa<GlobalValue>(OperandAsUser)) {
             if (OperandAsUser == ArrPtrToRewrite) {
-              CurUser->setOperand(i, NewBitcastedPtr);
+              CurInst->setOperand(i, NewBitcastedPtr);
             }
             continue;
           }
@@ -230,7 +236,7 @@ static void rewriteArrToPtr(Instruction *Inst, Value *ArrPtrToRewrite, Value *Ne
           assert(ValueConstExpr && "this must be a ValueConstExpr");
 
           Instruction *I = expandConstantExpr(ValueConstExpr, Builder, Parent, Next);
-          CurUser->setOperand(i, I);
+          CurInst->setOperand(i, I);
 
         } // end else
       }   // end operands for
