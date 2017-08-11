@@ -45,6 +45,9 @@
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
+
+
+#define DEBUG_TYPE "polly-acc-managed-memory-rewrite"
 namespace {
 
 static llvm::Function *GetOrCreatePollyMallocManaged(Module &M) {
@@ -120,37 +123,44 @@ static Instruction *expandConstantExpr(ConstantExpr *Cur,
 // Parameters:
 // MaybeGEP: A `User` that might be a GEP
 // ArrToRewrite: Global array we wish to rewrite to a pointer (@A)
-// NewPtr: New pointer value to rewrite the global array with (A.toptr that has been loaded)
+// NewLoadedPtr: New pointer value to rewrite the global array with (A.toptr that has been loaded)
 // IRBuilder: IRBuilder instance
-static bool rewriteGEP(User *MaybeGEP, Instruction *OwningInst, Value *ArrToRewrite, Value *NewPtr,
+static bool rewriteGEP(User *MaybeGEP, Instruction *OwningInst, Value *ArrToRewrite, Value *NewLoadedPtr,
                        PollyIRBuilder &IRBuilder) {
+    DEBUG(dbgs() << "\n\n\n";
+    dbgs() << "Owning Inst: " << *OwningInst << "\n";
+    dbgs() << "Looking for: " << *ArrToRewrite << "\n";
+    dbgs() << "GEP: " << *MaybeGEP << "\n");
   GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(MaybeGEP);
   if (!GEP)
     return false;
   if (!(GEP->getPointerOperand() == ArrToRewrite))
     return false;
 
+  DEBUG(dbgs() << "Is GEP\n";);
+
   auto Indices = GEP->indices();
   std::vector<Value *> NewIndices(Indices.begin() + 1, Indices.end());
 
-  Value *NewGEP = IRBuilder.CreateGEP(NewPtr, NewIndices, "newgep");
+  Value *NewGEP = IRBuilder.CreateGEP(NewLoadedPtr, NewIndices, "newgep");
 
   // Either the owning instruction is a GEP, or is an instruction that
   // contains a GEP.
-  if (OwningInst == GEP)  GEP->replaceAllUsesWith(NewGEP);
+  if (OwningInst == GEP) {   GEP->replaceAllUsesWith(NewGEP); GEP->eraseFromParent(); }
   else {
       OwningInst->replaceUsesOfWith(GEP, NewGEP);
+      // GEP can be used by other people, so we can't remove it.
+      if (GEP->getNumUses() == 0) { GEP->eraseFromParent(); }
   }
-  // GEP can be used by other people, so we can't remove it.
-  if (GEP->getNumUses() == 0) { GEP->eraseFromParent(); }
   return true;
 }
 
-// Edit all uses of `ArrPtrToRewrite` to `NewPtr` in `Inst`.
-// This will change all `GEP`s into `ArrPtrToRewrite` to `NewPtr`, re-indexing
+// Edit all uses of `ArrPtrToRewrite` to `NewLoadedPtr` in `Inst`.
+// This will change all `GEP`s into `ArrPtrToRewrite` to `NewLoadedPtr`, re-indexing
 // the GEPs correctly as well.
-static void rewriteArrToPtr(Instruction *Inst, Value *ArrPtrToRewrite, Value *NewPtr,
-                        PollyIRBuilder &Builder) {
+// It will change all raw uses of `ArrPtrToRewrite` to `NewBitcastedPtr`.
+static void rewriteArrToPtr(Instruction *Inst, Value *ArrPtrToRewrite, Value *NewLoadedPtr,
+                            Value *NewBitcastedPtr, PollyIRBuilder &Builder) {
 
   // We use a worklist based algorithm that keep the frontier of
   // `User`s we need to rewrite in `Next`, and the current iterations
@@ -166,7 +176,7 @@ static void rewriteArrToPtr(Instruction *Inst, Value *ArrPtrToRewrite, Value *Ne
       // Try to rewrite the current as a GEP.
       // If we can generate a GEP from the instruction, then we are done,
       // because we have replaced the old array with the new pointer.
-      if (rewriteGEP(CurUser, CurInst, ArrPtrToRewrite, NewPtr, Builder))
+      if (rewriteGEP(CurUser, CurInst, ArrPtrToRewrite, NewLoadedPtr, Builder))
         continue;
 
       for (unsigned i = 0; i < CurUser->getNumOperands(); i++) {
@@ -175,14 +185,14 @@ static void rewriteArrToPtr(Instruction *Inst, Value *ArrPtrToRewrite, Value *Ne
         if (!OperandAsUser) {
           errs() << "\t\t" << *OperandAsUser << " obtained from: " << *CurUser
                  << "is not a user!. Trying to replace: "
-                 << *ArrPtrToRewrite << " with: " << *NewPtr << "failed.\n";
+                 << *ArrPtrToRewrite << " with: " << *NewBitcastedPtr << "failed.\n";
           report_fatal_error("rewriteArrToPtr failed with value that was not user");
         }
         assert(OperandAsUser && "operandAsUser uninitialized");
 
         if (isa<Instruction>(OperandAsUser)) {
           if (OperandAsUser == ArrPtrToRewrite) {
-            CurUser->setOperand(i, NewPtr);
+            CurUser->setOperand(i, NewBitcastedPtr);
           }
         } else {
           assert(isa<Constant>(OperandAsUser));
@@ -194,7 +204,7 @@ static void rewriteArrToPtr(Instruction *Inst, Value *ArrPtrToRewrite, Value *Ne
 
           if (isa<GlobalValue>(OperandAsUser)) {
             if (OperandAsUser == ArrPtrToRewrite) {
-              CurUser->setOperand(i, NewPtr);
+              CurUser->setOperand(i, NewBitcastedPtr);
             }
             continue;
           }
@@ -304,7 +314,8 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL,
   for (Instruction *UserOfArrayInst : ArrayUserInstructions) {
     Builder.SetInsertPoint(UserOfArrayInst);
     Value *ArrPtrLoaded = Builder.CreateLoad(ReplacementToArr, "arrptr.load");
-    rewriteArrToPtr(UserOfArrayInst, &Array, ArrPtrLoaded, Builder);
+    Value *ArrPtrBitcasted = Builder.CreateBitCast(ReplacementToArr, PointerType::get(ArrayTy, AddrSpace), "arrptr.bitcast");
+    rewriteArrToPtr(UserOfArrayInst, &Array, ArrPtrLoaded, ArrPtrBitcasted, Builder);
   }
 }
 
