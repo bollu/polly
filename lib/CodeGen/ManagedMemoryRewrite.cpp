@@ -94,14 +94,15 @@ static llvm::Function *GetOrCreatePollyFreeManaged(Module &M) {
 // Expand the constant expression Cur using Builder. This will recursively
 // expand Instruction. `Expands` contains all the expanded instructions.
 static Instruction* ExpandConstantExpr(ConstantExpr *Cur,
-        PollyIRBuilder &Builder, std::vector<Instruction *> &Expands)  {
+        PollyIRBuilder &Builder, std::set<User *> &Expands)  {
+    assert(Cur && "invalid constant expression passed");
     errs() << "ExpandConstantExpr: " << *Cur << "\n\n";
     std::vector<std::pair<int, Instruction*> > Replacements;
     for(unsigned i = 0; i < Cur->getNumOperands(); i++) {
-        Constant *C = dyn_cast<Constant >(C->getOperand(i));
-        assert (C && "constant must have a constant operand");
-        if (isa<ConstantExpr>(Cur)) {
-            Instruction *Replacement = ExpandConstantExpr(Cur, Builder, Expands);
+        Constant *COp = dyn_cast<Constant >(Cur->getOperand(i));
+        assert (COp && "constant must have a constant operand");
+        if (isa<ConstantExpr>(COp)) {
+            Instruction *Replacement = ExpandConstantExpr(dyn_cast<ConstantExpr>(COp), Builder, Expands);
             Replacements.push_back(std::make_pair(i, Replacement));
         };
     }
@@ -110,7 +111,7 @@ static Instruction* ExpandConstantExpr(ConstantExpr *Cur,
     for(std::pair<int, Instruction *> &Replacement : Replacements) {
         I->setOperand(Replacement.first, Replacement.second);
     }
-    Expands.push_back(I);
+    Expands.insert(I);
     Builder.Insert(I);
     return I;
 }
@@ -118,54 +119,63 @@ static Instruction* ExpandConstantExpr(ConstantExpr *Cur,
 static void editAllUses(Instruction *Inst, Value *Old, Value *New,
         PollyIRBuilder &Builder) {
 
-    std::vector<Instruction *>Next;
-    std::vector<Instruction *>Current = {Inst};
+    std::set<User*> Visited;
+    std::set<User *>Next;
+    std::set<User *>Current = {Inst};
 
-    for(Instruction *CurInst : Current) {
+    while (!Current.empty()) {
+        for(User *CurUser : Current) {
+            for(unsigned i = 0; i < CurUser->getNumOperands(); i++) {
+                User *OperandAsUser = dyn_cast<User>(CurUser->getOperand(i));
+                // if (Visited.count(OperandAsUser)) continue;
+                // Visited.insert(OperandAsUser);
 
-        errs() << "\n\n*** " << *CurInst  << " | NumOperand: " << CurInst->getNumOperands() << "\n";
-        for(unsigned i = 0; i < CurInst->getNumOperands(); i++) {
-            User *ValueUser = dyn_cast<User>(CurInst->getOperand(i));
-
-            if (!ValueUser) {
-                errs() << "\t\t" << *ValueUser << " obtained from: " << *CurInst << "is not a user!."
-                    " Trying to replace: " << *Old << " with: " << *New << "failed.\n";
-                report_fatal_error("editAllUses failed with value that was not user");
-            }
-
-            errs() << " -" << *ValueUser << "\n";
-            // if (isa<DerivedUser>) continue;
-            // assert (!isa<DerivedUser>(ValueUser) && "Value should not be a DerivedUser");
-
-            // Only choice in User Instruction,DerivedUser,  Constant
-            // NOTE: does this even make sense?
-            if ((isa<Instruction>(ValueUser) || isa<DerivedUser>(ValueUser))) {
-                if (ValueUser == Old) CurInst->setOperand(i, New);
-            }
-            else {
-                assert(isa<Constant>(ValueUser));
-
-                if (isa<BlockAddress>(ValueUser) ||
-                        isa<ConstantAggregate>(ValueUser) ||
-                        isa<ConstantData>(ValueUser) || isa<GlobalValue>(ValueUser))  continue;
-
-                if (isa<GlobalValue>(ValueUser) && ValueUser == Old) {
-                    CurInst->setOperand(i, New);
-                    continue;
+                if (!OperandAsUser) {
+                    errs() << "\t\t" << *OperandAsUser << " obtained from: " << *CurUser << "is not a user!."
+                        " Trying to replace: " << *Old << " with: " << *New << "failed.\n";
+                    report_fatal_error("editAllUses failed with value that was not user");
                 }
 
-                // Only things that can contain a reference is a ConstantExpr
-                ConstantExpr *ValueConstExpr = dyn_cast<ConstantExpr>(ValueUser);
-                assert (ValueConstExpr && "this must be a ValueConstExpr");
+                errs() << " -" << *OperandAsUser << "\n";
+                // if (isa<DerivedUser>) continue;
+                // assert (!isa<DerivedUser>(OperandAsUser) && "Value should not be a DerivedUser");
 
-                ExpandConstantExpr(ValueConstExpr, Builder, Next);
+                // Only choice in User Instruction,DerivedUser,  Constant
+                // NOTE: does this even make sense?
+                if ((isa<Instruction>(OperandAsUser))) { // || isa<DerivedUser>(ValueUser))) {
+                    if (OperandAsUser == Old) { CurUser->setOperand(i, New); }
+                }
+                else {
+                    assert(isa<Constant>(OperandAsUser));
 
-            }// end else
-        }// end operands for
- 
-        // TODO: move.
-        Current = Next;
-        Next.clear();
+                    if (isa<BlockAddress>(OperandAsUser) ||
+                            isa<ConstantAggregate>(OperandAsUser) ||
+                            isa<ConstantData>(OperandAsUser))  continue;
+
+                    if (isa<GlobalValue>(OperandAsUser) && OperandAsUser == Old) {
+                        CurUser->setOperand(i, New);
+                        continue;
+                    }
+
+                    // Only things that can contain a reference is a ConstantExpr
+                    ConstantExpr *ValueConstExpr = dyn_cast<ConstantExpr>(OperandAsUser);
+                    assert (ValueConstExpr && "this must be a ValueConstExpr");
+
+                    Instruction *I = ExpandConstantExpr(ValueConstExpr, Builder, Next);
+                    CurUser->setOperand(i, I);
+
+                }// end else
+            }// end operands for
+        }// end for current
+
+        // TODO: Visited += Current
+        Current.clear();
+        // Current = Next - Visited
+        // std::set_difference(Next.begin(), Next.end(), Visited.begin(), Visited.end(),
+        //        std::inserter(Current, Current.end()));
+Current = Next;
+Next.clear();
+        Visited.clear();
     }// end worklist
 }
 
@@ -261,7 +271,7 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL,
               PointerType::get(ArrayTy, AddrSpace), "arrptr.bitcast");
       Value *ArrPtrLoaded =  Builder.CreateLoad(ArrPtrBitcast, "arrptr.bitcast.load");
 
-     std::set<Value *> SeenSet; 
+     std::set<Value *> SeenSet;
      editAllUses(UserOfArrayInst, &Array, ArrPtrBitcast, Builder);
   }
 }
