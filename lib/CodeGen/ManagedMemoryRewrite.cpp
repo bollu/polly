@@ -93,14 +93,19 @@ static llvm::Function *GetOrCreatePollyFreeManaged(Module &M) {
 // NOTE: this simply `insert`s into Expands.
 static Instruction *expandConstantExpr(ConstantExpr *Cur,
                                        PollyIRBuilder &Builder,
-                                       Instruction *CurInst,
-                                       std::set<std::pair<Instruction *, User *>> &Expands) {
+                                       Instruction *Parent,
+                                       std::set<std::pair<Instruction *, Instruction *>> &Expands) {
   assert(Cur && "invalid constant expression passed");
   std::vector<std::pair<int, Instruction *>> Replacements;
+
   Instruction *I = Cur->getAsInstruction();
+  Expands.insert({Parent, I});
+
+  assert(I && "unable to convert ConstantExpr to Instruction");
   // I need instructions to be created before this.
+  Builder.Insert(I);
   Builder.SetInsertPoint(I);
-  
+
   for (unsigned i = 0; i < Cur->getNumOperands(); i++) {
     Constant *COp = dyn_cast<Constant>(Cur->getOperand(i));
     assert(COp && "constant must have a constant operand");
@@ -114,8 +119,6 @@ static Instruction *expandConstantExpr(ConstantExpr *Cur,
   for (std::pair<int, Instruction *> &Replacement : Replacements) {
     I->setOperand(Replacement.first, Replacement.second);
   }
-  Expands.insert({ CurInst, I});
-  Builder.Insert(I);
   return I;
 }
 
@@ -127,14 +130,15 @@ static Instruction *expandConstantExpr(ConstantExpr *Cur,
 // ArrToRewrite: Global array we wish to rewrite to a pointer (@A)
 // NewLoadedPtr: New pointer value to rewrite the global array with (A.toptr that has been loaded)
 // IRBuilder: IRBuilder instance
-static bool rewriteGEP(User *MaybeGEP, Instruction *OwningInst, Value *ArrToRewrite, Value *NewLoadedPtr,
+static bool rewriteGEP(User *MaybeGEP, Instruction *Parent, Value *ArrToRewrite, Value *NewLoadedPtr,
                        PollyIRBuilder &IRBuilder,
                        std::set<Instruction *> &InstsToBeDeleted ) {
     DEBUG(dbgs() << "\n\n\n";
     dbgs() << "CurUser: " << *MaybeGEP << "\n");
-    dbgs() << "Owning Inst: " << *OwningInst << "\n";
+    dbgs() << "Owning Inst: " << *Parent << "\n";
     dbgs() << "TargerArr: " << *ArrToRewrite << "\n";
   GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(MaybeGEP);
+
   if (!GEP)
     return false;
   if (!(GEP->getPointerOperand() == ArrToRewrite))
@@ -149,15 +153,15 @@ static bool rewriteGEP(User *MaybeGEP, Instruction *OwningInst, Value *ArrToRewr
 
   // Either the owning instruction is a GEP, or is an instruction that
   // contains a GEP.
-  if (OwningInst == GEP) {   
-      DEBUG(dbgs() << "Replacing OwningInst(" << *OwningInst << ")\n\twith NewGEP(" << *NewGEP << ")...\n");
-      OwningInst->replaceAllUsesWith(NewGEP);
-      InstsToBeDeleted.insert(OwningInst);
+  if (Parent == nullptr) {
+      DEBUG(dbgs() << "Replacing Parent(" << *Parent << ")\n\twith NewGEP(" << *NewGEP << ")...\n");
+      Parent->replaceAllUsesWith(NewGEP);
+      InstsToBeDeleted.insert(Parent);
   }
   else {
-      DEBUG(dbgs() << "Replacing GEP(" << *GEP << ")\n\twith NewGEP(" << *NewGEP << ")\n\tin OwningInst(" << *OwningInst << ")...\n");
-      OwningInst->replaceUsesOfWith(GEP, NewGEP);
-      DEBUG(dbgs() << "OwningInst after replacement: " << *OwningInst << "\n";);
+      DEBUG(dbgs() << "Replacing GEP(" << *GEP << ")\n\twith NewGEP(" << *NewGEP << ")\n\tin Parent(" << *Parent << ")...\n");
+      Parent->replaceUsesOfWith(GEP, NewGEP);
+      DEBUG(dbgs() << "Parent after replacement: " << *Parent << "\n";);
       DEBUG(dbgs() << "GEP->numUses() " << GEP->getNumUses() << "\n";);
 
       // GEP can be used by other people, so we can't remove it.
@@ -177,18 +181,18 @@ static void rewriteArrToPtr(Instruction *Inst, Value *ArrPtrToRewrite, Value *Ne
   // We use a worklist based algorithm that keep the frontier of
   // `User`s we need to rewrite in `Next`, and the current iterations
   // in `Current`.
-  std::set<std::pair<Instruction *, User*>> Next;
-  std::set<std::pair<Instruction *, User *>> Current = {std::make_pair(Inst, Inst)};
+  std::set<std::pair<Instruction *, Instruction*>> Next;
+  std::set<std::pair<Instruction *, Instruction *>> Current = {std::make_pair(nullptr, Inst)};
 
   while (!Current.empty()) {
 
     for (const std::pair<Instruction *, User *> &InstUserPair : Current) {
-        Instruction *CurInst = InstUserPair.first;
+        Instruction *Parent = InstUserPair.first;
         User *CurUser = InstUserPair.second;
       // Try to rewrite the current as a GEP.
       // If we can generate a GEP from the instruction, then we are done,
       // because we have replaced the old array with the new pointer.
-      if (rewriteGEP(CurUser, CurInst, ArrPtrToRewrite, NewLoadedPtr, Builder, InstsToBeDeleted))
+      if (rewriteGEP(CurUser, Parent, ArrPtrToRewrite, NewLoadedPtr, Builder, InstsToBeDeleted))
         continue;
 
       for (unsigned i = 0; i < CurUser->getNumOperands(); i++) {
@@ -225,7 +229,7 @@ static void rewriteArrToPtr(Instruction *Inst, Value *ArrPtrToRewrite, Value *Ne
           ConstantExpr *ValueConstExpr = dyn_cast<ConstantExpr>(OperandAsUser);
           assert(ValueConstExpr && "this must be a ValueConstExpr");
 
-          Instruction *I = expandConstantExpr(ValueConstExpr, Builder, CurInst, Next);
+          Instruction *I = expandConstantExpr(ValueConstExpr, Builder, Parent, Next);
           CurUser->setOperand(i, I);
 
         } // end else
@@ -373,11 +377,17 @@ public:
       RewriteGlobalArray(M, *DL, Global, GlobalsToErase, InstsToBeDeleted);
     }
 
+    DEBUG(dbgs() << "\n\n\n=====Module=====\n";
+    M.dump();
+    dbgs() << "=====\n";);
+
     for(Instruction *Inst : InstsToBeDeleted) {
-        Inst->eraseFromParent();
+        errs() << "\n\nRemoving: " << *Inst << "...\n";
+        Inst->removeFromParent();
+        errs() << "Successful\n";
     }
     // Erase all globals from the parent
-    for(GlobalVariable *G : GlobalsToErase) { 
+    for(GlobalVariable *G : GlobalsToErase) {
         G->eraseFromParent();
     }
 
