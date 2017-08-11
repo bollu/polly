@@ -34,8 +34,8 @@
 #include "llvm/Analysis/ScalarEvolutionAliasAnalysis.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
-#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/DerivedUser.h"
+#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/Linker/Linker.h"
@@ -93,151 +93,169 @@ static llvm::Function *GetOrCreatePollyFreeManaged(Module &M) {
 
 // Expand the constant expression Cur using Builder. This will recursively
 // expand Instruction. `Expands` contains all the expanded instructions.
-static Instruction* ExpandConstantExpr(ConstantExpr *Cur,
-        PollyIRBuilder &Builder, std::set<User *> &Expands)  {
-    assert(Cur && "invalid constant expression passed");
-    errs() << "ExpandConstantExpr: " << *Cur << "\n\n";
-    std::vector<std::pair<int, Instruction*> > Replacements;
-    for(unsigned i = 0; i < Cur->getNumOperands(); i++) {
-        Constant *COp = dyn_cast<Constant >(Cur->getOperand(i));
-        assert (COp && "constant must have a constant operand");
-        if (isa<ConstantExpr>(COp)) {
-            Instruction *Replacement = ExpandConstantExpr(dyn_cast<ConstantExpr>(COp), Builder, Expands);
-            Replacements.push_back(std::make_pair(i, Replacement));
-        };
-    }
+static Instruction *ExpandConstantExpr(ConstantExpr *Cur,
+                                       PollyIRBuilder &Builder,
+                                       std::set<User *> &Expands) {
+  assert(Cur && "invalid constant expression passed");
+  errs() << "ExpandConstantExpr: " << *Cur << "\n\n";
+  std::vector<std::pair<int, Instruction *>> Replacements;
+  for (unsigned i = 0; i < Cur->getNumOperands(); i++) {
+    Constant *COp = dyn_cast<Constant>(Cur->getOperand(i));
+    assert(COp && "constant must have a constant operand");
+    if (isa<ConstantExpr>(COp)) {
+      Instruction *Replacement =
+          ExpandConstantExpr(dyn_cast<ConstantExpr>(COp), Builder, Expands);
+      Replacements.push_back(std::make_pair(i, Replacement));
+    };
+  }
 
-    Instruction *I = Cur->getAsInstruction();
-    for(std::pair<int, Instruction *> &Replacement : Replacements) {
-        I->setOperand(Replacement.first, Replacement.second);
-    }
-    Expands.insert(I);
-    Builder.Insert(I);
-    return I;
+  Instruction *I = Cur->getAsInstruction();
+  for (std::pair<int, Instruction *> &Replacement : Replacements) {
+    I->setOperand(Replacement.first, Replacement.second);
+  }
+  Expands.insert(I);
+  Builder.Insert(I);
+  return I;
 }
 
 // rewrite a GEP to strip of the first index
 // We need to do this because earlier it used to be @[i32 x <size>]
 // It is now i32*. We don't need an extra "@" dereference
-static bool rewriteGEP(User *MaybeGEP, Value *ArrToRewrite, Value *New, PollyIRBuilder &IRBuilder) {
-    GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(MaybeGEP);
-    if (!GEP) return false;
-    if (!(GEP->getPointerOperand() == ArrToRewrite)) return false;
+static bool rewriteGEP(User *MaybeGEP, Value *ArrToRewrite, Value *New,
+                       PollyIRBuilder &IRBuilder) {
+  GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(MaybeGEP);
+  if (!GEP)
+    return false;
+  if (!(GEP->getPointerOperand() == ArrToRewrite))
+    return false;
 
-    auto Indices = GEP->indices();
-    std::vector<Value *>NewIndices(Indices.begin() + 1, Indices.end());
-    errs() << "\n===\n";
-    errs() << " ***GEP: " << *GEP << " | type: " << *GEP->getType() << "\n";
-    for(auto Idx : NewIndices) {
-        errs() << " - " << *Idx << "\n";
+  auto Indices = GEP->indices();
+  std::vector<Value *> NewIndices(Indices.begin() + 1, Indices.end());
+  errs() << "\n===\n";
+  errs() << " ***GEP: " << *GEP << " | type: " << *GEP->getType() << "\n";
+  for (auto Idx : NewIndices) {
+    errs() << " - " << *Idx << "\n";
+  }
 
-    }
-
-    errs() << "New->getType()" << *New->getType() << "\n";
-    errs() << "New->getType()->getScalarType(): " << *New->getType()->getScalarType() << "\n";
-    errs() << "*dyn_cast<PointerType>(New->getType()->getScalarType())->getElementType()" << *dyn_cast<PointerType>(New->getType()->getScalarType())->getElementType() << "\n";
-    errs() << "\n===\n";
-    Value *NewGEP = IRBuilder.CreateGEP(New, NewIndices, "newgep");
-    GEP->replaceAllUsesWith(NewGEP);
-    GEP->eraseFromParent();
-    return true;
-
+  errs() << "New->getType()" << *New->getType() << "\n";
+  errs() << "New->getType()->getScalarType(): "
+         << *New->getType()->getScalarType() << "\n";
+  errs() << "*dyn_cast<PointerType>(New->getType()->getScalarType())->"
+            "getElementType()"
+         << *dyn_cast<PointerType>(New->getType()->getScalarType())
+                 ->getElementType()
+         << "\n";
+  errs() << "\n===\n";
+  Value *NewGEP = IRBuilder.CreateGEP(New, NewIndices, "newgep");
+  GEP->replaceAllUsesWith(NewGEP);
+  GEP->eraseFromParent();
+  return true;
 }
 
 static void editAllUses(Instruction *Inst, Value *Old, Value *New,
-        PollyIRBuilder &Builder) {
+                        PollyIRBuilder &Builder) {
 
-    std::set<User*> Visited;
-    std::set<User *>Next;
-    std::set<User *>Current = {Inst};
+  std::set<User *> Visited;
+  std::set<User *> Next;
+  std::set<User *> Current = {Inst};
 
-    while (!Current.empty()) {
+  while (!Current.empty()) {
 
-        for(User *CurUser : Current) {
-            // Try to rewrite the current as a GEP
-            if (rewriteGEP(CurUser, Old, New, Builder)) continue;
+    for (User *CurUser : Current) {
+      // Try to rewrite the current as a GEP
+      if (rewriteGEP(CurUser, Old, New, Builder))
+        continue;
 
-            for(unsigned i = 0; i < CurUser->getNumOperands(); i++) {
-                User *OperandAsUser = dyn_cast<User>(CurUser->getOperand(i));
-                // if (Visited.count(OperandAsUser)) continue;
-                // Visited.insert(OperandAsUser);
+      for (unsigned i = 0; i < CurUser->getNumOperands(); i++) {
+        User *OperandAsUser = dyn_cast<User>(CurUser->getOperand(i));
+        // if (Visited.count(OperandAsUser)) continue;
+        // Visited.insert(OperandAsUser);
 
-                if (!OperandAsUser) {
-                    errs() << "\t\t" << *OperandAsUser << " obtained from: " << *CurUser << "is not a user!."
-                        " Trying to replace: " << *Old << " with: " << *New << "failed.\n";
-                    report_fatal_error("editAllUses failed with value that was not user");
-                }
+        if (!OperandAsUser) {
+          errs() << "\t\t" << *OperandAsUser << " obtained from: " << *CurUser
+                 << "is not a user!."
+                    " Trying to replace: "
+                 << *Old << " with: " << *New << "failed.\n";
+          report_fatal_error("editAllUses failed with value that was not user");
+        }
 
-                errs() << " -" << *OperandAsUser << "\n";
-                // if (isa<DerivedUser>) continue;
-                // assert (!isa<DerivedUser>(OperandAsUser) && "Value should not be a DerivedUser");
+        errs() << " -" << *OperandAsUser << "\n";
+        // if (isa<DerivedUser>) continue;
+        // assert (!isa<DerivedUser>(OperandAsUser) && "Value should not be a
+        // DerivedUser");
 
-                // Only choice in User Instruction,DerivedUser,  Constant
-                // NOTE: does this even make sense?
-                if ((isa<Instruction>(OperandAsUser))) { // || isa<DerivedUser>(ValueUser))) {
-                    if (OperandAsUser == Old) { CurUser->setOperand(i, New); }
-                }
-                else {
-                    assert(isa<Constant>(OperandAsUser));
+        // Only choice in User Instruction,DerivedUser,  Constant
+        // NOTE: does this even make sense?
+        if ((isa<Instruction>(
+                OperandAsUser))) { // || isa<DerivedUser>(ValueUser))) {
+          if (OperandAsUser == Old) {
+            CurUser->setOperand(i, New);
+          }
+        } else {
+          assert(isa<Constant>(OperandAsUser));
 
-                    if (isa<BlockAddress>(OperandAsUser) ||
-                            isa<ConstantAggregate>(OperandAsUser) ||
-                            isa<ConstantData>(OperandAsUser))  continue;
+          if (isa<BlockAddress>(OperandAsUser) ||
+              isa<ConstantAggregate>(OperandAsUser) ||
+              isa<ConstantData>(OperandAsUser))
+            continue;
 
-                    if (isa<GlobalValue>(OperandAsUser)) {
-                        if (OperandAsUser == Old) {
-                        CurUser->setOperand(i, New) ;
-                        }
-                        continue;
-                    }
+          if (isa<GlobalValue>(OperandAsUser)) {
+            if (OperandAsUser == Old) {
+              CurUser->setOperand(i, New);
+            }
+            continue;
+          }
 
-                    // Only things that can contain a reference is a ConstantExpr
-                    ConstantExpr *ValueConstExpr = dyn_cast<ConstantExpr>(OperandAsUser);
-                    assert (ValueConstExpr && "this must be a ValueConstExpr");
+          // Only things that can contain a reference is a ConstantExpr
+          ConstantExpr *ValueConstExpr = dyn_cast<ConstantExpr>(OperandAsUser);
+          assert(ValueConstExpr && "this must be a ValueConstExpr");
 
-                    Instruction *I = ExpandConstantExpr(ValueConstExpr, Builder, Next);
-                    CurUser->setOperand(i, I);
+          Instruction *I = ExpandConstantExpr(ValueConstExpr, Builder, Next);
+          CurUser->setOperand(i, I);
 
-                }// end else
-            }// end operands for
-        }// end for current
+        } // end else
+      }   // end operands for
+    }     // end for current
 
-        // TODO: Visited += Current
-        Current.clear();
-        // Current = Next - Visited
-        // std::set_difference(Next.begin(), Next.end(), Visited.begin(), Visited.end(),
-        //        std::inserter(Current, Current.end()));
-Current = Next;
-Next.clear();
-        Visited.clear();
-    }// end worklist
+    // TODO: Visited += Current
+    Current.clear();
+    // Current = Next - Visited
+    // std::set_difference(Next.begin(), Next.end(), Visited.begin(),
+    // Visited.end(),
+    //        std::inserter(Current, Current.end()));
+    Current = Next;
+    Next.clear();
+    Visited.clear();
+  } // end worklist
 }
 
 // Given a value `Current`, return all Instructions that may contain `Current`
 // in an expression.
-static void getContainingInstructions(Value *Current, std::vector<Instruction*> &Owners) {
+static void getContainingInstructions(Value *Current,
+                                      std::vector<Instruction *> &Owners) {
   Instruction *I;
   Constant *C;
   if ((I = dyn_cast<Instruction>(Current))) {
-      errs() << "#Found owner for: " << *Current << "\n\t- " << *I << "\n\n";
-      Owners.push_back(I);
+    errs() << "#Found owner for: " << *Current << "\n\t- " << *I << "\n\n";
+    Owners.push_back(I);
   } else if ((C = dyn_cast<Constant>(Current))) {
-      for(Use &CUse : C->uses()) {
-          // if (CUse == C) continue;
-          getContainingInstructions(CUse.getUser(), Owners);
-      }
+    for (Use &CUse : C->uses()) {
+      // if (CUse == C) continue;
+      getContainingInstructions(CUse.getUser(), Owners);
+    }
   } else {
     errs() << "(" << *Current
            << ") is neither an instruction nor a constant!.\n"
-        "The process of finding the owning instruction reached a node with unknown replacement strategy";
+              "The process of finding the owning instruction reached a node "
+              "with unknown replacement strategy";
     report_fatal_error("unable to find owning instruction");
     llvm_unreachable("should never reach here from getContainingInstruction");
   }
-
 }
 
 static void RewriteGlobalArray(Module &M, const DataLayout &DL,
-                               GlobalVariable &Array, std::vector<GlobalVariable*> &ReplacedGlobals) {
+                               GlobalVariable &Array,
+                               std::vector<GlobalVariable *> &ReplacedGlobals) {
   static const unsigned AddrSpace = 0;
   // We only want arrays.
   ArrayType *ArrayTy = dyn_cast<ArrayType>(Array.getType()->getElementType());
@@ -290,23 +308,22 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL,
   static int priority = 0;
   appendToGlobalCtors(M, F, priority++, ReplacementToArr);
 
-
   errs() << "Done appending to global ctors\n";
   std::vector<Instruction *> ArrayUserInstructions;
   // Get all instructions that use array. We need to do this weird thing
   // because `Constant`s that contain
-  for(Use &ArrayUse : Array.uses()) {
-      getContainingInstructions(ArrayUse.getUser(), ArrayUserInstructions);
+  for (Use &ArrayUse : Array.uses()) {
+    getContainingInstructions(ArrayUse.getUser(), ArrayUserInstructions);
   }
 
-  for(Instruction *UserOfArrayInst : ArrayUserInstructions) {
-      Builder.SetInsertPoint(UserOfArrayInst);
-      // Value *ArrPtrBitcast =  Builder.CreateBitCast(ReplacementToArr,
-      //         PointerType::get(ArrayTy, AddrSpace), "arrptr.bitcast");
-      Value *ArrPtrLoaded =  Builder.CreateLoad(ReplacementToArr, "arrptr.load");
+  for (Instruction *UserOfArrayInst : ArrayUserInstructions) {
+    Builder.SetInsertPoint(UserOfArrayInst);
+    // Value *ArrPtrBitcast =  Builder.CreateBitCast(ReplacementToArr,
+    //         PointerType::get(ArrayTy, AddrSpace), "arrptr.bitcast");
+    Value *ArrPtrLoaded = Builder.CreateLoad(ReplacementToArr, "arrptr.load");
 
-     std::set<Value *> SeenSet;
-     editAllUses(UserOfArrayInst, &Array, ArrPtrLoaded, Builder);
+    std::set<Value *> SeenSet;
+    editAllUses(UserOfArrayInst, &Array, ArrPtrLoaded, Builder);
   }
 }
 
@@ -340,14 +357,14 @@ public:
       Free->eraseFromParent();
     }
 
-    std::vector<GlobalVariable*> GlobalsToErase;
+    std::vector<GlobalVariable *> GlobalsToErase;
     for (GlobalVariable &Global : M.globals()) {
-      RewriteGlobalArray(M, *DL,Global, GlobalsToErase);
+      RewriteGlobalArray(M, *DL, Global, GlobalsToErase);
     }
 
     // Erase all globals from the parent
-    for(GlobalVariable *GV : GlobalsToErase) {
-        GV->eraseFromParent();
+    for (GlobalVariable *GV : GlobalsToErase) {
+      GV->eraseFromParent();
     }
 
     return true;
