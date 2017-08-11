@@ -50,9 +50,6 @@ namespace {
 static llvm::Function *GetOrCreatePollyMallocManaged(Module &M) {
   // TODO: should I allow this pass to be a standalone pass that
   // doesn't care if PollyManagedMemory is enabled or not?
-  assert(PollyManagedMemory &&
-         "One should only rewrite malloc & free to"
-         "polly_{malloc,free}Managed with managed memory enabled.");
   const char *Name = "polly_mallocManaged";
   Function *F = M.getFunction(Name);
 
@@ -72,9 +69,6 @@ static llvm::Function *GetOrCreatePollyMallocManaged(Module &M) {
 static llvm::Function *GetOrCreatePollyFreeManaged(Module &M) {
   // TODO: should I allow this pass to be a standalone pass that
   // doesn't care if PollyManagedMemory is enabled or not?
-  assert(PollyManagedMemory &&
-         "One should only rewrite malloc & free to"
-         "polly_{malloc,free}Managed with managed memory enabled.");
   const char *Name = "polly_freeManaged";
   Function *F = M.getFunction(Name);
 
