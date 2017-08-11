@@ -393,7 +393,7 @@ public:
 
     for(Instruction *Inst : InstsToBeDeleted) {
         errs() << "\n\nRemoving: " << *Inst << "...\n";
-        Inst->removeFromParent();
+        Inst->eraseFromParent();
         errs() << "Successful\n";
     }
     // Erase all globals from the parent
