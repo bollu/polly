@@ -111,7 +111,6 @@ static void expandConstantExpr(ConstantExpr *Cur,
   Builder.Insert(I);
 
   errs() << "Expanded: " << *I << "\n";
-
   for (unsigned i = 0; i < Cur->getNumOperands(); i++) {
     Constant *COp = dyn_cast<Constant>(Cur->getOperand(i));
     assert(COp && "constant must have a constant operand");
@@ -135,7 +134,7 @@ static bool rewriteGEP(Instruction *MaybeGEP, Instruction *Parent, Value *ArrToR
     DEBUG(dbgs() << "\n\n\n";
     dbgs() << "CurInst: " << *MaybeGEP << "\n");
     if (Parent)
-        dbgs() << "Owning Inst: " << Parent << "\n";
+        dbgs() << "Owning Inst: " << *Parent << "\n";
     else
         dbgs() << "Owning Inst: " << "NONE" << "\n";
 
@@ -162,13 +161,20 @@ static bool rewriteGEP(Instruction *MaybeGEP, Instruction *Parent, Value *ArrToR
       InstsToBeDeleted.insert(Parent);
   }
   else {
+
+      if (GEP->getNumUses() == 1) {
+          DEBUG(dbgs() << "\n\n\n@@@ GEP dropping to 0" << *GEP << "\n");
+      };
       DEBUG(dbgs() << "Replacing GEP(" << *GEP << ")\n\twith NewGEP(" << *NewGEP << ")\n\tin Parent(" << *Parent << ")...\n");
       Parent->replaceUsesOfWith(GEP, NewGEP);
       DEBUG(dbgs() << "Parent after replacement: " << *Parent << "\n";);
       DEBUG(dbgs() << "GEP->numUses() " << GEP->getNumUses() << "\n";);
 
       // GEP can be used by other people, so we can't remove it.
-      if (GEP->getNumUses() == 0) { InstsToBeDeleted.insert(GEP); }
+      if (GEP->getNumUses() == 0) {
+          InstsToBeDeleted.insert(GEP);
+          DEBUG(dbgs() << "@@@ GEP AT 0: " << *GEP << "\n";);
+      }
   }
   return true;
 }
