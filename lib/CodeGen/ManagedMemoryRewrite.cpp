@@ -98,17 +98,20 @@ static Instruction *expandConstantExpr(ConstantExpr *Cur,
                                        std::set<std::pair<Instruction *, User *>> &Expands) {
   assert(Cur && "invalid constant expression passed");
   std::vector<std::pair<int, Instruction *>> Replacements;
+  Instruction *I = Cur->getAsInstruction();
+  // I need instructions to be created before this.
+  Builder.SetInsertPoint(I);
+  
   for (unsigned i = 0; i < Cur->getNumOperands(); i++) {
     Constant *COp = dyn_cast<Constant>(Cur->getOperand(i));
     assert(COp && "constant must have a constant operand");
     if (isa<ConstantExpr>(COp)) {
       Instruction *Replacement =
-          expandConstantExpr(dyn_cast<ConstantExpr>(COp), Builder, CurInst, Expands);
+          expandConstantExpr(dyn_cast<ConstantExpr>(COp), Builder, I, Expands);
       Replacements.push_back(std::make_pair(i, Replacement));
     };
   }
 
-  Instruction *I = Cur->getAsInstruction();
   for (std::pair<int, Instruction *> &Replacement : Replacements) {
     I->setOperand(Replacement.first, Replacement.second);
   }
@@ -126,18 +129,19 @@ static Instruction *expandConstantExpr(ConstantExpr *Cur,
 // NewLoadedPtr: New pointer value to rewrite the global array with (A.toptr that has been loaded)
 // IRBuilder: IRBuilder instance
 static bool rewriteGEP(User *MaybeGEP, Instruction *OwningInst, Value *ArrToRewrite, Value *NewLoadedPtr,
-                       PollyIRBuilder &IRBuilder) {
+                       PollyIRBuilder &IRBuilder,
+                       std::set<Instruction *> &InstsToBeDeleted ) {
     DEBUG(dbgs() << "\n\n\n";
+    dbgs() << "CurUser: " << *MaybeGEP << "\n");
     dbgs() << "Owning Inst: " << *OwningInst << "\n";
     dbgs() << "TargerArr: " << *ArrToRewrite << "\n";
-    dbgs() << "CurUser: " << *MaybeGEP << "\n");
   GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(MaybeGEP);
   if (!GEP)
     return false;
   if (!(GEP->getPointerOperand() == ArrToRewrite))
     return false;
 
-  DEBUG(dbgs() << "Is GEP\n";);
+  DEBUG(dbgs() << " Is GEP\n";);
 
   auto Indices = GEP->indices();
   std::vector<Value *> NewIndices(Indices.begin() + 1, Indices.end());
@@ -146,11 +150,19 @@ static bool rewriteGEP(User *MaybeGEP, Instruction *OwningInst, Value *ArrToRewr
 
   // Either the owning instruction is a GEP, or is an instruction that
   // contains a GEP.
-  if (OwningInst == GEP) {   GEP->replaceAllUsesWith(NewGEP); GEP->eraseFromParent(); }
+  if (OwningInst == GEP) {   
+      DEBUG(dbgs() << "Replacing OwningInst(" << *OwningInst << ")\n\twith NewGEP(" << *NewGEP << ")...\n");
+      OwningInst->replaceAllUsesWith(NewGEP);
+      OwningInst->eraseFromParent();
+  }
   else {
+      DEBUG(dbgs() << "Replacing GEP(" << *GEP << ")\n\twith NewGEP(" << *NewGEP << ")\n\tin OwningInst(" << *OwningInst << ")...\n");
       OwningInst->replaceUsesOfWith(GEP, NewGEP);
+      DEBUG(dbgs() << "OwningInst after replacement: " << *OwningInst << "\n";);
+      DEBUG(dbgs() << "GEP->numUses() " << GEP->getNumUses() << "\n";);
+
       // GEP can be used by other people, so we can't remove it.
-      if (GEP->getNumUses() == 0) { GEP->eraseFromParent(); }
+      if (GEP->getNumUses() == 0) { InstsToBeDeleted.insert(GEP); }
   }
   return true;
 }
@@ -160,7 +172,8 @@ static bool rewriteGEP(User *MaybeGEP, Instruction *OwningInst, Value *ArrToRewr
 // the GEPs correctly as well.
 // It will change all raw uses of `ArrPtrToRewrite` to `NewBitcastedPtr`.
 static void rewriteArrToPtr(Instruction *Inst, Value *ArrPtrToRewrite, Value *NewLoadedPtr,
-                            Value *NewBitcastedPtr, PollyIRBuilder &Builder) {
+                            Value *NewBitcastedPtr, PollyIRBuilder &Builder,
+                            std::set<Instruction *>&InstsToBeDeleted) {
 
   // We use a worklist based algorithm that keep the frontier of
   // `User`s we need to rewrite in `Next`, and the current iterations
@@ -176,7 +189,7 @@ static void rewriteArrToPtr(Instruction *Inst, Value *ArrPtrToRewrite, Value *Ne
       // Try to rewrite the current as a GEP.
       // If we can generate a GEP from the instruction, then we are done,
       // because we have replaced the old array with the new pointer.
-      if (rewriteGEP(CurUser, CurInst, ArrPtrToRewrite, NewLoadedPtr, Builder))
+      if (rewriteGEP(CurUser, CurInst, ArrPtrToRewrite, NewLoadedPtr, Builder, InstsToBeDeleted))
         continue;
 
       for (unsigned i = 0; i < CurUser->getNumOperands(); i++) {
@@ -213,7 +226,7 @@ static void rewriteArrToPtr(Instruction *Inst, Value *ArrPtrToRewrite, Value *Ne
           ConstantExpr *ValueConstExpr = dyn_cast<ConstantExpr>(OperandAsUser);
           assert(ValueConstExpr && "this must be a ValueConstExpr");
 
-          Instruction *I = expandConstantExpr(ValueConstExpr, Builder,CurInst,  Next);
+          Instruction *I = expandConstantExpr(ValueConstExpr, Builder, CurInst, Next);
           CurUser->setOperand(i, I);
 
         } // end else
@@ -311,11 +324,19 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL,
     getContainingInstructions(ArrayUse.getUser(), ArrayUserInstructions);
   }
 
+  std::set<Instruction *> InstsToBeDeleted;
   for (Instruction *UserOfArrayInst : ArrayUserInstructions) {
+      if (InstsToBeDeleted.count(UserOfArrayInst)) continue;
+
     Builder.SetInsertPoint(UserOfArrayInst);
     Value *ArrPtrLoaded = Builder.CreateLoad(ReplacementToArr, "arrptr.load");
     Value *ArrPtrBitcasted = Builder.CreateBitCast(ReplacementToArr, PointerType::get(ArrayTy, AddrSpace), "arrptr.bitcast");
-    rewriteArrToPtr(UserOfArrayInst, &Array, ArrPtrLoaded, ArrPtrBitcasted, Builder);
+    rewriteArrToPtr(UserOfArrayInst, &Array, ArrPtrLoaded, ArrPtrBitcasted,
+        Builder, InstsToBeDeleted);
+  }
+
+  for(Instruction *D : InstsToBeDeleted) {
+    D->eraseFromParent();
   }
 }
 
