@@ -91,35 +91,34 @@ static llvm::Function *GetOrCreatePollyFreeManaged(Module &M) {
 // expand `Cur` to arrive at a set of instructions.
 // `Expands` is populated all the expanded instructions.
 // NOTE: this simply `insert`s into Expands.
-static Instruction *expandConstantExpr(ConstantExpr *Cur,
+static void expandConstantExpr(ConstantExpr *Cur,
                                        PollyIRBuilder &Builder,
                                        Instruction *Parent,
+                                       int index,
                                        std::set<std::pair<Instruction *, Instruction *>> &Expands) {
+  DEBUG(dbgs() << "\n\n\nExpanding: " << *Cur << "\n";
+        dbgs() << "Parent: " << *Parent << "\n";);
   assert(Cur && "invalid constant expression passed");
   std::vector<std::pair<int, Instruction *>> Replacements;
 
   Instruction *I = Cur->getAsInstruction();
   Expands.insert({Parent, I});
+  Parent->setOperand(index, I);
 
   assert(I && "unable to convert ConstantExpr to Instruction");
   // I need instructions to be created before this.
+  Builder.SetInsertPoint(Parent);
   Builder.Insert(I);
-  Builder.SetInsertPoint(I);
+
+  errs() << "Expanded: " << *I << "\n";
 
   for (unsigned i = 0; i < Cur->getNumOperands(); i++) {
     Constant *COp = dyn_cast<Constant>(Cur->getOperand(i));
     assert(COp && "constant must have a constant operand");
     if (isa<ConstantExpr>(COp)) {
-      Instruction *Replacement =
-          expandConstantExpr(dyn_cast<ConstantExpr>(COp), Builder, I, Expands);
-      Replacements.push_back(std::make_pair(i, Replacement));
+          expandConstantExpr(dyn_cast<ConstantExpr>(COp), Builder, I, i, Expands);
     };
   }
-
-  for (std::pair<int, Instruction *> &Replacement : Replacements) {
-    I->setOperand(Replacement.first, Replacement.second);
-  }
-  return I;
 }
 
 // rewrite a GEP to strip of the first index
@@ -235,8 +234,7 @@ static void rewriteArrToPtr(Instruction *Inst, Value *ArrPtrToRewrite, Value *Ne
           ConstantExpr *ValueConstExpr = dyn_cast<ConstantExpr>(OperandAsUser);
           assert(ValueConstExpr && "this must be a ValueConstExpr");
 
-          Instruction *I = expandConstantExpr(ValueConstExpr, Builder, Parent, Next);
-          CurInst->setOperand(i, I);
+          expandConstantExpr(ValueConstExpr, Builder, CurInst, i, Next);
 
         } // end else
       }   // end operands for
