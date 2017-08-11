@@ -47,7 +47,7 @@
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 
 
-#define DEBUG_TYPE "polly-acc-managed-memory-rewrite"
+#define DEBUG_TYPE "polly-acc-rewrite-managed-memory"
 namespace {
 
 static llvm::Function *GetOrCreatePollyMallocManaged(Module &M) {
@@ -129,8 +129,8 @@ static bool rewriteGEP(User *MaybeGEP, Instruction *OwningInst, Value *ArrToRewr
                        PollyIRBuilder &IRBuilder) {
     DEBUG(dbgs() << "\n\n\n";
     dbgs() << "Owning Inst: " << *OwningInst << "\n";
-    dbgs() << "Looking for: " << *ArrToRewrite << "\n";
-    dbgs() << "GEP: " << *MaybeGEP << "\n");
+    dbgs() << "TargerArr: " << *ArrToRewrite << "\n";
+    dbgs() << "CurUser: " << *MaybeGEP << "\n");
   GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(MaybeGEP);
   if (!GEP)
     return false;
