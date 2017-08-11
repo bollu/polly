@@ -184,8 +184,10 @@ static void editAllUses(Instruction *Inst, Value *Old, Value *New,
                             isa<ConstantAggregate>(OperandAsUser) ||
                             isa<ConstantData>(OperandAsUser))  continue;
 
-                    if (isa<GlobalValue>(OperandAsUser) && OperandAsUser == Old) {
-                        CurUser->setOperand(i, New);
+                    if (isa<GlobalValue>(OperandAsUser)) {
+                        if (OperandAsUser == Old) {
+                        CurUser->setOperand(i, New) ;
+                        }
                         continue;
                     }
 
