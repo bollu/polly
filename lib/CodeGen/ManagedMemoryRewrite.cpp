@@ -156,9 +156,8 @@ static bool rewriteGEP(Instruction *MaybeGEP, Instruction *Parent, Value *ArrToR
   // Either the owning instruction is a GEP, or is an instruction that
   // contains a GEP.
   if (Parent == nullptr) {
-      DEBUG(dbgs() << "Replacing Parent(" << *Parent << ")\n\twith NewGEP(" << *NewGEP << ")...\n");
-      Parent->replaceAllUsesWith(NewGEP);
-      InstsToBeDeleted.insert(Parent);
+      GEP->replaceAllUsesWith(NewGEP);
+      InstsToBeDeleted.insert(GEP);
   }
   else {
 
