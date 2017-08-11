@@ -95,6 +95,7 @@ static llvm::Function *GetOrCreatePollyFreeManaged(Module &M) {
 // expand Instruction. `Expands` contains all the expanded instructions.
 static Instruction* ExpandConstantExpr(ConstantExpr *Cur,
         PollyIRBuilder &Builder, std::vector<Instruction *> &Expands)  {
+    errs() << "ExpandConstantExpr: " << *Cur << "\n\n";
     std::vector<std::pair<int, Instruction*> > Replacements;
     for(unsigned i = 0; i < Cur->getNumOperands(); i++) {
         Constant *C = dyn_cast<Constant >(C->getOperand(i));
@@ -122,6 +123,7 @@ static void editAllUses(Instruction *Inst, Value *Old, Value *New,
 
     for(Instruction *CurInst : Current) {
 
+        errs() << "\n\n*** " << *CurInst  << " | NumOperand: " << CurInst->getNumOperands() << "\n";
         for(unsigned i = 0; i < CurInst->getNumOperands(); i++) {
             User *ValueUser = dyn_cast<User>(CurInst->getOperand(i));
 
@@ -130,12 +132,15 @@ static void editAllUses(Instruction *Inst, Value *Old, Value *New,
                     " Trying to replace: " << *Old << " with: " << *New << "failed.\n";
                 report_fatal_error("editAllUses failed with value that was not user");
             }
-            assert (!isa<DerivedUser>(ValueUser) && "Value should not be a DerivedUser");
 
-            // Only choice in User Instruction, Constant
+            errs() << " -" << *ValueUser << "\n";
+            // if (isa<DerivedUser>) continue;
+            // assert (!isa<DerivedUser>(ValueUser) && "Value should not be a DerivedUser");
+
+            // Only choice in User Instruction,DerivedUser,  Constant
             // NOTE: does this even make sense?
-            if (isa<Instruction>(ValueUser) && ValueUser == Old) {
-                    CurInst->setOperand(i, New);
+            if ((isa<Instruction>(ValueUser) || isa<DerivedUser>(ValueUser))) {
+                if (ValueUser == Old) CurInst->setOperand(i, New);
             }
             else {
                 assert(isa<Constant>(ValueUser));
@@ -251,12 +256,13 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL,
   }
 
   for(Instruction *UserOfArrayInst : ArrayUserInstructions) {
-      errs() << "\n\nrewriting: " << *UserOfArrayInst << "\n";
       Builder.SetInsertPoint(UserOfArrayInst);
-      Value *ArrPtrLoaded =  Builder.CreateLoad(ReplacementToArr, "arrptr.load");
+      Value *ArrPtrBitcast =  Builder.CreateBitCast(ReplacementToArr,
+              PointerType::get(ArrayTy, AddrSpace), "arrptr.bitcast");
+      Value *ArrPtrLoaded =  Builder.CreateLoad(ArrPtrBitcast, "arrptr.bitcast.load");
 
      std::set<Value *> SeenSet; 
-     editAllUses(UserOfArrayInst, &Array, ArrPtrLoaded, Builder);
+     editAllUses(UserOfArrayInst, &Array, ArrPtrBitcast, Builder);
   }
 }
 
