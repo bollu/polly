@@ -316,7 +316,7 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL,
   BasicBlock *Start = BasicBlock::Create(M.getContext(), "entry", F);
   Builder.SetInsertPoint(Start);
 
-  int ArraySizeInt = DL.getTypeAllocSizeInBits(ArrayTy) * 100;
+  int ArraySizeInt = DL.getTypeAllocSizeInBits(ArrayTy);
   Value *ArraySize = ConstantInt::get(Builder.getInt64Ty(), ArraySizeInt);
   ArraySize->setName("array.size");
 
