@@ -16,7 +16,7 @@
 ; Check that we generate a constructor
 ; HOST-IR: define void @A.constructor() {
 ; HOST-IR-NEXT: entry:
-; HOST-IR-NEXT:   %mem.raw = call i8* @polly_mallocManaged(i64 320000)
+; HOST-IR-NEXT:   %mem.raw = call i8* @polly_mallocManaged(i64 3200)
 ; HOST-IR-NEXT:   %mem.typed = bitcast i8* %mem.raw to i32*
 ; HOST-IR-NEXT:   store i32* %mem.typed, i32** @A.toptr
 ; HOST-IR-NEXT:   ret void

@@ -45,7 +45,6 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 
-
 #define DEBUG_TYPE "polly-acc-rewrite-managed-memory"
 namespace {
 
@@ -91,11 +90,10 @@ static llvm::Function *GetOrCreatePollyFreeManaged(Module &M) {
 // expand `Cur` to arrive at a set of instructions.
 // `Expands` is populated all the expanded instructions.
 // NOTE: this simply `insert`s into Expands.
-static void expandConstantExpr(ConstantExpr *Cur,
-                                       PollyIRBuilder &Builder,
-                                       Instruction *Parent,
-                                       int index,
-                                       std::set<std::pair<Instruction *, Instruction *>> &Expands) {
+static void
+expandConstantExpr(ConstantExpr *Cur, PollyIRBuilder &Builder,
+                   Instruction *Parent, int index,
+                   std::set<std::pair<Instruction *, Instruction *>> &Expands) {
   DEBUG(dbgs() << "\n\n\nExpanding: " << *Cur << "\n";
         dbgs() << "Parent: " << *Parent << "\n";);
   assert(Cur && "invalid constant expression passed");
@@ -115,7 +113,7 @@ static void expandConstantExpr(ConstantExpr *Cur,
     Constant *COp = dyn_cast<Constant>(Cur->getOperand(i));
     assert(COp && "constant must have a constant operand");
     if (isa<ConstantExpr>(COp)) {
-          expandConstantExpr(dyn_cast<ConstantExpr>(COp), Builder, I, i, Expands);
+      expandConstantExpr(dyn_cast<ConstantExpr>(COp), Builder, I, i, Expands);
     };
   }
 }
@@ -126,11 +124,11 @@ static void expandConstantExpr(ConstantExpr *Cur,
 // Parameters:
 // MaybeGEP: A `User` that might be a GEP
 // ArrToRewrite: Global array we wish to rewrite to a pointer (@A)
-// NewLoadedPtr: New pointer value to rewrite the global array with (A.toptr that has been loaded)
-// IRBuilder: IRBuilder instance
+// NewLoadedPtr: New pointer value to rewrite the global array with (A.toptr
+// that has been loaded) IRBuilder: IRBuilder instance
 /*
-static bool rewriteGEP(Instruction *MaybeGEP, Instruction *Parent, Value *ArrToRewrite, Value *NewLoadedPtr,
-                       PollyIRBuilder &IRBuilder,
+static bool rewriteGEP(Instruction *MaybeGEP, Instruction *Parent, Value
+*ArrToRewrite, Value *NewLoadedPtr, PollyIRBuilder &IRBuilder,
                        std::set<Instruction *> &InstsToBeDeleted ) {
     DEBUG(dbgs() << "\n\n\n";);
     DEBUG(dbgs() << "CurInst: " << *MaybeGEP << "\n";);
@@ -164,9 +162,9 @@ static bool rewriteGEP(Instruction *MaybeGEP, Instruction *Parent, Value *ArrToR
       if (GEP->getNumUses() == 1) {
           DEBUG(dbgs() << "\n\n\n@@@ GEP dropping to 0" << *GEP << "\n");
       };
-      DEBUG(dbgs() << "Replacing GEP(" << *GEP << ")\n\twith NewGEP(" << *NewGEP << ")\n\tin Parent(" << *Parent << ")...\n");
-      Parent->replaceUsesOfWith(GEP, NewGEP);
-      DEBUG(dbgs() << "Parent after replacement: " << *Parent << "\n";);
+      DEBUG(dbgs() << "Replacing GEP(" << *GEP << ")\n\twith NewGEP(" << *NewGEP
+<< ")\n\tin Parent(" << *Parent << ")...\n"); Parent->replaceUsesOfWith(GEP,
+NewGEP); DEBUG(dbgs() << "Parent after replacement: " << *Parent << "\n";);
       DEBUG(dbgs() << "GEP->numUses() " << GEP->getNumUses() << "\n";);
 
       // GEP can be used by other people, so we can't remove it.
@@ -180,30 +178,34 @@ static bool rewriteGEP(Instruction *MaybeGEP, Instruction *Parent, Value *ArrToR
 */
 
 // Edit all uses of `ArrPtrToRewrite` to `NewLoadedPtr` in `Inst`.
-// This will change all `GEP`s into `ArrPtrToRewrite` to `NewLoadedPtr`, re-indexing
-// the GEPs correctly as well.
-// It will change all raw uses of `ArrPtrToRewrite` to `NewBitcastedPtr`.
-static void rewriteArrToPtr(Instruction *Inst, Value *ArrPtrToRewrite, Value *NewLoadedPtr,
-                            Value *NewBitcastedPtr, PollyIRBuilder &Builder,
-                            std::set<Instruction *>&InstsToBeDeleted) {
+// This will change all `GEP`s into `ArrPtrToRewrite` to `NewLoadedPtr`,
+// re-indexing the GEPs correctly as well. It will change all raw uses of
+// `ArrPtrToRewrite` to `NewBitcastedPtr`.
+static void rewriteArrToPtr(Instruction *Inst, Value *ArrPtrToRewrite,
+                            Value *NewLoadedPtr, Value *NewBitcastedPtr,
+                            PollyIRBuilder &Builder,
+                            std::set<Instruction *> &InstsToBeDeleted) {
 
   // We use a worklist based algorithm that keep the frontier of
   // `User`s we need to rewrite in `Next`, and the current iterations
   // in `Current`.
-  std::set<std::pair<Instruction *, Instruction*>> Next;
-  std::set<std::pair<Instruction *, Instruction *>> Current = {std::make_pair(nullptr, Inst)};
+  std::set<std::pair<Instruction *, Instruction *>> Next;
+  std::set<std::pair<Instruction *, Instruction *>> Current = {
+      std::make_pair(nullptr, Inst)};
 
   while (!Current.empty()) {
 
-    for (const std::pair<Instruction *, Instruction *> &ParentInstPair : Current) {
-        Instruction *CurInst = ParentInstPair.second;
-        Instruction *Parent = ParentInstPair.first;
+    for (const std::pair<Instruction *, Instruction *> &ParentInstPair :
+         Current) {
+      Instruction *CurInst = ParentInstPair.second;
+      Instruction *Parent = ParentInstPair.first;
 
-        Builder.SetInsertPoint(CurInst);
+      Builder.SetInsertPoint(CurInst);
       // Try to rewrite the current as a GEP.
       // If we can generate a GEP from the instruction, then we are done,
       // because we have replaced the old array with the new pointer.
-      // if (rewriteGEP(CurInst, Parent, ArrPtrToRewrite, NewLoadedPtr, Builder, InstsToBeDeleted))
+      // if (rewriteGEP(CurInst, Parent, ArrPtrToRewrite, NewLoadedPtr, Builder,
+      // InstsToBeDeleted))
       //  continue;
 
       for (unsigned i = 0; i < CurInst->getNumOperands(); i++) {
@@ -211,9 +213,10 @@ static void rewriteArrToPtr(Instruction *Inst, Value *ArrPtrToRewrite, Value *Ne
 
         if (!OperandAsUser) {
           errs() << "\t\t" << *OperandAsUser << " obtained from: " << *CurInst
-                 << "is not a user!. Trying to replace: "
-                 << *ArrPtrToRewrite << " with: " << *NewBitcastedPtr << "failed.\n";
-          report_fatal_error("rewriteArrToPtr failed with value that was not user");
+                 << "is not a user!. Trying to replace: " << *ArrPtrToRewrite
+                 << " with: " << *NewBitcastedPtr << "failed.\n";
+          report_fatal_error(
+              "rewriteArrToPtr failed with value that was not user");
         }
         assert(OperandAsUser && "operandAsUser uninitialized");
 
@@ -339,21 +342,21 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL,
   }
 
   for (Instruction *UserOfArrayInst : ArrayUserInstructions) {
-      if (InstsToBeDeleted.count(UserOfArrayInst)) continue;
+    if (InstsToBeDeleted.count(UserOfArrayInst))
+      continue;
 
     Builder.SetInsertPoint(UserOfArrayInst);
     // <ty>** -> <ty>*
     Value *ArrPtrLoaded = Builder.CreateLoad(ReplacementToArr, "arrptr.load");
     // <ty>* -> [ty]*
-    Value *ArrPtrBitcasted = Builder.CreateBitCast(ArrPtrLoaded, PointerType::get(ArrayTy, AddrSpace), "arrptr.bitcast");
+    Value *ArrPtrBitcasted = Builder.CreateBitCast(
+        ArrPtrLoaded, PointerType::get(ArrayTy, AddrSpace), "arrptr.bitcast");
     rewriteArrToPtr(UserOfArrayInst, &Array, ArrPtrLoaded, ArrPtrBitcasted,
-        Builder, InstsToBeDeleted);
+                    Builder, InstsToBeDeleted);
   }
-
 }
 
-void rewriteFunctionParameters(Function *F) {
-}
+void rewriteFunctionParameters(Function *F) {}
 
 class ManagedMemoryRewritePass : public ModulePass {
 public:
@@ -385,27 +388,24 @@ public:
       Free->eraseFromParent();
     }
 
-    std::set<Instruction *>InstsToBeDeleted;
+    std::set<Instruction *> InstsToBeDeleted;
     std::set<GlobalVariable *> GlobalsToErase;
 
     for (GlobalVariable &Global : M.globals()) {
       RewriteGlobalArray(M, *DL, Global, GlobalsToErase, InstsToBeDeleted);
     }
 
-    DEBUG(dbgs() << "\n\n\n=====Module=====\n";
-    M.dump();
-    dbgs() << "=====\n";);
+    DEBUG(dbgs() << "\n\n\n=====Module=====\n"; M.dump(); dbgs() << "=====\n";);
 
-    for(Instruction *Inst : InstsToBeDeleted) {
-        DEBUG(dbgs() << "\n\nRemoving: " << *Inst << "...\n";);
-        Inst->eraseFromParent();
-        DEBUG(dbgs() << "Successful\n";);
+    for (Instruction *Inst : InstsToBeDeleted) {
+      DEBUG(dbgs() << "\n\nRemoving: " << *Inst << "...\n";);
+      Inst->eraseFromParent();
+      DEBUG(dbgs() << "Successful\n";);
     }
     // Erase all globals from the parent
-    for(GlobalVariable *G : GlobalsToErase) {
-        G->eraseFromParent();
+    for (GlobalVariable *G : GlobalsToErase) {
+      G->eraseFromParent();
     }
-
 
     return true;
   }
