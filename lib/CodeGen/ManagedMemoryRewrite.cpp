@@ -128,6 +128,7 @@ static void expandConstantExpr(ConstantExpr *Cur,
 // ArrToRewrite: Global array we wish to rewrite to a pointer (@A)
 // NewLoadedPtr: New pointer value to rewrite the global array with (A.toptr that has been loaded)
 // IRBuilder: IRBuilder instance
+/*
 static bool rewriteGEP(Instruction *MaybeGEP, Instruction *Parent, Value *ArrToRewrite, Value *NewLoadedPtr,
                        PollyIRBuilder &IRBuilder,
                        std::set<Instruction *> &InstsToBeDeleted ) {
@@ -176,6 +177,7 @@ static bool rewriteGEP(Instruction *MaybeGEP, Instruction *Parent, Value *ArrToR
   }
   return true;
 }
+*/
 
 // Edit all uses of `ArrPtrToRewrite` to `NewLoadedPtr` in `Inst`.
 // This will change all `GEP`s into `ArrPtrToRewrite` to `NewLoadedPtr`, re-indexing
@@ -201,8 +203,8 @@ static void rewriteArrToPtr(Instruction *Inst, Value *ArrPtrToRewrite, Value *Ne
       // Try to rewrite the current as a GEP.
       // If we can generate a GEP from the instruction, then we are done,
       // because we have replaced the old array with the new pointer.
-      if (rewriteGEP(CurInst, Parent, ArrPtrToRewrite, NewLoadedPtr, Builder, InstsToBeDeleted))
-        continue;
+      // if (rewriteGEP(CurInst, Parent, ArrPtrToRewrite, NewLoadedPtr, Builder, InstsToBeDeleted))
+      //  continue;
 
       for (unsigned i = 0; i < CurInst->getNumOperands(); i++) {
         User *OperandAsUser = dyn_cast<User>(CurInst->getOperand(i));
@@ -340,12 +342,17 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL,
       if (InstsToBeDeleted.count(UserOfArrayInst)) continue;
 
     Builder.SetInsertPoint(UserOfArrayInst);
+    // <ty>** -> <ty>*
     Value *ArrPtrLoaded = Builder.CreateLoad(ReplacementToArr, "arrptr.load");
-    Value *ArrPtrBitcasted = Builder.CreateBitCast(ReplacementToArr, PointerType::get(ArrayTy, AddrSpace), "arrptr.bitcast");
+    // <ty>* -> [ty]*
+    Value *ArrPtrBitcasted = Builder.CreateBitCast(ArrPtrLoaded, PointerType::get(ArrayTy, AddrSpace), "arrptr.bitcast");
     rewriteArrToPtr(UserOfArrayInst, &Array, ArrPtrLoaded, ArrPtrBitcasted,
         Builder, InstsToBeDeleted);
   }
 
+}
+
+void rewriteFunctionParameters(Function *F) {
 }
 
 class ManagedMemoryRewritePass : public ModulePass {
