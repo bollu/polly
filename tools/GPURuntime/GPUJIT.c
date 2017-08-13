@@ -1464,7 +1464,6 @@ void *polly_mallocManaged(size_t size) {
   }
   addManagedPtr(a);
 
-  fprintf(stderr, "\n *** cudaMallocManaged return value: %p\n", a);
   return a;
 }
 
