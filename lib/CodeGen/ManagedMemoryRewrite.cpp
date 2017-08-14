@@ -33,6 +33,7 @@
 #include "llvm/Analysis/ScalarEvolutionAliasAnalysis.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
+#include "llvm/Analysis/CaptureTracking.h"
 #include "llvm/IR/DerivedUser.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Verifier.h"
@@ -90,17 +91,16 @@ static llvm::Function *GetOrCreatePollyFreeManaged(Module &M) {
 // expand `Cur` to arrive at a set of instructions.
 // `Expands` is populated all the expanded instructions.
 // NOTE: this simply `insert`s into Expands.
-static void
-expandConstantExpr(ConstantExpr *Cur, PollyIRBuilder &Builder,
-                   Instruction *Parent, int index,
-                   std::set<std::pair<Instruction *, Instruction *>> &Expands) {
+static void expandConstantExpr(ConstantExpr *Cur, PollyIRBuilder &Builder,
+                               Instruction *Parent, int index,
+                               std::set<Instruction *> &Expands) {
   DEBUG(dbgs() << "\n\n\nExpanding: " << *Cur << "\n";
         dbgs() << "Parent: " << *Parent << "\n";);
   assert(Cur && "invalid constant expression passed");
   std::vector<std::pair<int, Instruction *>> Replacements;
 
   Instruction *I = Cur->getAsInstruction();
-  Expands.insert({Parent, I});
+  Expands.insert(I);
   Parent->setOperand(index, I);
 
   assert(I && "unable to convert ConstantExpr to Instruction");
@@ -118,65 +118,6 @@ expandConstantExpr(ConstantExpr *Cur, PollyIRBuilder &Builder,
   }
 }
 
-// rewrite a GEP to strip of the first index
-// We need to do this because earlier it used to be @[i32 x <size>]
-// It is now i32*. We don't need an extra "@" dereference.
-// Parameters:
-// MaybeGEP: A `User` that might be a GEP
-// ArrToRewrite: Global array we wish to rewrite to a pointer (@A)
-// NewLoadedPtr: New pointer value to rewrite the global array with (A.toptr
-// that has been loaded) IRBuilder: IRBuilder instance
-/*
-static bool rewriteGEP(Instruction *MaybeGEP, Instruction *Parent, Value
-*ArrToRewrite, Value *NewLoadedPtr, PollyIRBuilder &IRBuilder,
-                       std::set<Instruction *> &InstsToBeDeleted ) {
-    DEBUG(dbgs() << "\n\n\n";);
-    DEBUG(dbgs() << "CurInst: " << *MaybeGEP << "\n";);
-    if (Parent)
-        DEBUG(dbgs() << "Owning Inst: " << *Parent << "\n";);
-    else
-        DEBUG(dbgs() << "Owning Inst: " << "NONE" << "\n";);
-    DEBUG(dbgs() << "TargerArr: " << *ArrToRewrite << "\n";);
-  GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(MaybeGEP);
-
-  if (!GEP)
-    return false;
-  if (!(GEP->getPointerOperand() == ArrToRewrite))
-    return false;
-
-  DEBUG(dbgs() << " Is GEP\n";);
-
-  auto Indices = GEP->indices();
-  std::vector<Value *> NewIndices(Indices.begin() + 1, Indices.end());
-
-  Value *NewGEP = IRBuilder.CreateGEP(NewLoadedPtr, NewIndices, "newgep");
-
-  // Either the owning instruction is a GEP, or is an instruction that
-  // contains a GEP.
-  if (Parent == nullptr) {
-      GEP->replaceAllUsesWith(NewGEP);
-      InstsToBeDeleted.insert(GEP);
-  }
-  else {
-
-      if (GEP->getNumUses() == 1) {
-          DEBUG(dbgs() << "\n\n\n@@@ GEP dropping to 0" << *GEP << "\n");
-      };
-      DEBUG(dbgs() << "Replacing GEP(" << *GEP << ")\n\twith NewGEP(" << *NewGEP
-<< ")\n\tin Parent(" << *Parent << ")...\n"); Parent->replaceUsesOfWith(GEP,
-NewGEP); DEBUG(dbgs() << "Parent after replacement: " << *Parent << "\n";);
-      DEBUG(dbgs() << "GEP->numUses() " << GEP->getNumUses() << "\n";);
-
-      // GEP can be used by other people, so we can't remove it.
-      if (GEP->getNumUses() == 0) {
-          InstsToBeDeleted.insert(GEP);
-          DEBUG(dbgs() << "@@@ GEP AT 0: " << *GEP << "\n";);
-      }
-  }
-  return true;
-}
-*/
-
 // Edit all uses of `ArrPtrToRewrite` to `NewLoadedPtr` in `Inst`.
 // This will change all `GEP`s into `ArrPtrToRewrite` to `NewLoadedPtr`,
 // re-indexing the GEPs correctly as well. It will change all raw uses of
@@ -189,16 +130,12 @@ static void rewriteArrToPtr(Instruction *Inst, Value *ArrPtrToRewrite,
   // We use a worklist based algorithm that keep the frontier of
   // `User`s we need to rewrite in `Next`, and the current iterations
   // in `Current`.
-  std::set<std::pair<Instruction *, Instruction *>> Next;
-  std::set<std::pair<Instruction *, Instruction *>> Current = {
-      std::make_pair(nullptr, Inst)};
+  std::set<Instruction *> Next;
+  std::set<Instruction *> Current = {Inst};
 
   while (!Current.empty()) {
 
-    for (const std::pair<Instruction *, Instruction *> &ParentInstPair :
-         Current) {
-      Instruction *CurInst = ParentInstPair.second;
-      Instruction *Parent = ParentInstPair.first;
+    for (Instruction *CurInst : Current) {
 
       Builder.SetInsertPoint(CurInst);
       // Try to rewrite the current as a GEP.
@@ -356,7 +293,58 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL,
   }
 }
 
-void rewriteFunctionParameters(Function *F) {}
+// We return all `allocas` that may need to be converted to a call to
+// cudaMallocManaged.
+void getAllocasToBeManaged(Function &F, std::set<AllocaInst *> &Allocas) {
+    for (BasicBlock &BB : F) {
+        for(Instruction &I : BB) {
+            auto *Alloca = dyn_cast<AllocaInst>(&I);
+            if (!Alloca) continue;
+            dbgs() << "Checking if " << *Alloca << "may be captured: ";
+
+            if (PointerMayBeCaptured(Alloca, /* ReturnCaptures */ false,
+                    /* StoreCaptures */ true)) {
+                Allocas.insert(Alloca);
+                DEBUG(dbgs() << "YES (captured)\n");
+            } else {
+                DEBUG(dbgs() << "NO (not captured)\n");
+            }
+
+        }
+    }
+}
+
+void rewriteAllocaAsManagedMemory(AllocaInst *Alloca, const DataLayout *DL) {
+    DEBUG(dbgs() << "rewriting: " << *Alloca << " to managed mem.\n");
+    Module *M = Alloca->getModule();
+    assert (M && "Alloca does not have a module");
+
+    Function *F = Alloca->getFunction();
+
+    // TODO: do not consider "scalar" allocas like int.
+    PollyIRBuilder Builder(M->getContext());
+    Builder.SetInsertPoint(Alloca);
+
+    Value *MallocManagedFn = GetOrCreatePollyMallocManaged(*Alloca->getModule());
+    const int Size = DL->getTypeAllocSize(Alloca->getType()->getElementType());
+    Value *SizeVal = ConstantInt::get(Builder.getInt64Ty(), Size);
+    Value *RawManagedMem = Builder.CreateCall(MallocManagedFn, {SizeVal});
+    Value *Bitcasted = Builder.CreateBitCast(RawManagedMem, Alloca->getType());
+
+    Alloca->replaceAllUsesWith(Bitcasted);
+    Alloca->eraseFromParent();
+
+
+    assert(F && "Alloca has invalid function");
+    for(BasicBlock &BB: *F) {
+        ReturnInst *Return = dyn_cast<ReturnInst>(BB.getTerminator());
+        if (!Return) continue;
+        Builder.SetInsertPoint(Return);
+
+        Value *FreeManagedFn = GetOrCreatePollyFreeManaged(*M);
+        Builder.CreateCall(FreeManagedFn, {RawManagedMem});
+    }
+}
 
 class ManagedMemoryRewritePass : public ModulePass {
 public:
@@ -395,8 +383,6 @@ public:
       RewriteGlobalArray(M, *DL, Global, GlobalsToErase, InstsToBeDeleted);
     }
 
-    DEBUG(dbgs() << "\n\n\n=====Module=====\n"; M.dump(); dbgs() << "=====\n";);
-
     for (Instruction *Inst : InstsToBeDeleted) {
       DEBUG(dbgs() << "\n\nRemoving: " << *Inst << "...\n";);
       Inst->eraseFromParent();
@@ -405,6 +391,16 @@ public:
     // Erase all globals from the parent
     for (GlobalVariable *G : GlobalsToErase) {
       G->eraseFromParent();
+    }
+
+    std::set<AllocaInst *> AllocasToBeManaged;
+    for(Function &F : M.functions()) {
+        getAllocasToBeManaged(F, AllocasToBeManaged);
+    }
+
+    for(AllocaInst *Alloca : AllocasToBeManaged) {
+        rewriteAllocaAsManagedMemory(Alloca, DL);
+
     }
 
     return true;
