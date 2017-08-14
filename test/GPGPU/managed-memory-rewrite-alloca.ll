@@ -3,7 +3,7 @@
 
 ; RUN: opt %loadPolly -S  -polly-process-unprofitable -polly-acc-mincompute=0 \
 ; RUN: -polly-target=gpu  -polly-codegen-ppcg -polly-acc-codegen-managed-memory \
-; RUN: -polly-acc-rewrite-managed-memory < %s | FileCheck %s --check-prefix=HOST-IR
+; RUN: -polly-acc-rewrite-managed-memory  -polly-acc-rewrite-allocas < %s | FileCheck %s --check-prefix=HOST-IR
 
 ; SCOP:      Function: f
 ; SCOP-NEXT: Region: %for.body---%for.end

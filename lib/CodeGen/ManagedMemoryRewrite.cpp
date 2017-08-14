@@ -29,11 +29,11 @@
 #include "polly/Support/SCEVValidator.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/BasicAliasAnalysis.h"
+#include "llvm/Analysis/CaptureTracking.h"
 #include "llvm/Analysis/GlobalsModRef.h"
 #include "llvm/Analysis/ScalarEvolutionAliasAnalysis.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
-#include "llvm/Analysis/CaptureTracking.h"
 #include "llvm/IR/DerivedUser.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Verifier.h"
@@ -45,6 +45,12 @@
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
+
+static cl::opt<bool> RewriteAllocas(
+    "polly-acc-rewrite-allocas",
+    cl::desc(
+        "Ask the managed memory rewriter to also rewrite alloca instructions"),
+    cl::Hidden, cl::init(false), cl::ZeroOrMore, cl::cat(PollyCategory));
 
 #define DEBUG_TYPE "polly-acc-rewrite-managed-memory"
 namespace {
@@ -296,54 +302,54 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL,
 // We return all `allocas` that may need to be converted to a call to
 // cudaMallocManaged.
 void getAllocasToBeManaged(Function &F, std::set<AllocaInst *> &Allocas) {
-    for (BasicBlock &BB : F) {
-        for(Instruction &I : BB) {
-            auto *Alloca = dyn_cast<AllocaInst>(&I);
-            if (!Alloca) continue;
-            dbgs() << "Checking if " << *Alloca << "may be captured: ";
+  for (BasicBlock &BB : F) {
+    for (Instruction &I : BB) {
+      auto *Alloca = dyn_cast<AllocaInst>(&I);
+      if (!Alloca)
+        continue;
+      dbgs() << "Checking if " << *Alloca << "may be captured: ";
 
-            if (PointerMayBeCaptured(Alloca, /* ReturnCaptures */ false,
-                    /* StoreCaptures */ true)) {
-                Allocas.insert(Alloca);
-                DEBUG(dbgs() << "YES (captured)\n");
-            } else {
-                DEBUG(dbgs() << "NO (not captured)\n");
-            }
-
-        }
+      if (PointerMayBeCaptured(Alloca, /* ReturnCaptures */ false,
+                               /* StoreCaptures */ true)) {
+        Allocas.insert(Alloca);
+        DEBUG(dbgs() << "YES (captured)\n");
+      } else {
+        DEBUG(dbgs() << "NO (not captured)\n");
+      }
     }
+  }
 }
 
 void rewriteAllocaAsManagedMemory(AllocaInst *Alloca, const DataLayout *DL) {
-    DEBUG(dbgs() << "rewriting: " << *Alloca << " to managed mem.\n");
-    Module *M = Alloca->getModule();
-    assert (M && "Alloca does not have a module");
+  DEBUG(dbgs() << "rewriting: " << *Alloca << " to managed mem.\n");
+  Module *M = Alloca->getModule();
+  assert(M && "Alloca does not have a module");
 
-    Function *F = Alloca->getFunction();
+  Function *F = Alloca->getFunction();
 
-    // TODO: do not consider "scalar" allocas like int.
-    PollyIRBuilder Builder(M->getContext());
-    Builder.SetInsertPoint(Alloca);
+  // TODO: do not consider "scalar" allocas like int.
+  PollyIRBuilder Builder(M->getContext());
+  Builder.SetInsertPoint(Alloca);
 
-    Value *MallocManagedFn = GetOrCreatePollyMallocManaged(*Alloca->getModule());
-    const int Size = DL->getTypeAllocSize(Alloca->getType()->getElementType());
-    Value *SizeVal = ConstantInt::get(Builder.getInt64Ty(), Size);
-    Value *RawManagedMem = Builder.CreateCall(MallocManagedFn, {SizeVal});
-    Value *Bitcasted = Builder.CreateBitCast(RawManagedMem, Alloca->getType());
+  Value *MallocManagedFn = GetOrCreatePollyMallocManaged(*Alloca->getModule());
+  const int Size = DL->getTypeAllocSize(Alloca->getType()->getElementType());
+  Value *SizeVal = ConstantInt::get(Builder.getInt64Ty(), Size);
+  Value *RawManagedMem = Builder.CreateCall(MallocManagedFn, {SizeVal});
+  Value *Bitcasted = Builder.CreateBitCast(RawManagedMem, Alloca->getType());
 
-    Alloca->replaceAllUsesWith(Bitcasted);
-    Alloca->eraseFromParent();
+  Alloca->replaceAllUsesWith(Bitcasted);
+  Alloca->eraseFromParent();
 
+  assert(F && "Alloca has invalid function");
+  for (BasicBlock &BB : *F) {
+    ReturnInst *Return = dyn_cast<ReturnInst>(BB.getTerminator());
+    if (!Return)
+      continue;
+    Builder.SetInsertPoint(Return);
 
-    assert(F && "Alloca has invalid function");
-    for(BasicBlock &BB: *F) {
-        ReturnInst *Return = dyn_cast<ReturnInst>(BB.getTerminator());
-        if (!Return) continue;
-        Builder.SetInsertPoint(Return);
-
-        Value *FreeManagedFn = GetOrCreatePollyFreeManaged(*M);
-        Builder.CreateCall(FreeManagedFn, {RawManagedMem});
-    }
+    Value *FreeManagedFn = GetOrCreatePollyFreeManaged(*M);
+    Builder.CreateCall(FreeManagedFn, {RawManagedMem});
+  }
 }
 
 class ManagedMemoryRewritePass : public ModulePass {
@@ -393,14 +399,16 @@ public:
       G->eraseFromParent();
     }
 
-    std::set<AllocaInst *> AllocasToBeManaged;
-    for(Function &F : M.functions()) {
+    // Rewrite allocas to cudaMallocs if we are asked to do so.
+    if (RewriteAllocas) {
+      std::set<AllocaInst *> AllocasToBeManaged;
+      for (Function &F : M.functions()) {
         getAllocasToBeManaged(F, AllocasToBeManaged);
-    }
+      }
 
-    for(AllocaInst *Alloca : AllocasToBeManaged) {
+      for (AllocaInst *Alloca : AllocasToBeManaged) {
         rewriteAllocaAsManagedMemory(Alloca, DL);
-
+      }
     }
 
     return true;
