@@ -33,8 +33,8 @@
 #include <string.h>
 #include <unistd.h>
 
-static int DebugMode = 1;
-static int CacheMode = 1;
+static int DebugMode;
+static int CacheMode;
 
 static PollyGPURuntime Runtime = RUNTIME_NONE;
 
@@ -1455,7 +1455,6 @@ void polly_freeManaged(void *mem) {
 }
 
 void *polly_mallocManaged(size_t size) {
-  polly_initContextCUDA();
   dump_function();
   void *a;
   if (cudaMallocManaged(&a, size, cudaMemAttachGlobal) != cudaSuccess) {
@@ -1463,7 +1462,6 @@ void *polly_mallocManaged(size_t size) {
     exit(-1);
   }
   addManagedPtr(a);
-
   return a;
 }
 
