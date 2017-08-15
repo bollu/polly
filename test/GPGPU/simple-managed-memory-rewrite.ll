@@ -5,6 +5,8 @@
 ; RUN: -polly-target=gpu  -polly-codegen-ppcg -polly-acc-codegen-managed-memory \
 ; RUN: -polly-acc-rewrite-managed-memory < %s | FileCheck %s --check-prefix=HOST-IR
 
+; REQUIRES: pollyacc
+
 ; SCOP:      Function: f
 ; SCOP-NEXT: Region: %for.body---%for.end
 ; SCOP-NEXT: Max Loop Depth:  1

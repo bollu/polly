@@ -99,11 +99,11 @@ static llvm::Function *GetOrCreatePollyFreeManaged(Module &M) {
 // NOTE: this simply `insert`s into Expands.
 static void expandConstantExpr(ConstantExpr *Cur, PollyIRBuilder &Builder,
                                Instruction *Parent, int index,
-                               std::set<Instruction *> &Expands) {
+                               SmallPtrSet<Instruction *, 4> &Expands) {
   DEBUG(dbgs() << "\n\n\nExpanding: " << *Cur << "\n";
         dbgs() << "Parent: " << *Parent << "\n";);
   assert(Cur && "invalid constant expression passed");
-  std::vector<std::pair<int, Instruction *>> Replacements;
+  SmallVector<std::pair<int, Instruction *>, 2> Replacements;
 
   Instruction *I = Cur->getAsInstruction();
   Expands.insert(I);
@@ -131,37 +131,22 @@ static void expandConstantExpr(ConstantExpr *Cur, PollyIRBuilder &Builder,
 static void rewriteArrToPtr(Instruction *Inst, Value *ArrPtrToRewrite,
                             Value *NewLoadedPtr, Value *NewBitcastedPtr,
                             PollyIRBuilder &Builder,
-                            std::set<Instruction *> &InstsToBeDeleted) {
+                            SmallPtrSet<Instruction *, 4> &InstsToBeDeleted) {
 
   // We use a worklist based algorithm that keep the frontier of
   // `User`s we need to rewrite in `Next`, and the current iterations
   // in `Current`.
-  std::set<Instruction *> Next;
-  std::set<Instruction *> Current = {Inst};
+  SmallPtrSet<Instruction *, 4> Next;
+  SmallPtrSet<Instruction *, 4> Current = {Inst};
 
   while (!Current.empty()) {
 
     for (Instruction *CurInst : Current) {
 
       Builder.SetInsertPoint(CurInst);
-      // Try to rewrite the current as a GEP.
-      // If we can generate a GEP from the instruction, then we are done,
-      // because we have replaced the old array with the new pointer.
-      // if (rewriteGEP(CurInst, Parent, ArrPtrToRewrite, NewLoadedPtr, Builder,
-      // InstsToBeDeleted))
-      //  continue;
-
       for (unsigned i = 0; i < CurInst->getNumOperands(); i++) {
         User *OperandAsUser = dyn_cast<User>(CurInst->getOperand(i));
-
-        if (!OperandAsUser) {
-          errs() << "\t\t" << *OperandAsUser << " obtained from: " << *CurInst
-                 << "is not a user!. Trying to replace: " << *ArrPtrToRewrite
-                 << " with: " << *NewBitcastedPtr << "failed.\n";
-          report_fatal_error(
-              "rewriteArrToPtr failed with value that was not user");
-        }
-        assert(OperandAsUser && "operandAsUser uninitialized");
+        assert(OperandAsUser && "operandAsUser obtained was not a User.");
 
         if (isa<Instruction>(OperandAsUser)) {
           if (OperandAsUser == ArrPtrToRewrite) {
@@ -203,28 +188,21 @@ static void rewriteArrToPtr(Instruction *Inst, Value *ArrPtrToRewrite,
 // in an expression.
 static void getContainingInstructions(Value *Current,
                                       std::vector<Instruction *> &Owners) {
-  Instruction *I;
-  Constant *C;
-  if ((I = dyn_cast<Instruction>(Current))) {
+  if (auto *I = dyn_cast<Instruction>(Current)) {
     Owners.push_back(I);
-  } else if ((C = dyn_cast<Constant>(Current))) {
-    for (Use &CUse : C->uses()) {
-      getContainingInstructions(CUse.getUser(), Owners);
-    }
   } else {
-    errs() << "(" << *Current
-           << ") is neither an instruction nor a constant!.\n"
-              "The process of finding the owning instruction reached a node "
-              "with unknown replacement strategy";
-    report_fatal_error("unable to find owning instruction");
-    llvm_unreachable("should never reach here from getContainingInstruction");
+    // Anything that is a `User` must be a constant or an instruction?
+    // (what about DerivedUser)
+    auto *C = cast<Constant>(Current);
+    for (Use &CUse : C->uses())
+      getContainingInstructions(CUse.getUser(), Owners);
   }
 }
 
-static void RewriteGlobalArray(Module &M, const DataLayout &DL,
-                               GlobalVariable &Array,
-                               std::set<GlobalVariable *> &ReplacedGlobals,
-                               std::set<Instruction *> &InstsToBeDeleted) {
+static void
+replaceGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &Array,
+                   SmallPtrSet<GlobalVariable *, 4> &ReplacedGlobals,
+                   SmallPtrSet<Instruction *, 4> &InstsToBeDeleted) {
   static const unsigned AddrSpace = 0;
   // We only want arrays.
   ArrayType *ArrayTy = dyn_cast<ArrayType>(Array.getType()->getElementType());
@@ -250,7 +228,7 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL,
 
   std::string NewName = (Array.getName() + Twine(".toptr")).str();
   GlobalVariable *ReplacementToArr =
-      dyn_cast<GlobalVariable>(M.getOrInsertGlobal(NewName, ElemPtrTy));
+      cast<GlobalVariable>(M.getOrInsertGlobal(NewName, ElemPtrTy));
   ReplacementToArr->setInitializer(ConstantPointerNull::get(ElemPtrTy));
 
   Function *PollyMallocManaged = GetOrCreatePollyMallocManaged(M);
@@ -273,13 +251,15 @@ static void RewriteGlobalArray(Module &M, const DataLayout &DL,
   Builder.CreateStore(AllocatedMemTyped, ReplacementToArr);
   Builder.CreateRetVoid();
 
-  // HACK: refactor the priority stuff.
-  static int priority = 0;
-  appendToGlobalCtors(M, F, priority++, ReplacementToArr);
+  const int Priority = 0;
+  appendToGlobalCtors(M, F, Priority, ReplacementToArr);
 
   std::vector<Instruction *> ArrayUserInstructions;
   // Get all instructions that use array. We need to do this weird thing
-  // because `Constant`s that contain
+  // because `Constant`s that contain this array neeed to be expanded into
+  // instructions so that we can replace their parameters. `Constant`s cannot
+  // be edited easily, so we choose to convert all `Constant`s to
+  // `Instruction`s and handle all of the uses of `Array` uniformly.
   for (Use &ArrayUse : Array.uses()) {
     getContainingInstructions(ArrayUse.getUser(), ArrayUserInstructions);
   }
@@ -337,6 +317,7 @@ void rewriteAllocaAsManagedMemory(AllocaInst *Alloca, const DataLayout *DL) {
   Value *RawManagedMem = Builder.CreateCall(MallocManagedFn, {SizeVal});
   Value *Bitcasted = Builder.CreateBitCast(RawManagedMem, Alloca->getType());
 
+  Bitcasted->takeName(Alloca);
   Alloca->replaceAllUsesWith(Bitcasted);
   Alloca->eraseFromParent();
 
@@ -382,17 +363,15 @@ public:
       Free->eraseFromParent();
     }
 
-    std::set<Instruction *> InstsToBeDeleted;
-    std::set<GlobalVariable *> GlobalsToErase;
+    SmallPtrSet<Instruction *, 4> InstsToBeDeleted;
+    SmallPtrSet<GlobalVariable *, 4> GlobalsToErase;
 
     for (GlobalVariable &Global : M.globals()) {
-      RewriteGlobalArray(M, *DL, Global, GlobalsToErase, InstsToBeDeleted);
+      replaceGlobalArray(M, *DL, Global, GlobalsToErase, InstsToBeDeleted);
     }
 
     for (Instruction *Inst : InstsToBeDeleted) {
-      DEBUG(dbgs() << "\n\nRemoving: " << *Inst << "...\n";);
       Inst->eraseFromParent();
-      DEBUG(dbgs() << "Successful\n";);
     }
     // Erase all globals from the parent
     for (GlobalVariable *G : GlobalsToErase) {

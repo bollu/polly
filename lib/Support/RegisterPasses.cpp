@@ -46,6 +46,7 @@
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Vectorize.h"
+#include "llvm/Transforms/Scalar/SROA.h"
 
 using namespace llvm;
 using namespace polly;
@@ -349,6 +350,7 @@ void registerPollyPasses(llvm::legacy::PassManagerBase &PM) {
   if (Target == TARGET_HYBRID) {
     PM.add(
         polly::createPPCGCodeGenerationPass(GPUArchChoice, GPURuntimeChoice));
+    // PM.add(llvm::createSROAPass());
     PM.add(polly::createManagedMemoryRewritePassPass(GPUArchChoice,
                                                      GPURuntimeChoice));
   }
