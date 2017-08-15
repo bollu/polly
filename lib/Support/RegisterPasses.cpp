@@ -45,8 +45,8 @@
 #include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Scalar.h"
-#include "llvm/Transforms/Vectorize.h"
 #include "llvm/Transforms/Scalar/SROA.h"
+#include "llvm/Transforms/Vectorize.h"
 
 using namespace llvm;
 using namespace polly;
