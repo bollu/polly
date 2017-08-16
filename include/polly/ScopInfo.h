@@ -1730,7 +1730,7 @@ private:
   ParameterSetTy Parameters;
 
   /// Mapping from parameters to their ids.
-  DenseMap<const SCEV *, isl_id *> ParameterIds;
+  DenseMap<const SCEV *, isl::id> ParameterIds;
 
   /// The context of the SCoP created during SCoP detection.
   ScopDetection::DetectionContext &DC;
@@ -2935,7 +2935,7 @@ public:
   /// Intersects the domains of all statements in the SCoP.
   ///
   /// @return true if a change was made
-  bool restrictDomains(__isl_take isl_union_set *Domain);
+  bool restrictDomains(isl::union_set Domain);
 
   /// Get the depth of a loop relative to the outermost loop in the Scop.
   ///
@@ -3044,6 +3044,13 @@ private:
   /// A map of Region to its Scop object containing
   ///        Polly IR of static control part.
   RegionToScopMapTy RegionToScopMap;
+  const DataLayout &DL;
+  ScopDetection &SD;
+  ScalarEvolution &SE;
+  LoopInfo &LI;
+  AliasAnalysis &AA;
+  DominatorTree &DT;
+  AssumptionCache &AC;
 
 public:
   ScopInfo(const DataLayout &DL, ScopDetection &SD, ScalarEvolution &SE,
@@ -3062,6 +3069,15 @@ public:
       return MapIt->second.get();
     return nullptr;
   }
+
+  /// Recompute the Scop-Information for a function.
+  ///
+  /// This invalidates any iterators.
+  void recompute();
+
+  /// Handle invalidation explicitly
+  bool invalidate(Function &F, const PreservedAnalyses &PA,
+                  FunctionAnalysisManager::Invalidator &Inv);
 
   iterator begin() { return RegionToScopMap.begin(); }
   iterator end() { return RegionToScopMap.end(); }
