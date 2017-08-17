@@ -137,51 +137,32 @@ static void expandConstantExpr(ConstantExpr *Cur, PollyIRBuilder &Builder,
 
 // Edit all uses of `OldVal` to NewVal` in `Inst`. This will rewrite
 // `ConstantExpr`s that are used in the `Inst`.
-static void rewriteArrToPtr(Instruction *Inst, Value *OldVal, Value *NewVal,
-                            PollyIRBuilder &Builder) {
+// Note that `replaceAllUsesWith` is insufficient for this purpose because it
+// does not rewrite values in `ConstantExpr`s.
+static void rewriteOldValToNew(Instruction *Inst, Value *OldVal, Value *NewVal,
+                               PollyIRBuilder &Builder) {
 
-  // We use a worklist based algorithm that keeps a frontier of
-  // `User`s we need to rewrite in `Next`, and the current iterations
-  // in `Current`.
-  SmallPtrSet<Instruction *, 4> Next;
-  SmallPtrSet<Instruction *, 4> Current = {Inst};
+  // This contains a set of instructions in which OldVal must be replaced.
+  // We start with `Inst`, and we fill it up with the expanded `ConstantExpr`s
+  // from `Inst`s arguments.
+  // We need to go through this process because `replaceAllUsesWith` does not
+  // actually edit `ConstantExpr`s.
+  SmallPtrSet<Instruction *, 4> InstsToVisit = {Inst};
 
-  while (!Current.empty()) {
+  // Expand all `ConstantExpr`s and place it in `InstsToVisit`.
+  for (unsigned i = 0; i < Inst->getNumOperands(); i++) {
+    Value *Operand = Inst->getOperand(i);
+    if (ConstantExpr *ValueConstExpr = dyn_cast<ConstantExpr>(Operand))
+      expandConstantExpr(ValueConstExpr, Builder, Inst, i, InstsToVisit);
+  }
 
-    for (Instruction *CurInst : Current) {
-
-      Builder.SetInsertPoint(CurInst);
-      for (unsigned i = 0; i < CurInst->getNumOperands(); i++) {
-        User *OperandAsUser = dyn_cast<User>(CurInst->getOperand(i));
-        assert(OperandAsUser && "operandAsUser obtained was not a User.");
-
-        if (isa<BlockAddress>(OperandAsUser) ||
-            isa<ConstantAggregate>(OperandAsUser) ||
-            isa<ConstantData>(OperandAsUser))
-          continue;
-
-        if (isa<Instruction>(OperandAsUser) ||
-            isa<GlobalValue>(OperandAsUser)) {
-          if (OperandAsUser == OldVal)
-            CurInst->setOperand(i, NewVal);
-        } else {
-          assert(isa<Constant>(OperandAsUser));
-          assert(!isa<GlobalValue>(OperandAsUser));
-          // Only things that can contain a reference is a ConstantExpr
-          ConstantExpr *ValueConstExpr = dyn_cast<ConstantExpr>(OperandAsUser);
-          assert(ValueConstExpr && "this must be a ValueConstExpr");
-
-          expandConstantExpr(ValueConstExpr, Builder, CurInst, i, Next);
-
-        } // end else
-      }   // end operands for
-    }     // end for current
-
-    Current.clear();
-    Current = Next;
-
-    Next.clear();
-  } // end worklist
+  // Now visit each instruction and use `replaceUsesOfWith`. We know that
+  // will work because `I` cannot have any `ConstantExpr` within it.
+  for (Instruction *I : InstsToVisit) {
+    for (unsigned i = 0; i < I->getNumOperands(); i++) {
+        I->replaceUsesOfWith(OldVal, NewVal);
+    }
+  }
 }
 
 // Given a value `Current`, return all Instructions that may contain `Current`
@@ -272,7 +253,7 @@ replaceGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &Array,
     // <ty>* -> [ty]*
     Value *ArrPtrLoadedBitcasted = Builder.CreateBitCast(
         ArrPtrLoaded, PointerType::get(ArrayTy, AddrSpace), "arrptr.bitcast");
-    rewriteArrToPtr(UserOfArrayInst, &Array, ArrPtrLoadedBitcasted, Builder);
+    rewriteOldValToNew(UserOfArrayInst, &Array, ArrPtrLoadedBitcasted, Builder);
   }
 }
 
