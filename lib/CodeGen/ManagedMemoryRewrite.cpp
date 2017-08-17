@@ -190,13 +190,12 @@ static void getInstructionUsersOfValue(Value *V,
 static void
 replaceGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &Array,
                    SmallPtrSet<GlobalVariable *, 4> &ReplacedGlobals) {
-  static const unsigned AddrSpace = 0;
   // We only want arrays.
   ArrayType *ArrayTy = dyn_cast<ArrayType>(Array.getType()->getElementType());
   if (!ArrayTy)
     return;
   Type *ElemTy = ArrayTy->getElementType();
-  PointerType *ElemPtrTy = ElemTy->getPointerTo(AddrSpace);
+  PointerType *ElemPtrTy = ElemTy->getPointerTo();
 
   // We only wish to replace arrays that are visible in the module they
   // inhabit. Otherwise, our type edit from [T] to T* would be illegal across
@@ -258,7 +257,7 @@ replaceGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &Array,
     Value *ArrPtrLoaded = Builder.CreateLoad(ReplacementToArr, "arrptr.load");
     // <ty>* -> [ty]*
     Value *ArrPtrLoadedBitcasted = Builder.CreateBitCast(
-        ArrPtrLoaded, PointerType::get(ArrayTy, AddrSpace), "arrptr.bitcast");
+        ArrPtrLoaded, ArrayTy->getPointerTo(), "arrptr.bitcast");
     rewriteOldValToNew(UserOfArrayInst, &Array, ArrPtrLoadedBitcasted, Builder);
   }
 }
