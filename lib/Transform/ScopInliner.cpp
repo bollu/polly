@@ -77,7 +77,7 @@ public:
         SD.ValidRegions.count(RI.getTopLevelRegion()) > 0;
 
     if (HasScopAsTopLevelRegion) {
-        DEBUG(dbgs() << F->getName() << " has scop as top level region");
+        DEBUG(dbgs() << "Skipping " << F->getName() << " has scop as top level region");
         F->addFnAttr(llvm::Attribute::AlwaysInline);
 
         ModuleAnalysisManager MAM;
@@ -88,7 +88,7 @@ public:
         assert(M && "Function has illegal module");
         MPM.run(*M, MAM);
     } else {
-        DEBUG(dbgs() << F->getName() << "does NOT have scop as top level region\n");
+        DEBUG(dbgs() << F->getName() << " does NOT have scop as top level region\n");
     }
 
     return false;
