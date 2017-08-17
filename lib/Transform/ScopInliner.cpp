@@ -60,7 +60,7 @@ public:
     if (!F)
       return false;
     if (F->isDeclaration()) {
-      DEBUG(dbgs() << "Skipping " << F->getName()
+      DEBUG(dbgs() << "SKIPPING " << F->getName()
                    << "because it is a declaration.\n");
       return false;
     }
@@ -95,8 +95,7 @@ public:
     }();
 
     if (IsFullyModeledAsScop || IsModeledByTopLevelChild) {
-      DEBUG(dbgs() << F->getName()
-                   << " DOES have scop as top level region.\n");
+      DEBUG(dbgs() << "@ " << F->getName() << " DOES have scop as top level region.\n");
       F->addFnAttr(llvm::Attribute::AlwaysInline);
 
       ModuleAnalysisManager MAM;
