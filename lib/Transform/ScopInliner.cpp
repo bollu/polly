@@ -44,7 +44,7 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 #include "llvm/Passes/PassBuilder.h"
-
+#include "llvm/Transforms/IPO/AlwaysInliner.h"
 
 #define DEBUG_TYPE "polly-scop-inliner"
 namespace {
@@ -79,10 +79,24 @@ public:
       RegionInfo &RI = FAM.getResult<RegionInfoAnalysis>(*F);
       ScopDetection &SD = FAM.getResult<ScopAnalysis>(*F);
 
-      const bool HasScopAsTopLevelRegion  = SD.ValidRegions.count(RI.getTopLevelRegion()) > 0;
+      const bool HasScopAsTopLevelRegion = SD.ValidRegions.count(RI.getTopLevelRegion()) > 0;
+
+      if (HasScopAsTopLevelRegion) {
+          F->addFnAttr(llvm::Attribute::AlwaysInline);
+
+          ModuleAnalysisManager MAM;
+          PB.registerModuleAnalyses(MAM);
+          ModulePassManager MPM;
+          MPM.addPass(AlwaysInlinerPass());
+          Module *M = F->getParent();
+          assert(M && "Function has illegal module");
+          MPM.run(*M, MAM);
+      }
+
+
 
       errs() << "-" << F->getName() << " | " << HasScopAsTopLevelRegion << "\n";
-      return true;
+      return false;
 
   };
 
