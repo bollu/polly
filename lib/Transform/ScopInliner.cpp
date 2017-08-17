@@ -73,10 +73,23 @@ public:
     RegionInfo &RI = FAM.getResult<RegionInfoAnalysis>(*F);
     ScopDetection &SD = FAM.getResult<ScopAnalysis>(*F);
 
-    const bool HasScopAsTopLevelRegion =
+    // Whether the entire function can be modeled as a Scop.
+    const bool IsFullyModeledAsScop =
         SD.ValidRegions.count(RI.getTopLevelRegion()) > 0;
 
-    if (HasScopAsTopLevelRegion) {
+    // Whether the function has a Scop that is a child of the top-level
+    // region. TODO: make this the *unique* child. The API is super annoying,
+    // I see no way to count the number of children of the top level region.
+    const bool IsModeledByTopLevelChild = [&] {
+        for (auto ScopRegion : SD.ValidRegions) {
+            if (ScopRegion->getParent() == RI.getTopLevelRegion()) {
+                return true;
+            }
+        }
+        return false;
+    }();
+
+    if (IsFullyModeledAsScop || IsModeledByTopLevelChild) {
       DEBUG(dbgs() << "Skipping " << F->getName()
                    << " has scop as top level region");
       F->addFnAttr(llvm::Attribute::AlwaysInline);
