@@ -62,6 +62,7 @@ public:
     if (F->isDeclaration()) {
       DEBUG(dbgs() << "Skipping " << F->getName()
                    << "because it is a declaration.\n");
+      return false;
     }
 
     PassBuilder PB;
@@ -76,19 +77,20 @@ public:
         SD.ValidRegions.count(RI.getTopLevelRegion()) > 0;
 
     if (HasScopAsTopLevelRegion) {
-      F->addFnAttr(llvm::Attribute::AlwaysInline);
+        DEBUG(dbgs() << F->getName() << " has scop as top level region");
+        F->addFnAttr(llvm::Attribute::AlwaysInline);
 
-      ModuleAnalysisManager MAM;
-      PB.registerModuleAnalyses(MAM);
-      ModulePassManager MPM;
-      MPM.addPass(AlwaysInlinerPass());
-      Module *M = F->getParent();
-      assert(M && "Function has illegal module");
-      MPM.run(*M, MAM);
+        ModuleAnalysisManager MAM;
+        PB.registerModuleAnalyses(MAM);
+        ModulePassManager MPM;
+        MPM.addPass(AlwaysInlinerPass());
+        Module *M = F->getParent();
+        assert(M && "Function has illegal module");
+        MPM.run(*M, MAM);
+    } else {
+        DEBUG(dbgs() << F->getName() << "does NOT have scop as top level region\n");
     }
 
-    DEBUG(dbgs() << F->getName() << " has scop as top level region:  "
-                 << HasScopAsTopLevelRegion << "\n");
     return false;
   };
 
