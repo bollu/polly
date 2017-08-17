@@ -318,16 +318,17 @@ static void rewriteAllocaAsManagedMemory(AllocaInst *Alloca,
 }
 
 // Replace all uses of `Old` with `New`, even inside `ConstantExpr`.
+//
 // `replaceAllUsesWith` does replace values in `ConstantExpr`. This function
-// actuall does replace it in `ConstantExpr`. The caveat is that if there is
+// actually does replace it in `ConstantExpr`. The caveat is that if there is
 // a use that is *outside* a function (say, at global declarations), we fail.
 // So, this is meant to be used on values which we know will only be used
 // within functions.
 //
 // This process works by looking through the uses of `Old`. If it finds a
 // `ConstantExpr`, it recursively looks for the owning instruction.
-//  Then, it expands all the `ConstantExpr` to instructions and replaces
-//  `Old` with `New` in the expanded instructions.
+// Then, it expands all the `ConstantExpr` to instructions and replaces
+// `Old` with `New` in the expanded instructions.
 static void replaceAllUsesAndConstantUses(Value *Old, Value *New,
                                           PollyIRBuilder &Builder) {
   SmallVector<Instruction *, 4> UserInstructions;
