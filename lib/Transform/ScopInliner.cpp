@@ -95,11 +95,14 @@ public:
     }();
 
     if (IsFullyModeledAsScop || IsModeledByTopLevelChild) {
+      FAM.clear(*F);
+
       DEBUG(dbgs() << "@ " << F->getName() << " DOES have scop as top level region.\n");
       F->addFnAttr(llvm::Attribute::AlwaysInline);
 
       ModuleAnalysisManager MAM;
       PB.registerModuleAnalyses(MAM);
+
       ModulePassManager MPM;
       MPM.addPass(AlwaysInlinerPass());
       Module *M = F->getParent();
