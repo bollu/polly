@@ -317,6 +317,24 @@ static void rewriteAllocaAsManagedMemory(AllocaInst *Alloca,
   }
 }
 
+// _really_ replace all uses of `Old` with `New. This process works by looking
+// for _instructions_ where `Old` is used, and replaces that with `New`. Note
+// that this will not work if this happens outside of a basic block.
+// TODO: better name.
+static void replaceAllUsesOfWithReally(Value *Old, Value *New, PollyIRBuilder &Builder) {
+  SmallVector<Instruction *, 4> UserInstructions;
+  // Get all instructions that use array. We need to do this weird thing
+  // because `Constant`s that contain this array neeed to be expanded into
+  // instructions so that we can replace their parameters. `Constant`s cannot
+  // be edited easily, so we choose to convert all `Constant`s to
+  // `Instruction`s and handle all of the uses of `Array` uniformly.
+  for (Use &ArrayUse : Old->uses())
+    getInstructionUsersOfValue(ArrayUse.getUser(), UserInstructions);
+
+  for (Instruction *I : UserInstructions)
+    rewriteOldValToNew(I, Old, New, Builder);
+}
+
 class ManagedMemoryRewritePass : public ModulePass {
 public:
   static char ID;
@@ -330,18 +348,22 @@ public:
     Function *Malloc = M.getFunction("malloc");
 
     if (Malloc) {
+      PollyIRBuilder Builder(M.getContext());
       Function *PollyMallocManaged = getOrCreatePollyMallocManaged(M);
       assert(PollyMallocManaged && "unable to create polly_mallocManaged");
-      Malloc->replaceAllUsesWith(PollyMallocManaged);
+
+      replaceAllUsesOfWithReally(Malloc, PollyMallocManaged, Builder);
       Malloc->eraseFromParent();
     }
 
     Function *Free = M.getFunction("free");
 
     if (Free) {
+      PollyIRBuilder Builder(M.getContext());
       Function *PollyFreeManaged = getOrCreatePollyFreeManaged(M);
       assert(PollyFreeManaged && "unable to create polly_freeManaged");
-      Free->replaceAllUsesWith(PollyFreeManaged);
+
+      replaceAllUsesOfWithReally(Free, PollyFreeManaged, Builder);
       Free->eraseFromParent();
     }
 
