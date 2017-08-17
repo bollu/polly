@@ -14,16 +14,15 @@
 //
 //===----------------------------------------------------------------------===//
 
-
 #define DEBUG_TYPE "polly-scop-inliner"
 
-#include "llvm/IR/LLVMContext.h"
+#include "polly/LinkAllPasses.h"
+#include "polly/RegisterPasses.h"
 #include "polly/ScopDetection.h"
 #include "llvm/Analysis/CallGraphSCCPass.h"
+#include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/Passes/PassBuilder.h"
-#include "polly/RegisterPasses.h"
-#include "polly/LinkAllPasses.h"
 #include "llvm/Transforms/IPO/AlwaysInliner.h"
 
 using namespace polly;
@@ -34,64 +33,68 @@ class ScopInliner : public CallGraphSCCPass {
 public:
   static char ID;
 
-  ScopInliner() : CallGraphSCCPass(ID) { }
+  ScopInliner() : CallGraphSCCPass(ID) {}
 
   bool doInitialization(CallGraph &CG) override {
-      if (!polly::PollyAllowFullFunction) {
-          report_fatal_error("Aborting from ScopInliner because it only makes sense "
-                             "to run this with -polly-allow-full-function. The heurtistic "
-                             "for ScopInliner checks that the full function is a Scop, which only happens if "
-                             "polly-allow-full-function is enabled. If not, the entry block is not included in the Scop");
-
-      }
-      return true;
+    if (!polly::PollyAllowFullFunction) {
+      report_fatal_error(
+          "Aborting from ScopInliner because it only makes sense "
+          "to run this with -polly-allow-full-function. The heurtistic "
+          "for ScopInliner checks that the full function is a Scop, which only "
+          "happens if "
+          "polly-allow-full-function is enabled. If not, the entry block is "
+          "not included in the Scop");
+    }
+    return true;
   }
 
-   bool runOnSCC(CallGraphSCC &SCC) override {
-       PassBuilder PB;
-       FunctionAnalysisManager FAM;
-       FAM.registerPass([] { return ScopAnalysis(); });
-       PB.registerFunctionAnalyses(FAM);
-
-      // We do not try to inline non-trivial SCCs because this would lead to
-      // "infinite" inlining if we are not careful.
-      if (SCC.size() > 1) return false;
-      assert(SCC.size() == 1 && "found empty SCC");
-      Function *F = (*SCC.begin())->getFunction();
-
-      // If the function is a nullptr, or the function is a declaration.
-      if (!F) return false;
-      if (F->isDeclaration()) {
-          DEBUG(dbgs() << "Skipping " << F->getName() << "because it is a declaration.\n");
-      }
-
-      RegionInfo &RI = FAM.getResult<RegionInfoAnalysis>(*F);
-      ScopDetection &SD = FAM.getResult<ScopAnalysis>(*F);
-
-      const bool HasScopAsTopLevelRegion = SD.ValidRegions.count(RI.getTopLevelRegion()) > 0;
-
-      if (HasScopAsTopLevelRegion) {
-          F->addFnAttr(llvm::Attribute::AlwaysInline);
-
-          ModuleAnalysisManager MAM;
-          PB.registerModuleAnalyses(MAM);
-          ModulePassManager MPM;
-          MPM.addPass(AlwaysInlinerPass());
-          Module *M = F->getParent();
-          assert(M && "Function has illegal module");
-          MPM.run(*M, MAM);
-      }
-
-      DEBUG(dbgs() << F->getName() << " has scop as top level region:  " << HasScopAsTopLevelRegion << "\n");
+  bool runOnSCC(CallGraphSCC &SCC) override {
+    // We do not try to inline non-trivial SCCs because this would lead to
+    // "infinite" inlining if we are not careful.
+    if (SCC.size() > 1)
       return false;
+    assert(SCC.size() == 1 && "found empty SCC");
+    Function *F = (*SCC.begin())->getFunction();
 
+    // If the function is a nullptr, or the function is a declaration.
+    if (!F)
+      return false;
+    if (F->isDeclaration()) {
+      DEBUG(dbgs() << "Skipping " << F->getName()
+                   << "because it is a declaration.\n");
+    }
+
+    PassBuilder PB;
+    FunctionAnalysisManager FAM;
+    FAM.registerPass([] { return ScopAnalysis(); });
+    PB.registerFunctionAnalyses(FAM);
+
+    RegionInfo &RI = FAM.getResult<RegionInfoAnalysis>(*F);
+    ScopDetection &SD = FAM.getResult<ScopAnalysis>(*F);
+
+    const bool HasScopAsTopLevelRegion =
+        SD.ValidRegions.count(RI.getTopLevelRegion()) > 0;
+
+    if (HasScopAsTopLevelRegion) {
+      F->addFnAttr(llvm::Attribute::AlwaysInline);
+
+      ModuleAnalysisManager MAM;
+      PB.registerModuleAnalyses(MAM);
+      ModulePassManager MPM;
+      MPM.addPass(AlwaysInlinerPass());
+      Module *M = F->getParent();
+      assert(M && "Function has illegal module");
+      MPM.run(*M, MAM);
+    }
+
+    DEBUG(dbgs() << F->getName() << " has scop as top level region:  "
+                 << HasScopAsTopLevelRegion << "\n");
+    return false;
   };
 
   void getAnalysisUsage(AnalysisUsage &AU) const override {
-      CallGraphSCCPass::getAnalysisUsage(AU);
-
+    CallGraphSCCPass::getAnalysisUsage(AU);
   }
-
 };
 
 } // namespace
@@ -104,10 +107,9 @@ Pass *polly::createScopInlinerPass() {
 
 INITIALIZE_PASS_BEGIN(
     ScopInliner, "polly-scop-inliner",
-    "inline functions based on how much of the function is a scop.",
-    false, false)
+    "inline functions based on how much of the function is a scop.", false,
+    false)
 INITIALIZE_PASS_END(
     ScopInliner, "polly-scop-inliner",
-    "inline functions based on how much of the function is a scop.",
-    false, false)
-
+    "inline functions based on how much of the function is a scop.", false,
+    false)

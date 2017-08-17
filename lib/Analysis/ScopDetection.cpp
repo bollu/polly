@@ -109,9 +109,9 @@ static cl::list<std::string> IgnoredFunctions(
 bool polly::PollyAllowFullFunction;
 static cl::opt<bool, true>
     XAllowFullFunction("polly-detect-full-functions",
-                      cl::desc("Allow the detection of full functions"),
-                      cl::location(polly::PollyAllowFullFunction),
-                      cl::init(false), cl::cat(PollyCategory));
+                       cl::desc("Allow the detection of full functions"),
+                       cl::location(polly::PollyAllowFullFunction),
+                       cl::init(false), cl::cat(PollyCategory));
 
 static cl::opt<std::string> OnlyRegion(
     "polly-only-region",
