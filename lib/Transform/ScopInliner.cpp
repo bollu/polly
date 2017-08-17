@@ -95,8 +95,8 @@ public:
     }();
 
     if (IsFullyModeledAsScop || IsModeledByTopLevelChild) {
-      DEBUG(dbgs() << "Skipping " << F->getName()
-                   << " has scop as top level region");
+      DEBUG(dbgs() << F->getName()
+                   << " DOES have scop as top level region.\n");
       F->addFnAttr(llvm::Attribute::AlwaysInline);
 
       ModuleAnalysisManager MAM;
@@ -108,7 +108,7 @@ public:
       MPM.run(*M, MAM);
     } else {
       DEBUG(dbgs() << F->getName()
-                   << " does NOT have scop as top level region\n");
+                   << " does NOT have scop as top level region.\n");
     }
 
     return false;
