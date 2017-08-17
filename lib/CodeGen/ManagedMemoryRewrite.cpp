@@ -51,6 +51,13 @@ static cl::opt<bool> RewriteAllocas(
         "Ask the managed memory rewriter to also rewrite alloca instructions"),
     cl::Hidden, cl::init(false), cl::ZeroOrMore, cl::cat(PollyCategory));
 
+static cl::opt<bool> IgnoreLinkageForGlobals(
+    "polly-acc-rewrite-ignore-linkage-for-globals",
+    cl::desc(
+        "By default, we only rewrite globals with internal linkage. This flag "
+        "enables rewriting of globals regardless of linkage"),
+    cl::Hidden, cl::init(false), cl::ZeroOrMore, cl::cat(PollyCategory));
+
 #define DEBUG_TYPE "polly-acc-rewrite-managed-memory"
 namespace {
 
@@ -193,13 +200,12 @@ replaceGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &Array,
   Type *ElemTy = ArrayTy->getElementType();
   PointerType *ElemPtrTy = ElemTy->getPointerTo(AddrSpace);
 
-  // We only wish to replace stuff with internal linkage. Otherwise,
-  // our type edit from [T] to T* would be illegal across modules.
-  // It is interesting that most arrays don't seem to be tagged with internal
-  // linkage?
-  if (GlobalValue::isWeakForLinker(Array.getLinkage()) && false) {
+  // We only wish to replace arrays that are visible in the module they
+  // inhabit. Otherwise, our type edit from [T] to T* would be illegal across
+  // modules.
+  const bool OnlyVisibleInsideModule = Array.hasPrivateLinkage() || Array.hasInternalLinkage() || IgnoreLinkageForGlobals;
+  if (!OnlyVisibleInsideModule)
     return;
-  }
 
   if (!Array.hasInitializer() ||
       !isa<ConstantAggregateZero>(Array.getInitializer()))

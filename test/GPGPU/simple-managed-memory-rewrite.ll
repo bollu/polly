@@ -31,7 +31,7 @@ source_filename = "test.c"
 target datalayout = "e-m:o-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx10.12.0"
 
-@A = common global [100 x i32] zeroinitializer, align 16
+@A = internal global [100 x i32] zeroinitializer, align 16
 
 define void @f() {
 entry:
