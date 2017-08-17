@@ -132,7 +132,8 @@ static void expandConstantExpr(ConstantExpr *Cur, PollyIRBuilder &Builder,
   Builder.SetInsertPoint(Parent);
   Builder.Insert(I);
 
-  DEBUG(dbgs() << "Expanded: " << *I << "\n";);
+  DEBUG(dbgs() << "Expanding ConstantExpression: " << *Cur
+               << " | in Instruction: " << *I << "\n";);
   for (unsigned i = 0; i < Cur->getNumOperands(); i++) {
     Value *Op = Cur->getOperand(i);
     assert(isa<Constant>(Op) && "constant must have a constant operand");
@@ -165,11 +166,8 @@ static void rewriteOldValToNew(Instruction *Inst, Value *OldVal, Value *NewVal,
 
   // Now visit each instruction and use `replaceUsesOfWith`. We know that
   // will work because `I` cannot have any `ConstantExpr` within it.
-  for (Instruction *I : InstsToVisit) {
-    for (unsigned i = 0; i < I->getNumOperands(); i++) {
-        I->replaceUsesOfWith(OldVal, NewVal);
-    }
-  }
+  for (Instruction *I : InstsToVisit)
+    I->replaceUsesOfWith(OldVal, NewVal);
 }
 
 // Given a value `Current`, return all Instructions that may contain `Current`
@@ -203,7 +201,9 @@ replaceGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &Array,
   // We only wish to replace arrays that are visible in the module they
   // inhabit. Otherwise, our type edit from [T] to T* would be illegal across
   // modules.
-  const bool OnlyVisibleInsideModule = Array.hasPrivateLinkage() || Array.hasInternalLinkage() || IgnoreLinkageForGlobals;
+  const bool OnlyVisibleInsideModule = Array.hasPrivateLinkage() ||
+                                       Array.hasInternalLinkage() ||
+                                       IgnoreLinkageForGlobals;
   if (!OnlyVisibleInsideModule)
     return;
 
