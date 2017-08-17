@@ -241,7 +241,7 @@ replaceGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &Array,
   BasicBlock *Start = BasicBlock::Create(M.getContext(), "entry", F);
   Builder.SetInsertPoint(Start);
 
-  int ArraySizeInt = DL.getTypeAllocSizeInBits(ArrayTy) * 8;
+  int ArraySizeInt = DL.getTypeAllocSizeInBits(ArrayTy) / 8;
   Value *ArraySize = Builder.getInt64(ArraySizeInt);
   ArraySize->setName("array.size");
 
@@ -313,12 +313,12 @@ static void rewriteAllocaAsManagedMemory(AllocaInst *Alloca,
   Value *RawManagedMem = Builder.CreateCall(MallocManagedFn, {SizeVal});
   Value *Bitcasted = Builder.CreateBitCast(RawManagedMem, Alloca->getType());
 
+  Function *F = Alloca->getFunction();
+  assert(F && "Alloca has invalid function");
+
   Bitcasted->takeName(Alloca);
   Alloca->replaceAllUsesWith(Bitcasted);
   Alloca->eraseFromParent();
-
-  Function *F = Alloca->getFunction();
-  assert(F && "Alloca has invalid function");
 
   for (BasicBlock &BB : *F) {
     ReturnInst *Return = dyn_cast<ReturnInst>(BB.getTerminator());

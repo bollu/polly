@@ -16,9 +16,10 @@
 ; HOST-IR: @llvm.global_ctors = appending global [1 x { i32, void ()*, i8* }] [{ i32, void ()*, i8* } { i32 0, void ()* @.constructor, i8* bitcast (i32** @A.toptr to i8*) }]
 
 ; Check that we generate a constructor
+; 4 bytes * 100 = 400
 ; HOST-IR: define void @.constructor() {
 ; HOST-IR-NEXT: entry:
-; HOST-IR-NEXT:   %mem.raw = call i8* @polly_mallocManaged(i64 3200)
+; HOST-IR-NEXT:   %mem.raw = call i8* @polly_mallocManaged(i64 400)
 ; HOST-IR-NEXT:   %mem.typed = bitcast i8* %mem.raw to i32*
 ; HOST-IR-NEXT:   store i32* %mem.typed, i32** @A.toptr
 ; HOST-IR-NEXT:   ret void
