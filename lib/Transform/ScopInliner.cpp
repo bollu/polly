@@ -59,6 +59,11 @@ public:
     // If the function is a nullptr, or the function is a declaration.
     if (!F)
       return false;
+
+    // HACK: remove this before upstreaming
+    if (F->getName().count("__radiation_rg_MOD_coe") == 0 &&
+            F->getName().count("__radiation_rg_MOD_inv") == 0) return false;
+
     if (F->isDeclaration()) {
       DEBUG(dbgs() << "SKIPPING " << F->getName()
                    << "because it is a declaration.\n");
