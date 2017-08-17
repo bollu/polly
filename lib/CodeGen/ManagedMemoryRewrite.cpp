@@ -317,11 +317,19 @@ static void rewriteAllocaAsManagedMemory(AllocaInst *Alloca,
   }
 }
 
-// _really_ replace all uses of `Old` with `New. This process works by looking
-// for _instructions_ where `Old` is used, and replaces that with `New`. Note
-// that this will not work if this happens outside of a basic block.
-// TODO: better name.
-static void replaceAllUsesOfWithReally(Value *Old, Value *New, PollyIRBuilder &Builder) {
+// Replace all uses of `Old` with `New`, even inside `ConstantExpr`.
+// `replaceAllUsesWith` does replace values in `ConstantExpr`. This function
+// actuall does replace it in `ConstantExpr`. The caveat is that if there is
+// a use that is *outside* a function (say, at global declarations), we fail.
+// So, this is meant to be used on values which we know will only be used
+// within functions.
+//
+// This process works by looking through the uses of `Old`. If it finds a
+// `ConstantExpr`, it recursively looks for the owning instruction.
+//  Then, it expands all the `ConstantExpr` to instructions and replaces
+//  `Old` with `New` in the expanded instructions.
+static void replaceAllUsesAndConstantUses(Value *Old, Value *New,
+                                          PollyIRBuilder &Builder) {
   SmallVector<Instruction *, 4> UserInstructions;
   // Get all instructions that use array. We need to do this weird thing
   // because `Constant`s that contain this array neeed to be expanded into
@@ -352,7 +360,7 @@ public:
       Function *PollyMallocManaged = getOrCreatePollyMallocManaged(M);
       assert(PollyMallocManaged && "unable to create polly_mallocManaged");
 
-      replaceAllUsesOfWithReally(Malloc, PollyMallocManaged, Builder);
+      replaceAllUsesAndConstantUses(Malloc, PollyMallocManaged, Builder);
       Malloc->eraseFromParent();
     }
 
@@ -363,7 +371,7 @@ public:
       Function *PollyFreeManaged = getOrCreatePollyFreeManaged(M);
       assert(PollyFreeManaged && "unable to create polly_freeManaged");
 
-      replaceAllUsesOfWithReally(Free, PollyFreeManaged, Builder);
+      replaceAllUsesAndConstantUses(Free, PollyFreeManaged, Builder);
       Free->eraseFromParent();
     }
 
