@@ -479,6 +479,13 @@ private:
   Value *createLaunchParameters(ppcg_kernel *Kernel, Function *F,
                                 SetVector<Value *> SubtreeValues);
 
+  /// Fail the build if we are sending arguments that are more than 4KB.
+  ///
+  /// CUDA has a size limit of 4 KB for parameters + globals. Make sure that
+  /// we do not send over 4 KB for parameters. If we do, set BuildSuccessful
+  /// to false.
+  void failBuildIfArgsTooLarge(const std::vector<int> &ArgSizes);
+
   /// Create declarations for kernel variable.
   ///
   /// This includes shared memory declarations.
@@ -1712,9 +1719,23 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     Index++;
   }
 
+  failBuildIfArgsTooLarge(ArgSizes);
+
   auto Location = EntryBlock->getTerminator();
   return new BitCastInst(Parameters, Builder.getInt8PtrTy(),
                          Launch + "_params_i8ptr", Location);
+}
+
+void GPUNodeBuilder::failBuildIfArgsTooLarge(const std::vector<int> &ArgSizes) {
+  int TotalArgsBytes = 0;
+  for (int Size : ArgSizes)
+    TotalArgsBytes += Size;
+
+  if (TotalArgsBytes >= 1024 * 4) {
+    BuildSuccessful = 0;
+    errs() << getUniqueScopName(&S)
+           << "Total size of arguments exceeds 4 KB. Bailing out.\n";
+  }
 }
 
 void GPUNodeBuilder::setupKernelSubtreeFunctions(
