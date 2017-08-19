@@ -123,6 +123,8 @@ static void expandConstantExpr(ConstantExpr *Cur, PollyIRBuilder &Builder,
   assert(Cur && "invalid constant expression passed");
 
   Instruction *I = Cur->getAsInstruction();
+  Cur->deleteValue();
+
   Expands.insert(I);
   Parent->setOperand(index, I);
 
