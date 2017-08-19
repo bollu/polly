@@ -127,6 +127,10 @@ static void expandConstantExpr(ConstantExpr *Cur, PollyIRBuilder &Builder,
   Parent->setOperand(index, I);
 
   assert(I && "unable to convert ConstantExpr to Instruction");
+  // Invalidate `Cur` so that no one after this point uses `Cur`. Rather,
+  // they should mutate `I`.
+  Cur = nullptr;
+
   // The things that `Parent` uses (its operands) should be created
   // before `Parent`.
   Builder.SetInsertPoint(Parent);
