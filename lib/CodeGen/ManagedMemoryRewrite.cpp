@@ -134,13 +134,14 @@ static void expandConstantExpr(ConstantExpr *Cur, PollyIRBuilder &Builder,
 
   DEBUG(dbgs() << "Expanding ConstantExpression: " << *Cur
                << " | in Instruction: " << *I << "\n";);
-  for (unsigned i = 0; i < Cur->getNumOperands(); i++) {
-    Value *Op = Cur->getOperand(i);
+  for (unsigned i = 0; i < I->getNumOperands(); i++) {
+    Value *Op = I->getOperand(i);
     assert(isa<Constant>(Op) && "constant must have a constant operand");
 
     if (ConstantExpr *CExprOp = dyn_cast<ConstantExpr>(Op))
       expandConstantExpr(CExprOp, Builder, I, i, Expands);
   }
+
 }
 
 // Edit all uses of `OldVal` to NewVal` in `Inst`. This will rewrite
