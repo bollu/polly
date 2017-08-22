@@ -53,24 +53,9 @@ public:
 
   InlineCost getInlineCost(CallSite CS) override {
     Function *F = CS.getCalledFunction();
-    /*
-    if (F->getName().count("__radiation_rg_MOD_coe") == 0 &&
-            F->getName().count("__radiation_rg_MOD_inv") == 0)
-        return InlineCost::getNever();
 
-      DEBUG(dbgs() << "SKIPPING " << F->getName()
-                   << "because it is a declaration.\n");
-    }
-    */
-    if (F->isDeclaration()) {
+    if (F->isDeclaration())
       return InlineCost::getNever();
-    }
-
-    DEBUG(dbgs() << "\n\nrunning on: " << F->getName() << "\n";);
-    if (!F->getName().count("__radiation_rg_MOD_coe_th") &&  !F->getName().count("__radiation_rg_MOD_coe_so")) {
-        dbgs() << "Unwanted function\n";
-        return InlineCost::getNever();
-    }
 
     PassBuilder PB;
     FunctionAnalysisManager FAM;
@@ -86,107 +71,21 @@ public:
     const bool IsFullyModeledAsScop =
         SD.ValidRegions.count(TopLevelRegion) > 0;
 
-    // Whether the function has a Scop that is a *unique* child of the top-level
-    // region.
-    const bool IsModeledByTopLevelChild = [&] {
-        // If toplevel has more than 1 child, bail out.
-        if (std::distance(TopLevelRegion->begin(), TopLevelRegion->end()) > 1)
-            return false;
-
-        for (auto ScopRegion : SD.ValidRegions) {
-            if (ScopRegion->getParent() == TopLevelRegion) {
+    // Whether the scop contains all the children of the top-level region.
+    const bool IsModeledByTopLevelChildren = [&] {
+        for (auto ScopRegion : SD.ValidRegions)
+            if (ScopRegion->getParent() == TopLevelRegion)
                 return true;
-            }
-        }
         return false;
     }();
 
-    dbgs() << "IsfullyModeledAsScop : " << IsFullyModeledAsScop << " | IsModeledByTopLevelChild " << IsModeledByTopLevelChild << "\n";
-    if (IsFullyModeledAsScop || IsModeledByTopLevelChild) {
-        dbgs() << "Inlined\n";
+    if (IsFullyModeledAsScop || IsModeledByTopLevelChildren)
         return InlineCost::getAlways();
-    }
-
-    dbgs() << "Noinlined\n";
     return InlineCost::getNever();
   }
 
   // Do whatever alwaysinliner does.
   bool runOnSCC(CallGraphSCC &SCC) override { return inlineCalls(SCC); }
-  /*
-  bool runOnSCC(CallGraphSCC &SCC) override {
-    // We do not try to inline non-trivial SCCs because this would lead to
-    // "infinite" inlining if we are not careful.
-    if (SCC.size() > 1)
-      return false;
-    assert(SCC.size() == 1 && "found empty SCC");
-    Function *F = (*SCC.begin())->getFunction();
-
-    // If the function is a nullptr, or the function is a declaration.
-    if (!F)
-      return false;
-
-    // HACK: remove this before upstreaming
-    if (F->getName().count("__radiation_rg_MOD_coe") == 0 &&
-            F->getName().count("__radiation_rg_MOD_inv") == 0) return false;
-
-    if (F->isDeclaration()) {
-      DEBUG(dbgs() << "SKIPPING " << F->getName()
-                   << "because it is a declaration.\n");
-      return false;
-    }
-
-    PassBuilder PB;
-    FunctionAnalysisManager FAM;
-    FAM.registerPass([] { return ScopAnalysis(); });
-    PB.registerFunctionAnalyses(FAM);
-
-    RegionInfo &RI = FAM.getResult<RegionInfoAnalysis>(*F);
-    ScopDetection &SD = FAM.getResult<ScopAnalysis>(*F);
-
-    const auto TopLevelRegion = RI.getTopLevelRegion();
-
-    // Whether the entire function can be modeled as a Scop.
-    const bool IsFullyModeledAsScop =
-        SD.ValidRegions.count(TopLevelRegion) > 0;
-
-    // Whether the function has a Scop that is a *unique* child of the top-level
-    // region.
-    const bool IsModeledByTopLevelChild = [&] {
-        // If toplevel has more than 1 child, bail out.
-        if (std::distance(TopLevelRegion->begin(), TopLevelRegion->end()) > 1)
-            return false;
-
-        for (auto ScopRegion : SD.ValidRegions) {
-            if (ScopRegion->getParent() == TopLevelRegion) {
-                return true;
-            }
-        }
-        return false;
-    }();
-
-    if (IsFullyModeledAsScop || IsModeledByTopLevelChild) {
-      FAM.clear(*F);
-
-      DEBUG(dbgs() << "@ " << F->getName() << " DOES have scop as top level region.\n");
-      F->addFnAttr(llvm::Attribute::AlwaysInline);
-
-      ModuleAnalysisManager MAM;
-      PB.registerModuleAnalyses(MAM);
-
-      ModulePassManager MPM;
-      MPM.addPass(AlwaysInlinerPass());
-      Module *M = F->getParent();
-      assert(M && "Function has illegal module");
-      MPM.run(*M, MAM);
-    } else {
-      DEBUG(dbgs() << F->getName()
-                   << " does NOT have scop as top level region.\n");
-    }
-
-    return false;
-  };
-  */
 
 };
 
