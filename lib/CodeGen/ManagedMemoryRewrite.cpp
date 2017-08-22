@@ -252,6 +252,7 @@ replaceGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &Array,
       Builder.CreateCall(PollyMallocManaged, {ArraySize}, "mem.raw");
   Value *AllocatedMemTyped =
       Builder.CreatePointerCast(AllocatedMemRaw, ElemPtrTy, "mem.typed");
+
   Builder.CreateStore(AllocatedMemTyped, ReplacementToArr);
   Builder.CreateRetVoid();
 
@@ -279,6 +280,36 @@ replaceGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &Array,
   }
 }
 
+static GlobalValue* createManagedMemoryStack(Module &M, const DataLayout &DL) {
+
+  PollyIRBuilder Builder(M.getContext());
+
+  Type *MemoryTy = Builder.getInt1Ty()->getPointerTo();
+
+  GlobalVariable *ManagedMemStackGlobal =
+      cast<GlobalVariable>(M.getOrInsertGlobal("managed.mem.stack", MemoryTy));
+
+  Function *MallocManagedFn = getOrCreatePollyMallocManaged(M);
+  std::string FnName = "managed.mem.stack.constructor";
+  FunctionType *Ty = FunctionType::get(Builder.getVoidTy(), false);
+  const GlobalValue::LinkageTypes Linkage = Function::ExternalLinkage;
+  Function *F = Function::Create(Ty, Linkage, FnName, &M);
+  BasicBlock *Start = BasicBlock::Create(M.getContext(), "entry", F);
+  Builder.SetInsertPoint(Start);
+
+  const uint64_t Size = 300 * 1024 /*kB*/ * 1024 /*mB*/;
+  Value *SizeVal = Builder.getInt64(Size);
+  Value *RawManagedMem = Builder.CreateCall(MallocManagedFn, {SizeVal});
+  Value *BitcastedManagedMem = Builder.CreateBitCast(RawManagedMem, MemoryTy);
+  Builder.CreateStore(BitcastedManagedMem, ManagedMemStackGlobal);
+  Builder.CreateRetVoid();
+
+  const int Priority = 0;
+  appendToGlobalCtors(M, F, Priority, ManagedMemStackGlobal);
+
+  return ManagedMemStackGlobal;
+}
+
 // We return all `allocas` that may need to be converted to a call to
 // cudaMallocManaged.
 static void getAllocasToBeManaged(Function &F,
@@ -302,7 +333,7 @@ static void getAllocasToBeManaged(Function &F,
 }
 
 static void rewriteAllocaAsManagedMemory(AllocaInst *Alloca,
-                                         const DataLayout &DL) {
+                                         const DataLayout &DL, GlobalValue *StackPtrG, uint64_t &Offset) {
   DEBUG(dbgs() << "rewriting: (" << *Alloca << ") to managed mem.\n");
   Module *M = Alloca->getModule();
   assert(M && "Alloca does not have a module");
@@ -310,15 +341,30 @@ static void rewriteAllocaAsManagedMemory(AllocaInst *Alloca,
   PollyIRBuilder Builder(M->getContext());
   Builder.SetInsertPoint(Alloca);
 
-  Value *MallocManagedFn = getOrCreatePollyMallocManaged(*Alloca->getModule());
+  /*
+  Value *MalnlocManagedFn = getOrCreatePollyMallocManaged(*Alloca->getModule());
+  Value *SizeVal = Builder.getInt64(Size);
+  */
+
   const uint64_t Size =
       DL.getTypeAllocSize(Alloca->getType()->getElementType());
-  Value *SizeVal = Builder.getInt64(Size);
-  Value *RawManagedMem = Builder.CreateCall(MallocManagedFn, {SizeVal});
+  Value *GEP = Builder.CreateGEP(StackPtrG, {0, Offset});
+
+  // bump up the stack pointer by how much ever we need to bump it up by.
+  Offset += Size;
+  Value *RawManagedMem = Builder.CreateLoad(GEP, "stack.slice.loaded");
   Value *Bitcasted = Builder.CreateBitCast(RawManagedMem, Alloca->getType());
+
 
   Function *F = Alloca->getFunction();
   assert(F && "Alloca has invalid function");
+
+  for(BasicBlock &BB : *F) {
+      if (!isa<ReturnInst>(BB.getTerminator())) continue;
+      Builder.SetInsertPoint(BB.getTerminator());
+
+
+  }
 
   Bitcasted->takeName(Alloca);
   Alloca->replaceAllUsesWith(Bitcasted);
@@ -400,14 +446,19 @@ public:
     for (GlobalVariable *G : GlobalsToErase)
       G->eraseFromParent();
 
+
     // Rewrite allocas to cudaMallocs if we are asked to do so.
     if (RewriteAllocas) {
+        // Create a stack with managed memory for allocas
+        GlobalValue *ManagedMemStack = createManagedMemoryStack(M, DL);
+
       SmallSet<AllocaInst *, 4> AllocasToBeManaged;
       for (Function &F : M.functions())
         getAllocasToBeManaged(F, AllocasToBeManaged);
 
+      uint64_t Offset = 0;
       for (AllocaInst *Alloca : AllocasToBeManaged)
-        rewriteAllocaAsManagedMemory(Alloca, DL);
+        rewriteAllocaAsManagedMemory(Alloca, DL, ManagedMemStack, Offset);
     }
 
     return true;
