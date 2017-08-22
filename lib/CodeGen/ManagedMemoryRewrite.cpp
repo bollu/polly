@@ -355,11 +355,13 @@ static void rewriteAllocaAsManagedMemory(AllocaInst *Alloca,
     Value *SizeVal = Builder.getInt64(Size);
     RawManagedMem = Builder.CreateCall(MallocManagedFn, {SizeVal});
   } else {
-      errs() << "StackPtrG: " << *StackPtrG << "\n";
+    errs() << "StackPtrG: " << *StackPtrG << "\n";
     Value *StackPtr = Builder.CreateLoad(StackPtrG, "stack.load");
-    Value *StackOffset = Builder.CreatePtrToInt(StackPtr, Builder.getInt64Ty(), "stack.load.ptrtoint");
+    Value *StackOffset = Builder.CreatePtrToInt(StackPtr, Builder.getInt64Ty(),
+                                                "stack.load.ptrtoint");
     errs() << "StackOffset: " << *StackOffset << "\n";
-    StackOffset = Builder.CreateAdd(StackOffset, Builder.getInt64(Offset), "stack.load.ptrtoint.offset");
+    StackOffset = Builder.CreateAdd(StackOffset, Builder.getInt64(Offset),
+                                    "stack.load.ptrtoint.offset");
     errs() << "StackOffset: " << *StackOffset << "\n";
 
     RawManagedMem = Builder.CreateIntToPtr(StackOffset, Alloca->getType());
@@ -389,8 +391,8 @@ static void rewriteAllocaAsManagedMemory(AllocaInst *Alloca,
     Builder.SetInsertPoint(Return);
 
     if (!UseManagedMemStack) {
-        Value *FreeManagedFn = getOrCreatePollyFreeManaged(*M);
-        Builder.CreateCall(FreeManagedFn, {RawManagedMem});
+      Value *FreeManagedFn = getOrCreatePollyFreeManaged(*M);
+      Builder.CreateCall(FreeManagedFn, {RawManagedMem});
     }
   }
 }
