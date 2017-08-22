@@ -31,6 +31,8 @@ extern bool polly::PollyAllowFullFunction;
 
 namespace {
 class ScopInliner : public LegacyInlinerBase {
+private:
+        std::map<Function *, InlineCost> InlineCostCache;
 public:
   static char ID;
 
@@ -48,14 +50,27 @@ public:
           " enabled. "
           " If not, the entry block is not included in the Scop");
     }
-    return true;
+    return LegacyInlinerBase::doInitialization(CG);
+  }
+
+  bool doFinalization(CallGraph &CG) override {
+      InlineCostCache.clear();
+      return LegacyInlinerBase::doFinalization(CG);
   }
 
   InlineCost getInlineCost(CallSite CS) override {
     Function *F = CS.getCalledFunction();
 
-    if (F->isDeclaration())
+    if (!F || F->isDeclaration())
       return InlineCost::getNever();
+
+    DEBUG(dbgs() << "Scop inliner running on: " << F->getName() << " | ");
+
+    std::map<Function *, InlineCost>::iterator It;
+    if ((It = InlineCostCache.find(F)) != InlineCostCache.end()) {
+        DEBUG(dbgs() << "(cached) will inline? " << (bool)It->second << ".\n");
+        return It->second;
+    }
 
     PassBuilder PB;
     FunctionAnalysisManager FAM;
@@ -79,9 +94,28 @@ public:
         return false;
     }();
 
-    if (IsFullyModeledAsScop || IsModeledByTopLevelChildren)
-        return InlineCost::getAlways();
-    return InlineCost::getNever();
+    const InlineCost AnalyzedInlineCost = [&] {
+        if (IsFullyModeledAsScop || IsModeledByTopLevelChildren)
+            return InlineCost::getAlways();
+        return InlineCost::getNever();
+    }();
+
+    assert(InlineCostCache.find(F) == InlineCostCache.end() &&
+            "Cached inlining analysis was not used.");
+    // Can't use InlineCostCache[F] = AnalyzedInlineCost because
+    // copy-ctor of InlineCost has been deleted. Joy.
+    InlineCostCache.insert(std::make_pair(F, AnalyzedInlineCost));
+    DEBUG(dbgs() << "will inline? " << (bool)(AnalyzedInlineCost) << ".\n");
+
+    // If we decided to inline, then invalidate call site.
+    if (AnalyzedInlineCost) {
+        Function *Caller = CS.getCaller();
+        assert(Caller && "Callsite has invalid caller");
+
+        InlineCostCache.erase(Caller);
+    }
+
+    return AnalyzedInlineCost;
   }
 
   // Do whatever alwaysinliner does.
