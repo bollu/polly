@@ -22,6 +22,7 @@
 #include "llvm/IR/PassManager.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Transforms/IPO/AlwaysInliner.h"
+#include "llvm/Transforms/IPO/Inliner.h"
 
 #define DEBUG_TYPE "polly-scop-inliner"
 
@@ -29,11 +30,13 @@ using namespace polly;
 extern bool polly::PollyAllowFullFunction;
 
 namespace {
-class ScopInliner : public CallGraphSCCPass {
+class ScopInliner : public LegacyInlinerBase {
 public:
   static char ID;
 
-  ScopInliner() : CallGraphSCCPass(ID) {}
+  ScopInliner() : LegacyInlinerBase(ID, /*InsertLifetime*/ true) {
+    // initializeAlwaysInlinerLegacyPassPass(*PassRegistry::getPassRegistry());
+  }
 
   bool doInitialization(CallGraph &CG) override {
     if (!polly::PollyAllowFullFunction) {
@@ -48,6 +51,69 @@ public:
     return true;
   }
 
+  InlineCost getInlineCost(CallSite CS) override {
+    Function *F = CS.getCalledFunction();
+    /*
+    if (F->getName().count("__radiation_rg_MOD_coe") == 0 &&
+            F->getName().count("__radiation_rg_MOD_inv") == 0)
+        return InlineCost::getNever();
+
+      DEBUG(dbgs() << "SKIPPING " << F->getName()
+                   << "because it is a declaration.\n");
+    }
+    */
+    if (F->isDeclaration()) {
+      return InlineCost::getNever();
+    }
+
+    DEBUG(dbgs() << "\n\nrunning on: " << F->getName() << "\n";);
+    if (!F->getName().count("__radiation_rg_MOD_coe_th") &&  !F->getName().count("__radiation_rg_MOD_coe_so")) {
+        dbgs() << "Unwanted function\n";
+        return InlineCost::getNever();
+    }
+
+    PassBuilder PB;
+    FunctionAnalysisManager FAM;
+    FAM.registerPass([] { return ScopAnalysis(); });
+    PB.registerFunctionAnalyses(FAM);
+
+    RegionInfo &RI = FAM.getResult<RegionInfoAnalysis>(*F);
+    ScopDetection &SD = FAM.getResult<ScopAnalysis>(*F);
+
+    const auto TopLevelRegion = RI.getTopLevelRegion();
+
+    // Whether the entire function can be modeled as a Scop.
+    const bool IsFullyModeledAsScop =
+        SD.ValidRegions.count(TopLevelRegion) > 0;
+
+    // Whether the function has a Scop that is a *unique* child of the top-level
+    // region.
+    const bool IsModeledByTopLevelChild = [&] {
+        // If toplevel has more than 1 child, bail out.
+        if (std::distance(TopLevelRegion->begin(), TopLevelRegion->end()) > 1)
+            return false;
+
+        for (auto ScopRegion : SD.ValidRegions) {
+            if (ScopRegion->getParent() == TopLevelRegion) {
+                return true;
+            }
+        }
+        return false;
+    }();
+
+    dbgs() << "IsfullyModeledAsScop : " << IsFullyModeledAsScop << " | IsModeledByTopLevelChild " << IsModeledByTopLevelChild << "\n";
+    if (IsFullyModeledAsScop || IsModeledByTopLevelChild) {
+        dbgs() << "Inlined\n";
+        return InlineCost::getAlways();
+    }
+
+    dbgs() << "Noinlined\n";
+    return InlineCost::getNever();
+  }
+
+  // Do whatever alwaysinliner does.
+  bool runOnSCC(CallGraphSCC &SCC) override { return inlineCalls(SCC); }
+  /*
   bool runOnSCC(CallGraphSCC &SCC) override {
     // We do not try to inline non-trivial SCCs because this would lead to
     // "infinite" inlining if we are not careful.
@@ -120,10 +186,8 @@ public:
 
     return false;
   };
+  */
 
-  void getAnalysisUsage(AnalysisUsage &AU) const override {
-    CallGraphSCCPass::getAnalysisUsage(AU);
-  }
 };
 
 } // namespace
