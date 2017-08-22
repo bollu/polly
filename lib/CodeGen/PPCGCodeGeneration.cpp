@@ -1387,11 +1387,27 @@ const std::set<std::string> CUDALibDeviceFunctions = {
     "sqrtf", "copysign", "copysignf", "copysignl", "log",  "logf"};
 
 /// Return the corresponding CUDA libdevice function name for @p F.
+/// Note that this function will try to convert LLVM instrinsics to
+/// libdevice functions. This is because some intrinsics such as `exp`
+/// are not supported by the NVPTX backend.
+/// If this restriction of the backend is lifted, we should refactor our code
+/// so that we use intrinsics whenever possible.
 ///
 /// Return "" if we are not compiling for CUDA.
 std::string getCUDALibDeviceFuntion(Function *F) {
-  if (CUDALibDeviceFunctions.count(F->getName()))
-    return std::string("__nv_") + std::string(F->getName());
+  StringRef FnName = F->getName();
+  // If a function is an intrinsic, try to use the libdevice
+  // version if available. An intrinsic is named:
+  // "llvm.<intrinsicname>.<ty>"
+  // we just want <intrinsicname>
+  if (F->isIntrinsic() && FnName.startswith("llvm.")) {
+    size_t BeginSeparator = FnName.find(".");
+    size_t EndSeparator = FnName.rfind(".");
+    FnName = FnName.slice(BeginSeparator + 1, EndSeparator);
+  }
+
+  if (CUDALibDeviceFunctions.count(FnName))
+    return std::string("__nv_") + std::string(FnName);
 
   return "";
 }
