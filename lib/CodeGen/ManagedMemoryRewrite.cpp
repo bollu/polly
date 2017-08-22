@@ -280,7 +280,7 @@ replaceGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &Array,
   }
 }
 
-static GlobalValue* createManagedMemoryStack(Module &M, const DataLayout &DL) {
+static GlobalValue *createManagedMemoryStack(Module &M, const DataLayout &DL) {
 
   PollyIRBuilder Builder(M.getContext());
 
@@ -292,7 +292,7 @@ static GlobalValue* createManagedMemoryStack(Module &M, const DataLayout &DL) {
   Function *MallocManagedFn = getOrCreatePollyMallocManaged(M);
   std::string FnName = "managed.mem.stack.constructor";
   FunctionType *Ty = FunctionType::get(Builder.getVoidTy(), false);
-  const GlobalValue::LinkageTypes Linkage = Function::ExternalLinkage;
+  const GlobalValue::LinkageTypes Linkage = Function::InternalLinkage;
   Function *F = Function::Create(Ty, Linkage, FnName, &M);
   BasicBlock *Start = BasicBlock::Create(M.getContext(), "entry", F);
   Builder.SetInsertPoint(Start);
@@ -307,6 +307,7 @@ static GlobalValue* createManagedMemoryStack(Module &M, const DataLayout &DL) {
   const int Priority = 0;
   appendToGlobalCtors(M, F, Priority, ManagedMemStackGlobal);
 
+  errs() << "manaaged.mem.stack: " << *ManagedMemStackGlobal << "\n";
   return ManagedMemStackGlobal;
 }
 
@@ -332,8 +333,12 @@ static void getAllocasToBeManaged(Function &F,
   }
 }
 
+static const bool UseManagedMemStack = true;
+
 static void rewriteAllocaAsManagedMemory(AllocaInst *Alloca,
-                                         const DataLayout &DL, GlobalValue *StackPtrG, uint64_t &Offset) {
+                                         const DataLayout &DL,
+                                         GlobalValue *StackPtrG,
+                                         uint64_t &Offset) {
   DEBUG(dbgs() << "rewriting: (" << *Alloca << ") to managed mem.\n");
   Module *M = Alloca->getModule();
   assert(M && "Alloca does not have a module");
@@ -341,29 +346,36 @@ static void rewriteAllocaAsManagedMemory(AllocaInst *Alloca,
   PollyIRBuilder Builder(M->getContext());
   Builder.SetInsertPoint(Alloca);
 
-  /*
-  Value *MalnlocManagedFn = getOrCreatePollyMallocManaged(*Alloca->getModule());
-  Value *SizeVal = Builder.getInt64(Size);
-  */
-
   const uint64_t Size =
       DL.getTypeAllocSize(Alloca->getType()->getElementType());
-  Value *GEP = Builder.CreateGEP(StackPtrG, {0, Offset});
+  Value *RawManagedMem = nullptr;
+  if (!UseManagedMemStack) {
+    Value *MallocManagedFn =
+        getOrCreatePollyMallocManaged(*Alloca->getModule());
+    Value *SizeVal = Builder.getInt64(Size);
+    RawManagedMem = Builder.CreateCall(MallocManagedFn, {SizeVal});
+  } else {
+      errs() << "StackPtrG: " << *StackPtrG << "\n";
+    Value *StackPtr = Builder.CreateLoad(StackPtrG, "stack.load");
+    Value *StackOffset = Builder.CreatePtrToInt(StackPtr, Builder.getInt64Ty(), "stack.load.ptrtoint");
+    errs() << "StackOffset: " << *StackOffset << "\n";
+    StackOffset = Builder.CreateAdd(StackOffset, Builder.getInt64(Offset), "stack.load.ptrtoint.offset");
+    errs() << "StackOffset: " << *StackOffset << "\n";
 
-  // bump up the stack pointer by how much ever we need to bump it up by.
-  Offset += Size;
-  Value *RawManagedMem = Builder.CreateLoad(GEP, "stack.slice.loaded");
+    RawManagedMem = Builder.CreateIntToPtr(StackOffset, Alloca->getType());
+    errs() << "RawManagedMem: " << *RawManagedMem << "\n";
+    Offset += Size;
+  }
+  assert(RawManagedMem && "expected RawManagedMem to be initliased");
   Value *Bitcasted = Builder.CreateBitCast(RawManagedMem, Alloca->getType());
-
 
   Function *F = Alloca->getFunction();
   assert(F && "Alloca has invalid function");
 
-  for(BasicBlock &BB : *F) {
-      if (!isa<ReturnInst>(BB.getTerminator())) continue;
-      Builder.SetInsertPoint(BB.getTerminator());
-
-
+  for (BasicBlock &BB : *F) {
+    if (!isa<ReturnInst>(BB.getTerminator()))
+      continue;
+    Builder.SetInsertPoint(BB.getTerminator());
   }
 
   Bitcasted->takeName(Alloca);
@@ -376,8 +388,10 @@ static void rewriteAllocaAsManagedMemory(AllocaInst *Alloca,
       continue;
     Builder.SetInsertPoint(Return);
 
-    Value *FreeManagedFn = getOrCreatePollyFreeManaged(*M);
-    Builder.CreateCall(FreeManagedFn, {RawManagedMem});
+    if (!UseManagedMemStack) {
+        Value *FreeManagedFn = getOrCreatePollyFreeManaged(*M);
+        Builder.CreateCall(FreeManagedFn, {RawManagedMem});
+    }
   }
 }
 
@@ -446,11 +460,10 @@ public:
     for (GlobalVariable *G : GlobalsToErase)
       G->eraseFromParent();
 
-
     // Rewrite allocas to cudaMallocs if we are asked to do so.
     if (RewriteAllocas) {
-        // Create a stack with managed memory for allocas
-        GlobalValue *ManagedMemStack = createManagedMemoryStack(M, DL);
+      // Create a stack with managed memory for allocas
+      GlobalValue *ManagedMemStack = createManagedMemoryStack(M, DL);
 
       SmallSet<AllocaInst *, 4> AllocasToBeManaged;
       for (Function &F : M.functions())
