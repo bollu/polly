@@ -192,6 +192,85 @@ static void getInstructionUsersOfValue(Value *V,
   }
 }
 
+
+static void
+replaceGlobalVariable(Module &M, const DataLayout &DL, GlobalVariable &GV,
+                   SmallPtrSet<GlobalVariable *, 4> &ReplacedGlobals) {
+    assert(!isa<ArrayType>(GV.getType()->getElementType()));
+
+  Type *GVElemTy = GV.getType()->getElementType();
+
+  const bool OnlyVisibleInsideModule = GV.hasPrivateLinkage() ||
+                                       GV.hasInternalLinkage() ||
+                                       IgnoreLinkageForGlobals;
+  if (!OnlyVisibleInsideModule) {
+    DEBUG(dbgs() << "Not rewriting (" << GV
+                 << ") to managed memory "
+                    "because it could be visible externally. To force rewrite, "
+                    "use -polly-acc-rewrite-ignore-linkage-for-globals.\n");
+    return;
+  }
+
+  if (!GV.hasInitializer() ||
+      !isa<ConstantAggregateZero>(GV.getInitializer())) {
+    DEBUG(dbgs() << "Not rewriting (" << GV
+                 << ") to managed memory "
+                    "because it has an initializer which is "
+                    "not a zeroinitializer.\n");
+    return;
+  }
+
+  // At this point, we have committed to replacing this array.
+  ReplacedGlobals.insert(&GV);
+
+  std::string NewName = GV.getName();
+  NewName += ".toptr";
+  GlobalVariable *Replacement =
+      cast<GlobalVariable>(M.getOrInsertGlobal(NewName, GVElemTy->getPointerTo()));
+  Replacement->setInitializer(ConstantPointerNull::get(GVElemTy->getPointerTo()));
+
+  Function *PollyMallocManaged = getOrCreatePollyMallocManaged(M);
+  std::string FnName = GV.getName();
+  FnName += ".constructor";
+  PollyIRBuilder Builder(M.getContext());
+  FunctionType *Ty = FunctionType::get(Builder.getVoidTy(), false);
+  const GlobalValue::LinkageTypes Linkage = Function::ExternalLinkage;
+  Function *F = Function::Create(Ty, Linkage, FnName, &M);
+  BasicBlock *Start = BasicBlock::Create(M.getContext(), "entry", F);
+  Builder.SetInsertPoint(Start);
+
+  const uint64_t SizeInt = DL.getTypeAllocSize(GVElemTy);
+  Value *Size = Builder.getInt64(SizeInt);
+  Size->setName(".size");
+
+  Value *AllocatedMemRaw =
+      Builder.CreateCall(PollyMallocManaged, {Size}, "mem.raw");
+  Value *AllocatedMemTyped =
+      Builder.CreatePointerCast(AllocatedMemRaw, GVElemTy, "mem.typed");
+  Builder.CreateStore(AllocatedMemTyped, Replacement);
+  Builder.CreateRetVoid();
+
+  const int Priority = 0;
+  appendToGlobalCtors(M, F, Priority, Replacement);
+
+  SmallVector<Instruction *, 4> UserInsts;
+  // Get all instructions that use array. We need to do this weird thing
+  // because `Constant`s that contain this array neeed to be expanded into
+  // instructions so that we can replace their parameters. `Constant`s cannot
+  // be edited easily, so we choose to convert all `Constant`s to
+  // `Instruction`s and handle all of the uses of `Array` uniformly.
+  for (Use &U : GV.uses())
+    getInstructionUsersOfValue(U.getUser(), UserInsts);
+
+  for (Instruction *I : UserInsts) {
+
+    Builder.SetInsertPoint(I);
+    // <ty>** -> <ty>*
+    Value *PtrLoaded = Builder.CreateLoad(Replacement, "ptr.load");
+    rewriteOldValToNew(I, &GV, PtrLoaded, Builder);
+  }
+}
+
 static void
 replaceGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &Array,
                    SmallPtrSet<GlobalVariable *, 4> &ReplacedGlobals) {
@@ -395,8 +474,12 @@ public:
     }
 
     SmallPtrSet<GlobalVariable *, 4> GlobalsToErase;
-    for (GlobalVariable &Global : M.globals())
-      replaceGlobalArray(M, DL, Global, GlobalsToErase);
+    for (GlobalVariable &Global : M.globals()) {
+        if (isa<ArrayType>(Global.getType()->getElementType()))
+            replaceGlobalArray(M, DL, Global, GlobalsToErase);
+        else
+            replaceGlobalVariable(M, DL, Global, GlobalsToErase);
+    }
     for (GlobalVariable *G : GlobalsToErase)
       G->eraseFromParent();
 
