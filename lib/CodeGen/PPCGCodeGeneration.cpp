@@ -1383,11 +1383,11 @@ isl_bool collectReferencesInGPUStmt(__isl_keep isl_ast_node *Node, void *User) {
 
 /// A list of functions that are available in NVIDIA's libdevice.
 const std::set<std::string> CUDALibDeviceFunctions = {
-    "exp",   "expf",     "expl",      "cos",       "cosf", "sqrt",
-    "sqrtf", "copysign", "copysignf", "copysignl", "log",  "logf"};
+    "exp",      "expf",      "expl",      "cos", "cosf", "sqrt", "sqrtf",
+    "copysign", "copysignf", "copysignl", "log", "logf", "powi"};
 
 /// A list of intrinsics that are unsupported by the NVPTX backend.
-const std::set<std::string> NVPTXUnsupportedIntrinsics = {"exp"};
+const std::set<std::string> NVPTXUnsupportedIntrinsics = {"exp", "powi"};
 
 /// Return <intrinsicname> from the full  "llvm.<intrinsicname>.<ty>" name.
 ///
@@ -1441,7 +1441,7 @@ static bool isValidFunctionInKernel(llvm::Function *F, bool AllowLibDevice) {
 
   return F->isIntrinsic() &&
          (Name.startswith("llvm.sqrt") || Name.startswith("llvm.fabs") ||
-          Name.startswith("llvm.copysign") || Name.startswith("llvm.powi"));
+          Name.startswith("llvm.copysign"));
 }
 
 /// Do not take `Function` as a subtree value.
