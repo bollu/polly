@@ -35,6 +35,7 @@
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/IR/LegacyPassManager.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/Linker/Linker.h"
@@ -136,8 +137,16 @@ static void expandConstantExpr(ConstantExpr *Cur, PollyIRBuilder &Builder,
 
   // The things that `Parent` uses (its operands) should be created
   // before `Parent`.
-  Builder.SetInsertPoint(Parent);
-  Builder.Insert(I);
+  // TODO: make a separate test case for this.
+  if (auto Phi = dyn_cast<PHINode>(Parent)) {
+      errs() << "**** INSERTING INTO PHI NODE!****\n";
+      BasicBlock *BB = Phi->getIncomingBlock(index);
+      Builder.SetInsertPoint(BB->getTerminator());
+      Builder.Insert(I);
+  } else {
+      Builder.SetInsertPoint(Parent);
+      Builder.Insert(I);
+  }
 
   for (unsigned i = 0; i < I->getNumOperands(); i++) {
     Value *Op = I->getOperand(i);
@@ -190,6 +199,20 @@ static void getInstructionUsersOfValue(Value *V,
     for (Use &CUse : C->uses())
       getInstructionUsersOfValue(CUse.getUser(), Owners);
   }
+}
+
+/// Look for `Needle` in `Haystack` and its operands, recursing on `Haystack`.
+static bool ValueContainsValue(Value *Haystack, Value *Needle) {
+    if (Haystack == Needle) return true;
+
+    if (User *U = dyn_cast<User>(Haystack)) {
+        for (unsigned i = 0; i < U->getNumOperands(); i++) {
+            Value *Op = U->getOperand(i);
+            if (ValueContainsValue(Op, Needle)) return true; 
+        }
+    }
+
+  return false;
 }
 
 
@@ -246,7 +269,7 @@ replaceGlobalVariable(Module &M, const DataLayout &DL, GlobalVariable &GV,
   Value *AllocatedMemRaw =
       Builder.CreateCall(PollyMallocManaged, {Size}, "mem.raw");
   Value *AllocatedMemTyped =
-      Builder.CreatePointerCast(AllocatedMemRaw, GVElemTy, "mem.typed");
+      Builder.CreatePointerCast(AllocatedMemRaw, GVElemTy->getPointerTo(), "mem.typed");
   Builder.CreateStore(AllocatedMemTyped, Replacement);
   Builder.CreateRetVoid();
 
@@ -264,10 +287,31 @@ replaceGlobalVariable(Module &M, const DataLayout &DL, GlobalVariable &GV,
 
   for (Instruction *I : UserInsts) {
 
-    Builder.SetInsertPoint(I);
-    // <ty>** -> <ty>*
-    Value *PtrLoaded = Builder.CreateLoad(Replacement, "ptr.load");
-    rewriteOldValToNew(I, &GV, PtrLoaded, Builder);
+      if (auto Phi = dyn_cast<PHINode>(I)) { 
+          errs() << "\n\n";
+          errs() << "Instruction:\n*" << *I << "Is a phi node that uses:\n" << GV << "\n";
+          // TODO: Store `Use` in `UserInstrs` because this will let us immediately
+          // access the PHI node.
+          for(unsigned i = 0; i < Phi->getNumIncomingValues(); i++) {
+              if (!ValueContainsValue(Phi->getIncomingValue(i), &GV)) continue;
+              errs() << i << " is index containing GV\n";
+
+              // Builder.SetInsertPoint(BB->getTerminator());
+              
+              // <ty>** -> <ty>*
+              Value *PtrLoaded = Builder.CreateLoad(Replacement, std::string(GV.getName()) + "ptr.load");
+              rewriteOldValToNew(I, &GV, PtrLoaded, Builder);
+              errs() << "Inst BB Now: " << *(I->getParent()) << "\n";
+              BasicBlock *BB = Phi->getIncomingBlock(i);
+              errs() << "Prev BB Now: " << *BB << "\n";
+          }
+      } else {
+
+        Builder.SetInsertPoint(I);
+        // <ty>** -> <ty>*
+        Value *PtrLoaded = Builder.CreateLoad(Replacement, "ptr.load");
+        rewriteOldValToNew(I, &GV, PtrLoaded, Builder);
+      }
   }
 }
 
