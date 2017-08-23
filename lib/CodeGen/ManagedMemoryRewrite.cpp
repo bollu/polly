@@ -296,13 +296,12 @@ replaceGlobalVariable(Module &M, const DataLayout &DL, GlobalVariable &GV,
               if (!ValueContainsValue(Phi->getIncomingValue(i), &GV)) continue;
               errs() << i << " is index containing GV\n";
 
-              // Builder.SetInsertPoint(BB->getTerminator());
-              
               // <ty>** -> <ty>*
+              BasicBlock *BB = Phi->getIncomingBlock(i);
+              Builder.SetInsertPoint(BB->getTerminator());
               Value *PtrLoaded = Builder.CreateLoad(Replacement, std::string(GV.getName()) + "ptr.load");
               rewriteOldValToNew(I, &GV, PtrLoaded, Builder);
               errs() << "Inst BB Now: " << *(I->getParent()) << "\n";
-              BasicBlock *BB = Phi->getIncomingBlock(i);
               errs() << "Prev BB Now: " << *BB << "\n";
           }
       } else {
