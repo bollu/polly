@@ -1387,15 +1387,13 @@ const std::set<std::string> CUDALibDeviceFunctions = {
     "sqrtf", "copysign", "copysignf", "copysignl", "log",  "logf"};
 
 /// A list of intrinsics that are unsupported by the NVPTX backend.
-const std::set<std::string> NVPTXUnsupportedIntrinsics = {
-    "exp"
-};
+const std::set<std::string> NVPTXUnsupportedIntrinsics = {"exp"};
 
 /// Return <intrinsicname> from the full  "llvm.<intrinsicname>.<ty>" name.
 ///
 /// Return "" if function is not an intrinsic.
 std::string getStrippedIntrinsicName(const Function *F) {
-    assert(F && "invalid function pointer");
+  assert(F && "invalid function pointer");
   const StringRef FnName = F->getName();
 
   if (F->isIntrinsic() && FnName.startswith("llvm.")) {
@@ -1404,7 +1402,6 @@ std::string getStrippedIntrinsicName(const Function *F) {
     return std::string(FnName.slice(BeginSeparator + 1, EndSeparator));
   }
   return "";
-
 }
 
 /// Return the corresponding CUDA libdevice function name for @p F.
@@ -1418,12 +1415,12 @@ std::string getStrippedIntrinsicName(const Function *F) {
 /// Return "" if we are not compiling for CUDA.
 std::string getCUDALibDeviceFuntion(Function *F) {
   const std::string FnName = [&] {
-      const std::string IntrinsicName = getStrippedIntrinsicName(F);
-      if (NVPTXUnsupportedIntrinsics.count(IntrinsicName))
-          return IntrinsicName;
+    const std::string IntrinsicName = getStrippedIntrinsicName(F);
+    if (NVPTXUnsupportedIntrinsics.count(IntrinsicName))
+      return IntrinsicName;
 
-      return std::string(F->getName());
-  } ();
+    return std::string(F->getName());
+  }();
 
   if (CUDALibDeviceFunctions.count(FnName))
     return "__nv_" + FnName;
