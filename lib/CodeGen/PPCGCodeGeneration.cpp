@@ -1404,12 +1404,14 @@ static bool isValidFunctionInKernel(llvm::Function *F, bool AllowLibDevice) {
   // "llvm.copysign".
   const StringRef Name = F->getName();
 
+  /*
   if (AllowLibDevice && getCUDALibDeviceFuntion(F).length() > 0)
     return true;
+    */
 
   return F->isIntrinsic() &&
          (Name.startswith("llvm.sqrt") || Name.startswith("llvm.fabs") ||
-          Name.startswith("llvm.copysign") || Name.startswith("llvm.powi"));
+          Name.startswith("llvm.copysign"));
 }
 
 /// Do not take `Function` as a subtree value.
@@ -1500,7 +1502,7 @@ GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
   SetVector<Value *> ValidSubtreeValues(ValidSubtreeValuesIt.begin(),
                                         ValidSubtreeValuesIt.end());
 
-  bool AllowCUDALibDevice = Arch == GPUArch::NVPTX64;
+  bool AllowCUDALibDevice = Arch == GPUArch::NVPTX64 && false;
 
   SetVector<Function *> ValidSubtreeFunctions(
       getFunctionsFromRawSubtreeValues(SubtreeValues, AllowCUDALibDevice));
