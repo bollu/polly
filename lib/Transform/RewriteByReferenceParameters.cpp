@@ -16,6 +16,7 @@
 
 #include "polly/LinkAllPasses.h"
 #include "llvm/IR/Instruction.h"
+#include "llvm/IR/Operator.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/PassManager.h"
 
@@ -51,10 +52,17 @@ public:
 
     // We currently match for a very specific function. In case this proves
     // useful, we can make this code dependent on readonly metadata.
-    if (!F->hasName() || F->getName() != "_gfortran_transfer_integer_write")
+    if (!F->hasName())
+        return;
+
+    if(F->getName() != "_gfortran_transfer_integer_write" &&
+            F->getName() != "_gfortran_transfer_real_write" &&
+            F->getName() != "_gfortran_transfer_character_write" &&
+            F->getName() != "_gfortran_st_write_done" && 
+            F->getName() != "_gfortran_st_write")
       return;
 
-    auto *BitCast = dyn_cast<BitCastInst>(Call->getOperand(1));
+    auto *BitCast = dyn_cast<BitCastOperator>(Call->getOperand(1));
 
     if (!BitCast)
       return;
