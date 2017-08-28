@@ -24,8 +24,8 @@
 
 ; Powi and exp cannot be lowered directly. Rather, we expect them to be
 ; lowered by libdevice.
-; KERNEL-IR: %p_powi = tail call float @__nv_powi(float %p_logf, i32 2)
-; KERNEL-IR: %p_exp = tail call float @__nv_exp(float %p_powi)
+; KERNEL-IR: %p_powi = tail call float @__nv_powif(float %p_logf, i32 2)
+; KERNEL-IR: %p_exp = tail call float @__nv_expf(float %p_powi)
 
 ; Check that kernel launch is generated in host IR.
 ; the declare would not be generated unless a call to a kernel exists.
