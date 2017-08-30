@@ -759,6 +759,7 @@ isl::basic_map MemoryAccess::createBasicAccessMap(ScopStmt *Statement) {
 // constraints is the set of constraints that needs to be assumed to ensure such
 // statement instances are never executed.
 void MemoryAccess::assumeNoOutOfBound() {
+  errs() << __PRETTY_FUNCTION__ << "\n";
   if (PollyIgnoreInbounds)
     return;
   auto *SAI = getScopArrayInfo();
@@ -965,6 +966,7 @@ static bool isDivisible(const SCEV *Expr, unsigned Size, ScalarEvolution &SE) {
 }
 
 void MemoryAccess::buildAccessRelation(const ScopArrayInfo *SAI) {
+  errs() << "@@@" << __PRETTY_FUNCTION__ << "\n";
   assert(AccessRelation.is_null() && "AccessRelation already built");
 
   // Initialize the invalid domain which describes all iterations for which the
@@ -1070,7 +1072,69 @@ raw_ostream &polly::operator<<(raw_ostream &OS,
   return OS;
 }
 
-void MemoryAccess::setFortranArrayDescriptor(Value *FAD) { this->FAD = FAD; }
+Value *getFADFromOffset(Value *Val) {
+  // This is begging for (>>=). Or even Rusts' .?
+
+  LoadInst *Load = dyn_cast<LoadInst>(Val);
+  if (!Load)
+    return nullptr;
+
+  GEPOperator *GEP = dyn_cast<GEPOperator>(Load->getPointerOperand());
+  if (!GEP)
+    return nullptr;
+
+  dbgs() << __PRETTY_FUNCTION__ << "\n"
+         << *Val << "Check that this is actually an offset value.\n";
+  return GEP->getPointerOperand();
+};
+void MemoryAccess::setFortranArrayDescriptor(Value *FAD) {
+  this->FAD = FAD;
+
+  errs() << "@@@@" << __PRETTY_FUNCTION__ << "\n";
+  this->dump();
+  errs() << "\n\n";
+
+  assert(getNumSubscripts() >= 1 &&
+         "fortran array mem access has 0 subscripts");
+
+  const auto *InnermostSub =
+      dyn_cast<SCEVAddExpr>(Subscripts[getNumSubscripts() - 1]);
+  if (!InnermostSub)
+    return;
+
+  errs() << "InnermostSub: " << *InnermostSub << "\n";
+  errs() << "accessInst: " << this->getAccessRelation() << "\n";
+
+  const SCEVUnknown *Offset;
+  const SCEV *InnermostSubWithoutOffset;
+  std::tie(Offset, InnermostSubWithoutOffset) =
+      [&InnermostSub, &FAD]() -> std::pair<const SCEVUnknown *, const SCEV *> {
+    if (InnermostSub->getNumOperands() != 2)
+      return std::make_pair(nullptr, nullptr);
+    for (int i = 0; i < 2; i++) {
+      const SCEV *Op = InnermostSub->getOperand(i);
+      if (!isa<SCEVUnknown>(Op))
+        continue;
+      Value *PossibleOffset = cast<SCEVUnknown>(Op)->getValue();
+      Value *PossibleFAD = getFADFromOffset(PossibleOffset);
+      const SCEV *OtherOp =
+          i == 0 ? InnermostSub->getOperand(1) : InnermostSub->getOperand(0);
+      if (PossibleFAD == FAD) {
+        return std::make_pair(cast<SCEVUnknown>(Op), OtherOp);
+      }
+    }
+    return std::make_pair(nullptr, nullptr);
+  }();
+
+  if (!Offset)
+    return;
+  assert(InnermostSubWithoutOffset);
+  errs() << "Found Offset: " << *Offset << "\n";
+  errs() << " innermost sub without offset: " << *InnermostSubWithoutOffset
+         << "\n";
+  Subscripts[getNumSubscripts() - 1] = InnermostSubWithoutOffset;
+  this->OptionalOffset = Offset;
+}
 
 void MemoryAccess::print(raw_ostream &OS) const {
   switch (AccType) {
@@ -1091,6 +1155,9 @@ void MemoryAccess::print(raw_ostream &OS) const {
     OS << "[Fortran array descriptor: " << FAD->getName();
     OS << "] ";
   };
+
+  if (OptionalOffset)
+    OS << "[Innermost dimension Offset: " << **OptionalOffset << "]";
 
   OS << "[Scalar: " << isScalarKind() << "]\n";
   OS.indent(16) << getOriginalAccessRelationStr() << ";\n";

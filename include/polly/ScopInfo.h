@@ -631,6 +631,10 @@ private:
   /// Subscript expression for each dimension.
   SmallVector<const SCEV *, 4> Subscripts;
 
+  /// Innermost dimension can have an offset added to it. This optional
+  /// tracks that offset
+  Optional<const SCEVUnknown *> OptionalOffset;
+
   /// Relation from statement instances to the accessed array elements.
   ///
   /// In the common case this relation is a function that maps a set of loop
