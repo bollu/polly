@@ -21,7 +21,7 @@ module asm "\09.ident\09\22GCC: (GNU) 4.6.4 LLVM: 3.3.1\22"
 @__src_sso_MOD_zfi = external unnamed_addr global %"struct.array2_real(kind=8)", align 32
 
 ; Function Attrs: nounwind uwtable
-define void @__src_sso_MOD_sso(i32* noalias %nproma, i32* noalias %ke, i32* noalias %ke1, i32* noalias %ipstart, i32* noalias %ipend, [0 x double]* noalias %ppf, [0 x double]* noalias %pph, [0 x double]* noalias %pfif, [0 x double]* noalias %pt, [0 x double]* noalias %pu, [0 x double]* noalias %pv, [0 x double]* noalias %hsurf, [0 x double]* noalias %psso_stdh, [0 x double]* noalias %psso_gamma, [0 x double]* noalias %psso_theta, [0 x double]* noalias %psso_sigma, double* noalias %pdt, i32* noalias %knstep, i32* noalias %ldebug, [0 x double]* noalias %pdu_sso, [0 x double]* noalias %pdv_sso, [0 x double]* noalias %pdt_sso, [0 x double]* noalias %pustr_sso, [0 x double]* noalias %pvstr_sso, [0 x double]* noalias %pvdis_sso) unnamed_addr #0 {
+define void @__src_sso_MOD_sso(i32* noalias %ipstart, i32* noalias %ipend) unnamed_addr #0 {
 entry:
   br label %entry.split
 
