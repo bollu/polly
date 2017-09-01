@@ -7,6 +7,7 @@
 ; RUN:     -polly-use-llvm-names \
 ; RUN:     < %s
 
+; ModuleID = '1-fortran-array-with-invariant-load-hoisting-fails-ppcg-codegen.ll'
 source_filename = "linked.inlined.s"
 target datalayout = "e-p:64:64:64-S128-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f16:16:16-f32:32:32-f64:64:64-f128:128:128-v64:64:64-v128:128:128-a0:0:64-s0:64:64-f80:128:128-n8:16:32:64"
 target triple = "x86_64-unknown-linux-gnu"
@@ -32,36 +33,36 @@ entry.split:                                      ; preds = %entry
   br label %"3"
 
 "3":                                              ; preds = %"6", %"3.preheader"
-  %0 = load i32, i32* %ipstart, align 4
-  %1 = load i32, i32* %ipend, align 4
-  %2 = icmp sgt i32 %0, %1
-  br i1 %2, label %"6", label %"4.preheader"
+  %tmp = load i32, i32* %ipstart, align 4
+  %tmp1 = load i32, i32* %ipend, align 4
+  %tmp2 = icmp sgt i32 %tmp, %tmp1
+  br i1 %tmp2, label %"6", label %"4.preheader"
 
 "4.preheader":                                    ; preds = %"3"
   br label %"4"
 
 "4":                                              ; preds = %"4", %"4.preheader"
-  %3 = phi i32 [ %20, %"4" ], [ %0, %"4.preheader" ]
-  %4 = sext i32 %3 to i64
-  %5 = load double*, double** bitcast (%"struct.array1_real(kind=8)"* @__src_sso_MOD_zfis to double**), align 32
-  %6 = load i64, i64* getelementptr inbounds (%"struct.array1_real(kind=8)", %"struct.array1_real(kind=8)"* @__src_sso_MOD_zfis, i64 0, i32 1), align 8
-  %7 = add i64 %6, %4
-  %8 = getelementptr double, double* %5, i64 %7
-  store double fmul (double undef, double undef), double* %8, align 8
-  %9 = load double*, double** bitcast (%"struct.array2_real(kind=8)"* @__src_sso_MOD_zfi to double**), align 32
-  %10 = load i64, i64* getelementptr inbounds (%"struct.array2_real(kind=8)", %"struct.array2_real(kind=8)"* @__src_sso_MOD_zfi, i64 0, i32 1), align 8
-  %11 = add i64 %10, %4
-  %12 = load double*, double** bitcast (%"struct.array1_real(kind=8)"* @__src_sso_MOD_zfis to double**), align 32
-  %13 = load i64, i64* getelementptr inbounds (%"struct.array1_real(kind=8)", %"struct.array1_real(kind=8)"* @__src_sso_MOD_zfis, i64 0, i32 1), align 8
-  %14 = add i64 %13, %4
-  %15 = getelementptr double, double* %12, i64 %14
-  %16 = load double, double* %15, align 8
-  %17 = fsub double undef, %16
-  %18 = getelementptr double, double* %9, i64 %11
-  store double %17, double* %18, align 8
-  %19 = icmp eq i32 %3, %1
-  %20 = add i32 %3, 1
-  br i1 %19, label %"6.loopexit", label %"4"
+  %tmp3 = phi i32 [ %tmp20, %"4" ], [ %tmp, %"4.preheader" ]
+  %tmp4 = sext i32 %tmp3 to i64
+  %tmp5 = load double*, double** bitcast (%"struct.array1_real(kind=8)"* @__src_sso_MOD_zfis to double**), align 32
+  %tmp6 = load i64, i64* getelementptr inbounds (%"struct.array1_real(kind=8)", %"struct.array1_real(kind=8)"* @__src_sso_MOD_zfis, i64 0, i32 1), align 8
+  %tmp7 = add i64 %tmp6, %tmp4
+  %tmp8 = getelementptr double, double* %tmp5, i64 %tmp7
+  store double fmul (double undef, double undef), double* %tmp8, align 8
+  %tmp9 = load double*, double** bitcast (%"struct.array2_real(kind=8)"* @__src_sso_MOD_zfi to double**), align 32
+  %tmp10 = load i64, i64* getelementptr inbounds (%"struct.array2_real(kind=8)", %"struct.array2_real(kind=8)"* @__src_sso_MOD_zfi, i64 0, i32 1), align 8
+  %tmp11 = add i64 %tmp10, %tmp4
+  %tmp12 = load double*, double** bitcast (%"struct.array1_real(kind=8)"* @__src_sso_MOD_zfis to double**), align 32
+  %tmp13 = load i64, i64* getelementptr inbounds (%"struct.array1_real(kind=8)", %"struct.array1_real(kind=8)"* @__src_sso_MOD_zfis, i64 0, i32 1), align 8
+  %tmp14 = add i64 %tmp13, %tmp4
+  %tmp15 = getelementptr double, double* %tmp12, i64 %tmp14
+  %tmp16 = load double, double* %tmp15, align 8
+  %tmp17 = fsub double undef, %tmp16
+  %tmp18 = getelementptr double, double* %tmp9, i64 %tmp11
+  store double %tmp17, double* %tmp18, align 8
+  %tmp19 = icmp eq i32 %tmp3, %tmp1
+  %tmp20 = add i32 %tmp3, 1
+  br i1 %tmp19, label %"6.loopexit", label %"4"
 
 "6.loopexit":                                     ; preds = %"4"
   br label %"6"
