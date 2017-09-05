@@ -18,6 +18,8 @@
 #include "llvm/PassSupport.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Transforms/Scalar.h"
+#include "llvm/Transforms/Scalar/GVN.h"
+
 #define DEBUG_TYPE "polly-cleanup"
 
 using namespace llvm;
@@ -47,7 +49,7 @@ public:
 
     // TODO: How to make parent passes discoverable?
     // TODO: Should be sensitive to compiler options in PassManagerBuilder, to
-    // which wo do not have access here.
+    // which we do not have access here.
     FPM->add(createScopedNoAliasAAWrapperPass());
     FPM->add(createTypeBasedAAWrapperPass());
     FPM->add(createAAResultsWrapperPass());
@@ -68,6 +70,7 @@ public:
     FPM->add(createCFGSimplificationPass());
     FPM->add(createReassociatePass());
     FPM->add(createLoopRotatePass());
+    FPM->add(createGVNPass());
     FPM->add(createLICMPass());
     FPM->add(createLoopUnswitchPass());
     FPM->add(createCFGSimplificationPass());
