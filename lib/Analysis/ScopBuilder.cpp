@@ -184,6 +184,48 @@ bool ScopBuilder::buildAccessMultiDimFixed(MemAccInst Inst, Loop *L) {
   return true;
 }
 
+bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst, Loop *L) {
+  auto *CI = dyn_cast_or_null<CallInst>(Inst);
+
+  if (CI && isPollyAbstractMatrixCall(*CI))
+      return true;
+
+  Value *Val = Inst.getValueOperand();
+  Type *ElementType = Val->getType();
+  Value *Address = Inst.getPointerOperand();
+
+  CI = dyn_cast<CallInst>(Address);
+  if (!CI)
+    return false;
+
+  if (CI && !isPollyAbstractMatrixCall(*CI))
+      return false;
+
+  enum MemoryAccess::AccessType AccType =
+      isa<LoadInst>(Inst) ? MemoryAccess::READ : MemoryAccess::MUST_WRITE;
+
+  std::vector<const SCEV *> Subscripts;
+  std::vector<const SCEV *> SizesSCEV;
+
+  bool First = true;
+  Value *BasePtr;
+
+  for (auto &Op : CI->arg_operands()) {
+    if (First) {
+      First = false;
+      BasePtr = Op;
+      continue;
+    }
+    Subscripts.push_back(SE.getSCEV(Op));
+    SizesSCEV.push_back(SE.getConstant(llvm::Type::getInt64Ty(CI->getContext()),
+                        INT64_MAX));
+  }
+
+  addArrayAccess(Inst, AccType, BasePtr, ElementType, true,
+                 Subscripts, SizesSCEV, Val);
+  return true;
+}
+
 bool ScopBuilder::buildAccessMultiDimParam(MemAccInst Inst, Loop *L) {
   if (!PollyDelinearize)
     return false;
@@ -385,6 +427,8 @@ void ScopBuilder::buildAccessSingleDim(MemAccInst Inst, Loop *L) {
 }
 
 void ScopBuilder::buildMemoryAccess(MemAccInst Inst, Loop *L) {
+  if (buildAccessPollyAbstractMatrix(Inst, L))
+    return;
 
   if (buildAccessMemIntrinsic(Inst, L))
     return;

@@ -584,3 +584,15 @@ llvm::Loop *polly::getFirstNonBoxedLoopFor(llvm::BasicBlock *BB,
   Loop *L = LI.getLoopFor(BB);
   return getFirstNonBoxedLoopFor(L, LI, BoxedLoops);
 }
+
+bool polly::isPollyAbstractMatrixCall(CallInst &CI) {
+  Function *Fn = CI.getCalledFunction();
+  if (Fn->getName().count("__polly_get_abstract_matrix_ptr"))
+    return true;
+
+  return false;
+}
+
+bool polly::isPollyCall(CallInst &CI) {
+  return isPollyAbstractMatrixCall(CI);
+}

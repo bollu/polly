@@ -524,6 +524,9 @@ bool ScopDetection::isValidCFG(BasicBlock &BB, bool IsLoopBranch,
 
 bool ScopDetection::isValidCallInst(CallInst &CI,
                                     DetectionContext &Context) const {
+  if (isPollyCall(CI))
+    return true;
+
   if (CI.doesNotReturn())
     return false;
 
@@ -900,6 +903,10 @@ bool ScopDetection::isValidAccess(Instruction *Inst, const SCEV *AF,
   // FIXME: Think about allowing IntToPtrInst
   if (IntToPtrInst *Inst = dyn_cast<IntToPtrInst>(BV))
     return invalid<ReportIntToPtr>(Context, /*Assert=*/true, Inst);
+
+  auto CI = dyn_cast<CallInst>(BV);
+  if (CI && isPollyAbstractMatrixCall(*CI))
+    return true;
 
   // Check that the base address of the access is invariant in the current
   // region.

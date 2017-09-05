@@ -83,6 +83,8 @@ class ScopBuilder {
   /// @returns True if the access could be built, False otherwise.
   bool buildAccessMemIntrinsic(MemAccInst Inst, Loop *L);
 
+  bool buildAccessPollyAbstractMatrix(MemAccInst Inst, Loop *L);
+
   /// Try to build a MemoryAccess for a call instruction.
   ///
   /// @param Inst       The call instruction that access the memory

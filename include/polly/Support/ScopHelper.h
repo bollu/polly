@@ -32,6 +32,7 @@ class Pass;
 class DominatorTree;
 class RegionInfo;
 class GetElementPtrInst;
+class CallInst;
 } // namespace llvm
 
 namespace polly {
@@ -454,5 +455,8 @@ llvm::Loop *getFirstNonBoxedLoopFor(llvm::Loop *L, llvm::LoopInfo &LI,
 // @param Boxed Loops   Set of Boxed Loops we get from the SCoP.
 llvm::Loop *getFirstNonBoxedLoopFor(llvm::BasicBlock *BB, llvm::LoopInfo &LI,
                                     const BoxedLoopsSetTy &BoxedLoops);
+
+bool isPollyAbstractMatrixCall(llvm::CallInst &CI);
+bool isPollyCall(llvm::CallInst &CI);
 } // namespace polly
 #endif
