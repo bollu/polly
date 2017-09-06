@@ -25,6 +25,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/Optional.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
@@ -109,6 +110,87 @@ enum AssumptionKind {
   INFINITELOOP,
   INVARIANTLOAD,
   DELINEARIZATION,
+};
+
+// Abstract over a notion of the shape of an array:
+// Once can compute indeces using both sizes and strides.
+class ShapeInfo {
+private:
+  using SCEVArrayTy = SmallVector<const SCEV *, 4>;
+  using SCEVArrayRefTy = ArrayRef<const SCEV *>;
+
+  using OptionalSCEVArrayTy = Optional<SCEVArrayTy>;
+  using OptionalSCEVArrayRefTy = Optional<SCEVArrayRefTy>;
+
+  llvm::Optional<SmallVector<const SCEV *, 4>> Sizes;
+  llvm::Optional<SmallVector<const SCEV *, 4>> Strides;
+
+  ShapeInfo(Optional<ArrayRef<const SCEV *>> SizesRef,
+            Optional<ArrayRef<const SCEV *>> StridesRef) {
+    // Can check for XOR
+    assert(bool(SizesRef) || bool(StridesRef));
+    assert(!(bool(SizesRef) && bool(StridesRef)));
+
+    if (SizesRef)
+      Sizes =
+          OptionalSCEVArrayTy(SCEVArrayTy(SizesRef->begin(), SizesRef->end()));
+
+    if (StridesRef)
+      Strides = OptionalSCEVArrayTy(
+          SCEVArrayTy(StridesRef->begin(), StridesRef->end()));
+  }
+
+  ShapeInfo(NoneType) : Sizes(None), Strides(None) {}
+
+public:
+  static ShapeInfo fromSizes(ArrayRef<const SCEV *> Sizes) {
+    return ShapeInfo(OptionalSCEVArrayRefTy(Sizes), None);
+  }
+
+  static ShapeInfo fromStrides(ArrayRef<const SCEV *> Strides) {
+    return ShapeInfo(None, OptionalSCEVArrayRefTy(Strides));
+  }
+
+  static ShapeInfo none() { return ShapeInfo(None); }
+
+  unsigned getNumberOfDimensions() const {
+    // assert(isInitialized());
+    if (Sizes)
+      return Sizes->size();
+    else
+      return 0;
+
+    assert(Strides);
+    return Strides->size();
+  }
+
+  /// Set the sizes of the Shape. It checks the invariant
+  /// That this shape does not have strides.
+  void setSizes(ArrayRef<const SCEV *> &&NewSizes) {
+    errs() << __PRETTY_FUNCTION__ << "\n";
+    assert(!bool(Strides));
+
+    if (!bool(Sizes)) {
+      errs() << "Initializing sizes();\n";
+      Sizes = {};
+    }
+
+    auto S = sizes();
+    S.clear();
+    S.insert(S.begin(), NewSizes.begin(), NewSizes.end());
+  }
+
+  const SmallVector<const SCEV *, 4> &sizes() const {
+    assert(!bool(Strides));
+    return Sizes.getValue();
+  }
+
+  bool isInitialized() const { return bool(Sizes) || bool(Strides); }
+
+  const SmallVector<const SCEV *, 4> &strides() const {
+    assert(!bool(Sizes));
+    return Strides.getValue();
+  }
 };
 
 /// Enum to distinguish between assumptions and restrictions.
