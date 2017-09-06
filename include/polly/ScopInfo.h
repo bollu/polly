@@ -185,6 +185,11 @@ public:
     return Sizes.getValue();
   }
 
+  SmallVector<const SCEV *, 4> &sizes_mut() {
+    assert(!bool(Strides));
+    return Sizes.getValue();
+  }
+
   bool isInitialized() const { return bool(Sizes) || bool(Strides); }
 
   const SmallVector<const SCEV *, 4> &strides() const {
@@ -673,7 +678,7 @@ private:
   Type *ElementType;
 
   /// Size of each dimension of the accessed array.
-  SmallVector<const SCEV *, 4> Sizes;
+  ShapeInfo Shape;
   // @}
 
   // Properties describing the accessed element.
@@ -841,10 +846,10 @@ public:
   /// @param IsAffine   Whether the subscripts are affine expressions.
   /// @param Kind       The kind of memory accessed.
   /// @param Subscripts Subscript expressions
-  /// @param Sizes      Dimension lengths of the accessed array.
+  /// @param ShapeInfo  Shape of the accessed array.
   MemoryAccess(ScopStmt *Stmt, Instruction *AccessInst, AccessType AccType,
                Value *BaseAddress, Type *ElemType, bool Affine,
-               ArrayRef<const SCEV *> Subscripts, ArrayRef<const SCEV *> Sizes,
+               ArrayRef<const SCEV *> Subscripts, ShapeInfo Sizes,
                Value *AccessValue, MemoryKind Kind);
 
   /// Create a new MemoryAccess that corresponds to @p AccRel.

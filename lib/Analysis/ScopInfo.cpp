@@ -799,7 +799,7 @@ void MemoryAccess::assumeNoOutOfBound() {
 
 void MemoryAccess::buildMemIntrinsicAccessRelation() {
   assert(isMemoryIntrinsic());
-  assert(Subscripts.size() == 2 && Sizes.size() == 1);
+  assert(Subscripts.size() == 2 && Shape.getNumberOfDimensions() == 1);
 
   isl::pw_aff SubscriptPWA = getPwAff(Subscripts[0]);
   isl::map SubscriptMap = isl::map::from_pw_aff(SubscriptPWA);
@@ -867,7 +867,7 @@ void MemoryAccess::computeBoundsOnAccessRelation(unsigned ElementSize) {
 }
 
 void MemoryAccess::foldAccessRelation() {
-  if (Sizes.size() < 2 || isa<SCEVConstant>(Sizes[1]))
+  if (Shape.getNumberOfDimensions() < 2 || isa<SCEVConstant>(Shape.sizes()[1]))
     return;
 
   int Size = Subscripts.size();
@@ -877,7 +877,7 @@ void MemoryAccess::foldAccessRelation() {
   for (int i = Size - 2; i >= 0; --i) {
     isl::space Space;
     isl::map MapOne, MapTwo;
-    isl::pw_aff DimSize = getPwAff(Sizes[i + 1]);
+    isl::pw_aff DimSize = getPwAff(Shape.sizes()[i + 1]);
 
     isl::space SpaceSize = DimSize.get_space();
     isl::id ParamId =
@@ -1013,13 +1013,11 @@ void MemoryAccess::buildAccessRelation(const ScopArrayInfo *SAI) {
 MemoryAccess::MemoryAccess(ScopStmt *Stmt, Instruction *AccessInst,
                            AccessType AccType, Value *BaseAddress,
                            Type *ElementType, bool Affine,
-                           ArrayRef<const SCEV *> Subscripts,
-                           ArrayRef<const SCEV *> Sizes, Value *AccessValue,
-                           MemoryKind Kind)
+                           ArrayRef<const SCEV *> Subscripts, ShapeInfo Shape,
+                           Value *AccessValue, MemoryKind Kind)
     : Kind(Kind), AccType(AccType), Statement(Stmt), InvalidDomain(nullptr),
-      BaseAddr(BaseAddress), ElementType(ElementType),
-      Sizes(Sizes.begin(), Sizes.end()), AccessInstruction(AccessInst),
-      AccessValue(AccessValue), IsAffine(Affine),
+      BaseAddr(BaseAddress), ElementType(ElementType), Shape(Shape),
+      AccessInstruction(AccessInst), AccessValue(AccessValue), IsAffine(Affine),
       Subscripts(Subscripts.begin(), Subscripts.end()), AccessRelation(nullptr),
       NewAccessRelation(nullptr), FAD(nullptr) {
   static const std::string TypeStrings[] = {"", "_Read", "_Write", "_MayWrite"};
@@ -1032,10 +1030,12 @@ MemoryAccess::MemoryAccess(ScopStmt *Stmt, Instruction *AccessInst,
 MemoryAccess::MemoryAccess(ScopStmt *Stmt, AccessType AccType, isl::map AccRel)
     : Kind(MemoryKind::Array), AccType(AccType), Statement(Stmt),
       InvalidDomain(nullptr), AccessRelation(nullptr),
-      NewAccessRelation(AccRel), FAD(nullptr) {
+      NewAccessRelation(AccRel), FAD(nullptr),
+      Shape(ShapeInfo::fromSizes({nullptr})) {
   isl::id ArrayInfoId = NewAccessRelation.get_tuple_id(isl::dim::out);
   auto *SAI = ScopArrayInfo::getFromId(ArrayInfoId);
-  Sizes.push_back(nullptr);
+  // Sizes.push_back(nullptr);
+  SmallVector<const SCEV *, 4> &Sizes = Shape.sizes_mut();
   for (unsigned i = 1; i < SAI->getNumberOfDimensions(); i++)
     Sizes.push_back(SAI->getDimensionSize(i));
   ElementType = SAI->getElementType();
@@ -1856,8 +1856,9 @@ MemoryAccess *ScopStmt::ensureValueRead(Value *V) {
 
   ScopArrayInfo *SAI =
       Parent.getOrCreateScopArrayInfo(V, V->getType(), {}, MemoryKind::Value);
-  Access = new MemoryAccess(this, nullptr, MemoryAccess::READ, V, V->getType(),
-                            true, {}, {}, V, MemoryKind::Value);
+  Access =
+      new MemoryAccess(this, nullptr, MemoryAccess::READ, V, V->getType(), true,
+                       {}, ShapeInfo::fromSizes({}), V, MemoryKind::Value);
   Parent.addAccessFunction(Access);
   Access->buildAccessRelation(SAI);
   addAccess(Access);
