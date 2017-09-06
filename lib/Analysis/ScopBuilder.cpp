@@ -631,6 +631,9 @@ void ScopBuilder::buildAccessSingleDim(MemAccInst Inst, ScopStmt *Stmt) {
 }
 
 void ScopBuilder::buildMemoryAccess(MemAccInst Inst, ScopStmt *Stmt) {
+  if (buildAccessPollyAbstractMatrix(Inst, Stmt))
+    return;
+
   if (buildAccessMemIntrinsic(Inst, Stmt))
     return;
 
@@ -644,6 +647,131 @@ void ScopBuilder::buildMemoryAccess(MemAccInst Inst, ScopStmt *Stmt) {
     return;
 
   buildAccessSingleDim(Inst, Stmt);
+}
+static const bool AbstractMatrixDebug = false;
+bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
+                                                 ScopStmt *Stmt) {
+  // Case 1. (Total size of array not known)
+  // %2 = tail call i64 @_gfortran_polly_array_index_2(i64 1, i64 %1, i64
+  // %indvars.iv1, i64 %indvars.iv) #1 %3 = getelementptr float, float* %0, i64
+  // %2 store float 2.000000e+00, float* %3, align 4 STORE <val> (GEP <arr>
+  // (CALL index_2(<strides>, <ixs>)))
+
+  // Case 2. (Total size of array statically known)
+  // %4 = tail call i64 @_gfortran_polly_array_index_2(i64 1, i64 5, i64
+  // %indvars.iv1, i64 %indvars.iv) #1 %5 = getelementptr [25 x float], [25 x
+  // float]* @__m_MOD_g_arr_const_5_5, i64 0, i64 %4 store float 4.200000e+01,
+  // float* %5, align 4
+
+  if (AbstractMatrixDebug) {
+    errs() << "@@@" << __PRETTY_FUNCTION__ << "\n";
+    errs() << "\nInst: " << *Inst.get() << "\n";
+  }
+  auto *MaybeGEP = Inst.getPointerOperand();
+  if (MaybeGEP == nullptr)
+    return false;
+
+  if (AbstractMatrixDebug)
+    errs() << "\tGEP(maybe): " << *MaybeGEP << "\n";
+  GEPOperator *GEP = dyn_cast<GEPOperator>(MaybeGEP);
+
+  if (!GEP)
+    return false;
+
+  if (AbstractMatrixDebug)
+    errs() << "\tGEP(for sure): " << *GEP << "\n";
+  if (GEP->getNumIndices() != 1)
+    return false;
+
+  auto *MaybeCall = GEP->getOperand(1);
+  assert(MaybeCall);
+  if (AbstractMatrixDebug)
+    errs() << "\tCall(maybe): " << *MaybeCall << "\n";
+
+  CallInst *Call = dyn_cast<CallInst>(MaybeCall);
+  if (!Call)
+    return false;
+  if (AbstractMatrixDebug)
+    errs() << "\tCall(for sure): " << *Call << "\n";
+
+  if (!Call->getCalledFunction()->getName().count("polly_array_index"))
+    return false;
+  if (AbstractMatrixDebug)
+    errs() << "Called name: " << Call->getCalledFunction()->getName() << "\n";
+
+  assert(Call->getNumArgOperands() % 2 == 0 && "expect stride, offset pairs\n");
+  const int NArrayDims = Call->getNumArgOperands() / 2;
+  if (AbstractMatrixDebug)
+    errs() << "Num array dims: " << NArrayDims << "\n";
+
+  // F(stride1, stride2, .., strideN, ix1, ix2, ..., ixN)
+
+  std::vector<const SCEV *> Subscripts;
+  std::vector<const SCEV *> Strides;
+
+  for (int i = 0; i < NArrayDims; i++) {
+    Value *Ix = Call->getArgOperand(NArrayDims + i);
+    Value *Stride = Call->getArgOperand(i);
+
+    if (AbstractMatrixDebug)
+      errs() << i << " |Raw Ix: " << *Ix << " |Raw Stride: " << *Stride << "\n";
+    Subscripts.push_back(SE.getSCEV(Ix));
+    Strides.push_back(SE.getSCEV(Stride));
+  }
+
+  for (unsigned i = 0; i < Subscripts.size(); ++i) {
+    if (AbstractMatrixDebug)
+      errs() << i << "| "
+             << " Sub: " << *Subscripts[i] << " |Stride: " << *Strides[i]
+             << "\n";
+  }
+
+  Value *BasePtr = GEP->getPointerOperand();
+  Type *ElementType = GEP->getSourceElementType();
+  assert(BasePtr);
+  assert(ElementType);
+
+  if (AbstractMatrixDebug)
+    errs() << "GEPInto / BasePtr (array): " << *BasePtr << "\n";
+  if (AbstractMatrixDebug)
+    errs() << "ElementType: " << *ElementType << "\n";
+
+  Value *Val = Inst.getValueOperand();
+  if (AbstractMatrixDebug)
+    errs() << "Val: " << *Val << "\n";
+
+  enum MemoryAccess::AccessType AccType =
+      isa<LoadInst>(Inst) ? MemoryAccess::READ : MemoryAccess::MUST_WRITE;
+
+  if (AbstractMatrixDebug) {
+    errs() << "AccType: ";
+    switch (AccType) {
+    case MemoryAccess::AccessType::READ:
+      errs() << "ReadAccess\n";
+      break;
+    case MemoryAccess::AccessType::MUST_WRITE:
+      errs() << "MustWriteAccess\n";
+      break;
+    default:
+      report_fatal_error("expected only READ/MUST_WRITE");
+    }
+  }
+
+  /*
+   void addArrayAccess(ScopStmt *Stmt, MemAccInst MemAccInst,
+                       MemoryAccess::AccessType AccType, Value *BaseAddress,
+                       Type *ElemType, bool IsAffine,
+                       ArrayRef<const SCEV *> Subscripts,
+                       ArrayRef<const SCEV *> Sizes, Value *AccessValue);
+ */
+
+  addArrayAccess(Stmt, Inst, AccType, BasePtr, ElementType, true, Subscripts,
+                 Strides, Val);
+
+  if (AbstractMatrixDebug)
+    errs() << "Added array access successfully!\n";
+
+  return true;
 }
 
 void ScopBuilder::buildAccessFunctions() {

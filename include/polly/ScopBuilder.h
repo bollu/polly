@@ -146,6 +146,13 @@ class ScopBuilder {
   void buildScop(Region &R, AssumptionCache &AC,
                  OptimizationRemarkEmitter &ORE);
 
+  /// Try to build an index expression from a load of an abstract location
+  /// Load/Store <array> (GEP <function idx>)
+  ///
+  /// @param Inst       The Load/Store instruction that access the memory
+  /// @param Stmt       The parent statement of the instruction
+  bool buildAccessPollyAbstractMatrix(MemAccInst Inst, ScopStmt *Stmt);
+
   /// Try to build a multi-dimensional fixed sized MemoryAccess from the
   /// Load/Store instruction.
   ///
