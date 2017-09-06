@@ -147,6 +147,17 @@ public:
     return ShapeInfo(OptionalSCEVArrayRefTy(Sizes), None);
   }
 
+  ShapeInfo(const ShapeInfo &other) {
+    Sizes = other.Sizes;
+    Strides = other.Strides;
+  }
+
+  ShapeInfo &operator=(const ShapeInfo &other) {
+    Sizes = other.Sizes;
+    Strides = other.Strides;
+    return *this;
+  }
+
   static ShapeInfo fromStrides(ArrayRef<const SCEV *> Strides) {
     return ShapeInfo(None, OptionalSCEVArrayRefTy(Strides));
   }
@@ -166,18 +177,16 @@ public:
 
   /// Set the sizes of the Shape. It checks the invariant
   /// That this shape does not have strides.
-  void setSizes(ArrayRef<const SCEV *> &&NewSizes) {
-    errs() << __PRETTY_FUNCTION__ << "\n";
+  void setSizes(SmallVector<const SCEV *, 4> NewSizes) {
+    // errs() << __PRETTY_FUNCTION__ << "\n";
     assert(!bool(Strides));
 
     if (!bool(Sizes)) {
-      errs() << "Initializing sizes();\n";
+      // errs() << "Initializing sizes();\n";
       Sizes = {};
     }
 
-    auto S = sizes();
-    S.clear();
-    S.insert(S.begin(), NewSizes.begin(), NewSizes.end());
+    Sizes = NewSizes;
   }
 
   const SmallVector<const SCEV *, 4> &sizes() const {
@@ -352,8 +361,8 @@ public:
   /// @param S              The scop this array object belongs to.
   /// @param BaseName       The optional name of this memory reference.
   ScopArrayInfo(Value *BasePtr, Type *ElementType, isl::ctx IslCtx,
-                ArrayRef<const SCEV *> DimensionSizes, MemoryKind Kind,
-                const DataLayout &DL, Scop *S, const char *BaseName = nullptr);
+                ShapeInfo Shape, MemoryKind Kind, const DataLayout &DL, Scop *S,
+                const char *BaseName = nullptr);
 
   /// Destructor to free the isl id of the base pointer.
   ~ScopArrayInfo();
@@ -414,7 +423,7 @@ public:
     if (Kind == MemoryKind::PHI || Kind == MemoryKind::ExitPHI ||
         Kind == MemoryKind::Value)
       return 0;
-    return DimensionSizes.size();
+    return Shape.getNumberOfDimensions();
   }
 
   /// Return the size of dimension @p dim as SCEV*.
@@ -424,7 +433,7 @@ public:
   //  information, in case the array is not newly created.
   const SCEV *getDimensionSize(unsigned Dim) const {
     assert(Dim < getNumberOfDimensions() && "Invalid dimension");
-    return DimensionSizes[Dim];
+    return Shape.sizes()[Dim];
   }
 
   /// Return the size of dimension @p dim as isl::pw_aff.
@@ -543,7 +552,7 @@ private:
   bool IsOnHeap = false;
 
   /// The sizes of each dimension as SCEV*.
-  SmallVector<const SCEV *, 4> DimensionSizes;
+  ShapeInfo Shape;
 
   /// The sizes of each dimension as isl::pw_aff.
   SmallVector<isl::pw_aff, 4> DimensionSizesPw;

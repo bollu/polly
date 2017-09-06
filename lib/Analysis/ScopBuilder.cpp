@@ -769,6 +769,8 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
  */
 
   // NOTE: this should be fromStrides.
+  // NOTE: To be able to change this, we need to teach ScopArrayInfo to recieve
+  // a Shape object. So, do that first.
   addArrayAccess(Stmt, Inst, AccType, BasePtr, ElementType, true, Subscripts,
                  ShapeInfo::fromSizes(Strides), Val);
 
@@ -1228,6 +1230,7 @@ void ScopBuilder::buildAccessRelations(ScopStmt &Stmt) {
     else
       Ty = MemoryKind::Array;
 
+    // NOTE: This is why We need to teach ScopArrayInfo to accept Shape.
     auto *SAI = scop->getOrCreateScopArrayInfo(
         Access->getOriginalBaseAddr(), ElementType, Access->Shape.sizes(), Ty);
     Access->buildAccessRelation(SAI);

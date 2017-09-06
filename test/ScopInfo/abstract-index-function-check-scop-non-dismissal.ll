@@ -1,7 +1,6 @@
 ; RUN: opt %loadPolly -polly-scops -analyze -polly-allow-nonaffine \
 ; RUN: -polly-ignore-aliasing -polly-use-llvm-names \
-; RUN: -polly-invariant-load-hoisting -debug-only=polly-scops < %s 2>&1 | FileCheck %s
-
+; RUN: -polly-invariant-load-hoisting  < %s | FileCheck %s
 
 ; CHECK:    Function: __m_MOD_f
 ; CHECK:    Region: %"3"---%return

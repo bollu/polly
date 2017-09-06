@@ -318,10 +318,11 @@ static const ScopArrayInfo *identifyBasePtrOriginSAI(Scop *S, Value *BasePtr) {
 }
 
 ScopArrayInfo::ScopArrayInfo(Value *BasePtr, Type *ElementType, isl::ctx Ctx,
-                             ArrayRef<const SCEV *> Sizes, MemoryKind Kind,
+                             ShapeInfo Shape, MemoryKind Kind,
                              const DataLayout &DL, Scop *S,
                              const char *BaseName)
-    : BasePtr(BasePtr), ElementType(ElementType), Kind(Kind), DL(DL), S(*S) {
+    : BasePtr(BasePtr), ElementType(ElementType), Kind(Kind), DL(DL), S(*S),
+      Shape(ShapeInfo::none()) {
   std::string BasePtrName =
       BaseName ? BaseName
                : getIslCompatibleName("MemRef", BasePtr, S->getNextArrayIdx(),
@@ -329,7 +330,7 @@ ScopArrayInfo::ScopArrayInfo(Value *BasePtr, Type *ElementType, isl::ctx Ctx,
                                       UseInstructionNames);
   Id = isl::id::alloc(Ctx, BasePtrName, this);
 
-  updateSizes(Sizes);
+  updateSizes(Shape.sizes());
 
   if (!BasePtr || Kind != MemoryKind::Array) {
     BasePtrOriginSAI = nullptr;
@@ -417,25 +418,31 @@ void ScopArrayInfo::applyAndSetFAD(Value *FAD) {
 
 bool ScopArrayInfo::updateSizes(ArrayRef<const SCEV *> NewSizes,
                                 bool CheckConsistency) {
-  int SharedDims = std::min(NewSizes.size(), DimensionSizes.size());
-  int ExtraDimsNew = NewSizes.size() - SharedDims;
-  int ExtraDimsOld = DimensionSizes.size() - SharedDims;
 
-  if (CheckConsistency) {
-    for (int i = 0; i < SharedDims; i++) {
-      auto *NewSize = NewSizes[i + ExtraDimsNew];
-      auto *KnownSize = DimensionSizes[i + ExtraDimsOld];
-      if (NewSize && KnownSize && NewSize != KnownSize)
-        return false;
+  if (Shape.isInitialized()) {
+    const SmallVector<const SCEV *, 4> &DimensionSizes = Shape.sizes();
+    int SharedDims = std::min(NewSizes.size(), DimensionSizes.size());
+    int ExtraDimsNew = NewSizes.size() - SharedDims;
+    int ExtraDimsOld = DimensionSizes.size() - SharedDims;
+
+    if (CheckConsistency) {
+      for (int i = 0; i < SharedDims; i++) {
+        auto *NewSize = NewSizes[i + ExtraDimsNew];
+        auto *KnownSize = DimensionSizes[i + ExtraDimsOld];
+        if (NewSize && KnownSize && NewSize != KnownSize)
+          return false;
+      }
+
+      if (DimensionSizes.size() >= NewSizes.size())
+        return true;
     }
-
-    if (DimensionSizes.size() >= NewSizes.size())
-      return true;
   }
-
+  SmallVector<const SCEV *, 4> DimensionSizes;
   DimensionSizes.clear();
   DimensionSizes.insert(DimensionSizes.begin(), NewSizes.begin(),
                         NewSizes.end());
+  Shape.setSizes(DimensionSizes);
+
   DimensionSizesPw.clear();
   for (const SCEV *Expr : DimensionSizes) {
     if (!Expr) {
@@ -4051,8 +4058,9 @@ ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
                       : ScopArrayNameMap[BaseName];
   if (!SAI) {
     auto &DL = getFunction().getParent()->getDataLayout();
-    SAI.reset(new ScopArrayInfo(BasePtr, ElementType, getIslCtx(), Sizes, Kind,
-                                DL, this, BaseName));
+    SAI.reset(new ScopArrayInfo(BasePtr, ElementType, getIslCtx(),
+                                ShapeInfo::fromSizes(Sizes), Kind, DL, this,
+                                BaseName));
     ScopArrayInfoSet.insert(SAI.get());
   } else {
     SAI->updateElementType(ElementType);
