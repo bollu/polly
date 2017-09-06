@@ -2212,16 +2212,30 @@ void Scop::addParameterBounds() {
 }
 
 static std::vector<isl::id> getFortranArrayIds(Scop::array_range Arrays) {
+  errs() << "@@@" << __PRETTY_FUNCTION__ << "@@@\n";
+
   std::vector<isl::id> OutermostSizeIds;
   for (auto Array : Arrays) {
+
+    errs() << "# Array:\n";
+    Array->dump();
     // To check if an array is a Fortran array, we check if it has a isl_pw_aff
     // for its outermost dimension. Fortran arrays will have this since the
     // outermost dimension size can be picked up from their runtime description.
     // TODO: actually need to check if it has a FAD, but for now this works.
     if (Array->getNumberOfDimensions() > 0) {
       isl::pw_aff PwAff = Array->getDimensionSizePw(0);
+      errs() << "\tPwAff: ";
+      PwAff.dump();
+      errs() << "\n";
       if (!PwAff)
         continue;
+
+      isl::space PwAffSpace = isl::manage(isl_pw_aff_get_space(PwAff.get()));
+      if (PwAffSpace.dim(isl::dim::param) == 0) {
+        errs() << "PwAff of fortran array has no outermost dim. quitting.\n";
+        continue;
+      }
 
       isl::id Id =
           isl::manage(isl_pw_aff_get_dim_id(PwAff.get(), isl_dim_param, 0));
@@ -4135,9 +4149,17 @@ isl::set Scop::getContext() const { return isl::manage(isl_set_copy(Context)); }
 isl::space Scop::getParamSpace() const { return getContext().get_space(); }
 
 isl::space Scop::getFullParamSpace() const {
+
   std::vector<isl::id> FortranIDs;
   FortranIDs = getFortranArrayIds(arrays());
 
+  errs() << "FortranIDs:\n";
+  for (auto Id : FortranIDs) {
+    errs() << "- ";
+    Id.dump();
+    errs() << "\n";
+  }
+  errs() << "\n";
   isl::space Space = isl::space::params_alloc(
       getIslCtx(), ParameterIds.size() + FortranIDs.size());
 

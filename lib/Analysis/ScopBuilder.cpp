@@ -412,12 +412,6 @@ bool ScopBuilder::buildAccessMultiDimFixed(MemAccInst Inst, ScopStmt *Stmt) {
     SizesSCEV.push_back(SE.getSCEV(
         ConstantInt::get(IntegerType::getInt64Ty(BasePtr->getContext()), V)));
 
-  /*void addArrayAccess(ScopStmt *Stmt, MemAccInst MemAccInst,
-                      MemoryAccess::AccessType AccType, Value *BaseAddress,
-                      Type *ElemType, bool IsAffine,
-                      ArrayRef<const SCEV *> Subscripts,
-                      ArrayRef<const SCEV *> Sizes, Value *AccessValue);
-  */
   addArrayAccess(Stmt, Inst, AccType, BasePointer->getValue(), ElementType,
                  true, Subscripts, SizesSCEV, Val);
   return true;
@@ -425,14 +419,116 @@ bool ScopBuilder::buildAccessMultiDimFixed(MemAccInst Inst, ScopStmt *Stmt) {
 
 bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
                                                  ScopStmt *Stmt) {
-  auto *CI = dyn_cast_or_null<CallInst>(Inst);
+  // Case 1. (Total size of array not known)
+  // %2 = tail call i64 @_gfortran_polly_array_index_2(i64 1, i64 %1, i64
+  // %indvars.iv1, i64 %indvars.iv) #1 %3 = getelementptr float, float* %0, i64
+  // %2 store float 2.000000e+00, float* %3, align 4 STORE <val> (GEP <arr>
+  // (CALL index_2(<strides>, <ixs>)))
 
-  if (CI && isPollyAbstractMatrixCall(*CI))
-    return true;
+  // Case 2. (Total size of array statically known)
+  // %4 = tail call i64 @_gfortran_polly_array_index_2(i64 1, i64 5, i64
+  // %indvars.iv1, i64 %indvars.iv) #1 %5 = getelementptr [25 x float], [25 x
+  // float]* @__m_MOD_g_arr_const_5_5, i64 0, i64 %4 store float 4.200000e+01,
+  // float* %5, align 4
+
+  errs() << "@@@" << __PRETTY_FUNCTION__ << "\n";
+  errs() << "\nInst: " << *Inst.get() << "\n";
+  auto *MaybeGEP = Inst.getPointerOperand();
+  if (MaybeGEP == nullptr)
+    return false;
+
+  errs() << "\tGEP(maybe): " << *MaybeGEP << "\n";
+  GEPOperator *GEP = dyn_cast<GEPOperator>(MaybeGEP);
+
+  if (!GEP)
+    return false;
+  errs() << "\tGEP(for sure): " << *GEP << "\n";
+  if (GEP->getNumIndices() != 1)
+    return false;
+
+  auto *MaybeCall = GEP->getOperand(1);
+  assert(MaybeCall);
+  errs() << "\tCall(maybe): " << *MaybeCall << "\n";
+
+  CallInst *Call = dyn_cast<CallInst>(MaybeCall);
+  if (!Call)
+    return false;
+  errs() << "\tCall(for sure): " << *Call << "\n";
+
+  if (!Call->getCalledFunction()->getName().count("polly_array_index"))
+    return false;
+  errs() << "Called name: " << Call->getCalledFunction()->getName() << "\n";
+
+  assert(Call->getNumArgOperands() % 2 == 0 && "expect stride, offset pairs\n");
+  const int NArrayDims = Call->getNumArgOperands() / 2;
+  errs() << "Num array dims: " << NArrayDims << "\n";
+
+  // F(stride1, stride2, .., strideN, ix1, ix2, ..., ixN)
+
+  std::vector<const SCEV *> Subscripts;
+  std::vector<const SCEV *> SizesSCEV;
+  for (int i = 0; i < NArrayDims; i++) {
+    Value *Ix = Call->getArgOperand(NArrayDims + i);
+    Value *Size = Call->getArgOperand(i);
+    errs() << i << " |Raw Ix: " << *Ix << " |Raw Size: " << *Size << "\n";
+    Subscripts.push_back(SE.getSCEV(Ix));
+    SizesSCEV.push_back(SE.getSCEV(Size));
+  }
+
+  for (int i = 0; i < Subscripts.size(); ++i) {
+    errs() << i << "| "
+           << " Sub: " << *Subscripts[i] << " |Size: " << *SizesSCEV[i] << "\n";
+  }
+
+  /*
+   void addArrayAccess(ScopStmt *Stmt, MemAccInst MemAccInst,
+                       MemoryAccess::AccessType AccType, Value *BaseAddress,
+                       Type *ElemType, bool IsAffine,
+                       ArrayRef<const SCEV *> Subscripts,
+                       ArrayRef<const SCEV *> Sizes, Value *AccessValue);
+ */
+
+  Value *BasePtr = GEP->getPointerOperand();
+  Type *ElementType = GEP->getSourceElementType();
+  assert(BasePtr);
+  assert(ElementType);
+
+  errs() << "GEPInto / BasePtr (array): " << *BasePtr << "\n";
+  errs() << "ElementType: " << *ElementType << "\n";
 
   Value *Val = Inst.getValueOperand();
-  Type *ElementType = Val->getType();
-  Value *Address = Inst.getPointerOperand();
+  errs() << "Val: " << *Val << "\n";
+
+  enum MemoryAccess::AccessType AccType =
+      isa<LoadInst>(Inst) ? MemoryAccess::READ : MemoryAccess::MUST_WRITE;
+  errs() << "AccType: ";
+  switch (AccType) {
+  case MemoryAccess::AccessType::READ:
+    errs() << "ReadAccess\n";
+    break;
+  case MemoryAccess::AccessType::MUST_WRITE:
+    errs() << "MustWriteAccess\n";
+    break;
+  }
+
+  addArrayAccess(Stmt, Inst, AccType, BasePtr, ElementType, true, Subscripts,
+                 SizesSCEV, Val);
+
+  errs() << "Added array access successfully!\n";
+
+  return true;
+
+  /*
+  errs() << "Inst: " << *Inst.get() << "\n";
+  auto *CI = dyn_cast_or_null<CallInst>(Inst);
+  if (CI)
+      errs() << "CI: " << *CI << "\n";
+
+  if (CI && isPollyAbstractMatrixCall(*CI)) {
+    errs() << "returning true.\n";
+    return true;
+  }
+
 
   CI = dyn_cast<CallInst>(Address);
   if (!CI)
@@ -461,15 +557,16 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
         SE.getConstant(llvm::Type::getInt64Ty(CI->getContext()), INT64_MAX));
   }
 
-  /*void addArrayAccess(ScopStmt *Stmt, MemAccInst MemAccInst,
-                      MemoryAccess::AccessType AccType, Value *BaseAddress,
-                      Type *ElemType, bool IsAffine,
-                      ArrayRef<const SCEV *> Subscripts,
-                      ArrayRef<const SCEV *> Sizes, Value *AccessValue);
-  */
+ //  void addArrayAccess(ScopStmt *Stmt, MemAccInst MemAccInst,
+ //                      MemoryAccess::AccessType AccType, Value *BaseAddress,
+ //                      Type *ElemType, bool IsAffine,
+ //                      ArrayRef<const SCEV *> Subscripts,
+ //                      ArrayRef<const SCEV *> Sizes, Value *AccessValue);
+
   addArrayAccess(Stmt, Inst, AccType, BasePtr, ElementType, true, Subscripts,
                  SizesSCEV, Val);
   return true;
+  */
 }
 
 bool ScopBuilder::buildAccessMultiDimParam(MemAccInst Inst, ScopStmt *Stmt) {

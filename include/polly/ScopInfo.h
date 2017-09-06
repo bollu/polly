@@ -256,17 +256,21 @@ class ScopArrayInfo {
 public:
   /// Construct a ScopArrayInfo object.
   ///
-  /// @param BasePtr        The array base pointer.
-  /// @param ElementType    The type of the elements stored in the array.
-  /// @param IslCtx         The isl context used to create the base pointer id.
-  /// @param DimensionSizes A vector containing the size of each dimension.
-  /// @param Kind           The kind of the array object.
-  /// @param DL             The data layout of the module.
-  /// @param S              The scop this array object belongs to.
-  /// @param BaseName       The optional name of this memory reference.
+  /// @param BasePtr          The array base pointer.
+  /// @param ElementType      The type of the elements stored in the array.
+  /// @param IslCtx           The isl context used to create the base pointer
+  /// id.
+  /// @param DimensionSizes   A vector containing the size of each dimension.
+  /// @param DimensionStrides A vector containing the stride of each dimension.
+  /// @param Kind             The kind of the array object.
+  /// @param DL               The data layout of the module.
+  /// @param S                The scop this array object belongs to.
+  /// @param BaseName         The optional name of this memory reference.
   ScopArrayInfo(Value *BasePtr, Type *ElementType, isl::ctx IslCtx,
-                ArrayRef<const SCEV *> DimensionSizes, MemoryKind Kind,
-                const DataLayout &DL, Scop *S, const char *BaseName = nullptr);
+                ArrayRef<const SCEV *> DimensionSizes,
+                // ArrayRef<const SCEV *> DimensionStrides,
+                MemoryKind Kind, const DataLayout &DL, Scop *S,
+                const char *BaseName = nullptr);
 
   /// Destructor to free the isl id of the base pointer.
   ~ScopArrayInfo();
@@ -286,7 +290,7 @@ public:
   ///  A ScopArrayInfo object may be created without all outer dimensions being
   ///  available. This function is called when new memory accesses are added for
   ///  this ScopArrayInfo object. It verifies that sizes are compatible and adds
-  ///  additional outer array dimensions, if needed.
+  ///  additio
   ///
   ///  @param Sizes       A vector of array sizes where the rightmost array
   ///                     sizes need to match the innermost array sizes already
@@ -322,12 +326,24 @@ public:
     return DerivedSAIs;
   }
 
+  bool hasDimensionStrides() const { return bool(DimensionStrides); }
+
   /// Return the number of dimensions.
   unsigned getNumberOfDimensions() const {
     if (Kind == MemoryKind::PHI || Kind == MemoryKind::ExitPHI ||
         Kind == MemoryKind::Value)
       return 0;
+    // if (hasDimensionSizes())
+    //     return DimensionSizes.size();
+
+    // assert(hasDimensionStrides())
+    // return DimensionStrides.size();
     return DimensionSizes.size();
+  }
+
+  bool hasDimensionSizes() const {
+    return true;
+    // return DimensionSizes;
   }
 
   /// Return the size of dimension @p dim as SCEV*.
@@ -337,6 +353,8 @@ public:
   //  information, in case the array is not newly created.
   const SCEV *getDimensionSize(unsigned Dim) const {
     assert(Dim < getNumberOfDimensions() && "Invalid dimension");
+    assert(hasDimensionSizes());
+    // return DimensionSizes.getValue()[Dim];
     return DimensionSizes[Dim];
   }
 
@@ -347,6 +365,8 @@ public:
   //  information, in case the array is not newly created.
   isl::pw_aff getDimensionSizePw(unsigned Dim) const {
     assert(Dim < getNumberOfDimensions() && "Invalid dimension");
+    assert(hasDimensionSizes());
+    // return DimensionSizesPw.getValue()[Dim];
     return DimensionSizesPw[Dim];
   }
 
@@ -456,10 +476,15 @@ private:
   bool IsOnHeap = false;
 
   /// The sizes of each dimension as SCEV*.
+  /// Optional<SmallVector<const SCEV *, 4>> DimensionSizes;
   SmallVector<const SCEV *, 4> DimensionSizes;
 
   /// The sizes of each dimension as isl::pw_aff.
+  /// Optional<SmallVector<isl::pw_aff, 4>> DimensionSizesPw;
   SmallVector<isl::pw_aff, 4> DimensionSizesPw;
+
+  /// The strides of each dimension as a SCEV*
+  Optional<SmallVector<const SCEV *, 4>> DimensionStrides;
 
   /// The type of this scop array info object.
   ///
