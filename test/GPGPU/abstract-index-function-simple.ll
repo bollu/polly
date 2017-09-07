@@ -2,21 +2,33 @@
 ; RUN: -polly-ignore-aliasing -polly-use-llvm-names \
 ; RUN: -polly-invariant-load-hoisting < %s | FileCheck %s -check-prefix=SCOP
 
-; RUN: opt %loadPolly -polly-scops -S -polly-allow-nonaffine \
+; RUN: opt %loadPolly -S -polly-allow-nonaffine \
+; RUN: -polly-acc-codegen-managed-memory \
 ; RUN: -polly-ignore-aliasing -polly-use-llvm-names \
-; RUN: -polly-invariant-load-hoisting -polly-codegen-ppcg < %s | FileCheck %s -check-prefix=HOST-IR
+; RUN: -polly-invariant-load-hoisting -polly-codegen-ppcg \
+; RUN:  -polly-acc-fail-on-verify-module-failure < %s\
+; RUN: | FileCheck %s -check-prefix=HOST-IR
 
+; RUN: opt %loadPolly  -disable-output -polly-acc-dump-kernel-ir \
+; RUN: -polly-acc-codegen-managed-memory \
+; RUN: -polly-allow-nonaffine \
+; RUN: -polly-ignore-aliasing -polly-use-llvm-names \
+; RUN: -polly-invariant-load-hoisting -polly-codegen-ppcg \
+; RUN: -polly-acc-fail-on-verify-module-failure < %s \
+; RUN: | FileCheck %s -check-prefix=KERNEL-IR
 
 ; SCOP:    Function: __m_MOD_f
 ; SCOP-NEXT:    Region: %"3"---%return
 ; SCOP-NEXT:    Max Loop Depth:  2
 
+; HOST-IR:
 
-; HOST-IR: xxx
+; Check that the call to polly_array_index has been eliminated.
+; KERNEL-IR-NOT: polly_array_index
 
 ; MODULE m
 ; IMPLICIT NONE
-;     REAL, ALLOCATABLE :: &
+;     REAL, ALLOCATABLE ::
 ;         g_arr(:,:)
 ;
 ; CONTAINS

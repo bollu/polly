@@ -41,6 +41,7 @@
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
+#include "polly/Support/ISLOStream.h"
 #include "isl/union_map.h"
 
 extern "C" {
@@ -794,9 +795,10 @@ void GPUNodeBuilder::allocateDeviceArrays() {
     // most likely that we are doing something wrong with size computation.
     if (SizeSCEV->isZero()) {
       errs() << getUniqueScopName(&S)
-             << " has computed array size 0: " << *ArraySize
-             << " | for array: " << *(ScopArray->getBasePtr())
-             << ". This is illegal, exiting.\n";
+             << " has array size 0.\n "
+             << "Array with size 0: " << *(ScopArray->getBasePtr())
+             << "Size expression: " << *ArraySize 
+             << "\nThis is illegal, exiting.\n";
       report_fatal_error("array size was computed to be 0");
     }
 
@@ -1428,7 +1430,8 @@ static bool isValidFunctionInKernel(llvm::Function *F, bool AllowLibDevice) {
   if (AllowLibDevice && getCUDALibDeviceFuntion(F).length() > 0)
     return true;
 
-  if (Name.count("polly_array_index")) return true;
+  if (Name.count("polly_array_index"))
+    return true;
 
   return F->isIntrinsic() &&
          (Name.startswith("llvm.sqrt") || Name.startswith("llvm.fabs") ||
@@ -1771,6 +1774,12 @@ void GPUNodeBuilder::setupKernelSubtreeFunctions(
       Clone =
           Function::Create(Fn->getFunctionType(), GlobalValue::ExternalLinkage,
                            ClonedFnName, GPUModule.get());
+
+    // For our polly_array_index function, we need readnone attribute so that
+    // dead code elimination nukes it. In general, it is good practice
+    // to copy over attributes.
+    Clone->setAttributes(Fn->getAttributes());
+
     assert(Clone && "Expected cloned function to be initialized.");
     assert(ValueMap.find(Fn) == ValueMap.end() &&
            "Fn already present in ValueMap");
@@ -2865,23 +2874,25 @@ public:
       Extent = Extent.lower_bound_si(isl::dim::set, i, 0);
 
     if (!Array->hasStrides()) {
-        for (unsigned i = 0; i < NumDims; ++i) {
-            isl::pw_aff PwAff = Array->getDimensionSizePw(i);
+      for (unsigned i = 0; i < NumDims; ++i) {
+        isl::pw_aff PwAff = Array->getDimensionSizePw(i);
 
-            // isl_pw_aff can be NULL for zero dimension. Only in the case of a
-            // Fortran array will we have a legitimate dimension.
-            if (PwAff.is_null()) {
-                assert(i == 0 && "invalid dimension isl_pw_aff for nonzero dimension");
-                continue;
-            }
-
-            isl::pw_aff Val = isl::aff::var_on_domain(
-                    isl::local_space(Array->getSpace()), isl::dim::set, i);
-            PwAff = PwAff.add_dims(isl::dim::in, Val.dim(isl::dim::in));
-            PwAff = PwAff.set_tuple_id(isl::dim::in, Val.get_tuple_id(isl::dim::in));
-            isl::set Set = PwAff.gt_set(Val);
-            Extent = Set.intersect(Extent);
+        // isl_pw_aff can be NULL for zero dimension. Only in the case of a
+        // Fortran array will we have a legitimate dimension.
+        if (PwAff.is_null()) {
+          assert(i == 0 &&
+                 "invalid dimension isl_pw_aff for nonzero dimension");
+          continue;
         }
+
+        isl::pw_aff Val = isl::aff::var_on_domain(
+            isl::local_space(Array->getSpace()), isl::dim::set, i);
+        PwAff = PwAff.add_dims(isl::dim::in, Val.dim(isl::dim::in));
+        PwAff =
+            PwAff.set_tuple_id(isl::dim::in, Val.get_tuple_id(isl::dim::in));
+        isl::set Set = PwAff.gt_set(Val);
+        Extent = Set.intersect(Extent);
+      }
     }
 
     return Extent;
@@ -2922,12 +2933,93 @@ public:
       }
     }
 
-    for (unsigned i = 1; i < PPCGArray.n_index; ++i) {
-      isl_pw_aff *Bound = Array->getDimensionSizePw(i).release();
-      auto LS = isl_pw_aff_get_domain_space(Bound);
-      auto Aff = isl_multi_aff_zero(LS);
-      Bound = isl_pw_aff_pullback_multi_aff(Bound, Aff);
-      Bounds.push_back(Bound);
+    static const bool DumpBoundsCreation = true;
+    if (Array->hasStrides()) {
+
+      isl::set Domain;
+      for (ScopStmt &Stmt : *S) {
+        for (MemoryAccess *MemAcc : Stmt) {
+            // Note that this is wrong, we need to take the inverse image wrt to
+            // the access functions.  if (!Domain)
+          if (MemAcc->getScopArrayInfo() == Array)
+              Domain = Stmt.getDomain();
+            else
+              Domain = Domain.unite(Stmt.getDomain());
+          }
+      }
+      if (DumpBoundsCreation) errs() << "Total domain: " << Domain << "\n";
+      for (unsigned i = 1; i < PPCGArray.n_index; ++i) {
+        isl_set *Dom = Domain.copy();
+#define DIST(begin, end) ((end) - (begin) + 1)
+        if (DumpBoundsCreation) {
+          errs() << i << "|Dom: ";
+          isl_set_dump(Dom);
+        }
+        Dom = isl_set_project_out(Dom, isl_dim_set, 0, DIST(0, i - 1));
+        if (DumpBoundsCreation) {
+          errs() << i << "|Dom: ";
+          isl_set_dump(Dom);
+        }
+        Dom = isl_set_project_out(Dom, isl_dim_set, 1,
+                                  DIST(i + 1, PPCGArray.n_index - 1));
+#undef DIST
+        if (DumpBoundsCreation) {
+          errs() << i << "|Dom: ";
+          isl_set_dump(Dom);
+        }
+
+        isl_pw_aff *Bound = isl_set_dim_max(isl_set_copy(Dom), 0);
+        isl_set_free(Dom);
+        if (DumpBoundsCreation) {
+          errs() << i << "|" << "Bound: ";
+          isl_pw_aff_dump(Bound);
+        }
+
+        Dom = isl_pw_aff_domain(isl_pw_aff_copy(Bound));
+        isl_local_space *LS =
+            isl_local_space_from_space(isl_set_get_space(Dom));
+        isl_aff *Constant = isl_aff_zero_on_domain(LS);
+        Constant = isl_aff_add_constant_si(Constant, 1000);
+        isl_aff_free(Constant);
+        isl_set_free(Dom);
+        // Bound = isl_pw_aff_add(Bound, isl_pw_aff_alloc(Dom, Constant));
+        Bound = isl_pw_aff_gist(Bound, S->getContext().release());
+        Bounds.push_back(Bound);
+      }
+    } else {
+      for (unsigned i = 1; i < PPCGArray.n_index; ++i) {
+        isl_pw_aff *Bound = Array->getDimensionSizePw(i).release();
+        auto LS = isl_pw_aff_get_domain_space(Bound);
+        auto Aff = isl_multi_aff_zero(LS);
+
+        // We need types to work out, which is why we perform this weird dance
+        // with `Aff` and `Bound`. Consider this example:
+
+        // LS: [p] -> { [] }
+        // Zero: [p] -> { [] } | Implicitly, is [p] -> { ~ -> [] }.
+        // This `~` is used to denote a "null space" (which is different from
+        // a *zero dimensional* space), which is something that ISL does not
+        // show you when pretty printing.
+
+        // Bound: [p] -> { [] -> [(10p)] } | Here, the [] is a *zero
+        // dimensional* space, not a "null space" which does not exist at all.
+
+        // When we pullback (precompose) `Bound` with `Zero`, we get:
+        // Bound . Zero =
+        //     ([p] -> { [] -> [(10p)] }) . ([p] -> {~ -> [] }) =
+        //     [p] -> { ~ -> [(10p)] } =
+        //     [p] -> [(10p)] (as ISL pretty prints it)
+        // Bound Pullback: [p] -> { [(10p)] }
+
+        // We want this kind of an expression for Bound, without a
+        // zero dimensional input, but with a "null space" input for the types
+        // to work out later on, as far as I (Siddharth Bhat) understand.
+        // I was unable to find a reference to this in the ISL manual.
+        // References: Tobias Grosser.
+
+        Bound = isl_pw_aff_pullback_multi_aff(Bound, Aff);
+        Bounds.push_back(Bound);
+      }
     }
 
     /// To construct a `isl_multi_pw_aff`, we need all the indivisual `pw_aff`
@@ -3511,7 +3603,8 @@ public:
   }
 
   bool runOnScop(Scop &CurrentScop) override {
-     errs() << "PPCGCodeGen running on :" << CurrentScop.getFunction().getName() << "\n";
+    errs() << "PPCGCodeGen running on :" << CurrentScop.getFunction().getName()
+           << "\n";
     S = &CurrentScop;
     LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
     DT = &getAnalysis<DominatorTreeWrapperPass>().getDomTree();
