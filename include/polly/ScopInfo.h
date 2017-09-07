@@ -217,7 +217,8 @@ public:
     return Strides.getValue();
   }
 
-  bool hasSizes() { return bool(Sizes); }
+  bool hasSizes() const { return bool(Sizes); }
+  bool hasStrides() const { return bool(Strides); }
 
   template <typename Ret>
   Ret mapSizes(std::function<Ret(SmallVector<const SCEV *, 4> &)> func,
@@ -579,6 +580,8 @@ public:
   ///
   /// @returns True, if the arrays are compatible, False otherwise.
   bool isCompatibleWith(const ScopArrayInfo *Array) const;
+
+  bool hasStrides() { return Shape.hasStrides(); }
 
 private:
   void addDerivedSAI(ScopArrayInfo *DerivedSAI) {

@@ -487,22 +487,34 @@ void ScopArrayInfo::print(raw_ostream &OS, bool SizeAsPwAff) const {
   // as a isl_pw_aff even though there is no SCEV information.
   bool IsOutermostSizeKnown = SizeAsPwAff && FAD;
 
-  if (!IsOutermostSizeKnown && getNumberOfDimensions() > 0 &&
-      !getDimensionSize(0)) {
-    OS << "[*]";
-    u++;
-  }
-  for (; u < getNumberOfDimensions(); u++) {
-    OS << "[";
-
-    if (SizeAsPwAff) {
-      isl::pw_aff Size = getDimensionSizePw(u);
-      OS << " " << Size << " ";
-    } else {
-      OS << *getDimensionSize(u);
+  if (Shape.hasSizes()) {
+    // OS << "(Sizes)";
+    if (!IsOutermostSizeKnown && getNumberOfDimensions() > 0 &&
+        !getDimensionSize(0)) {
+      OS << "[*]";
+      u++;
     }
+    for (; u < getNumberOfDimensions(); u++) {
+      OS << "[";
 
-    OS << "]";
+      if (SizeAsPwAff) {
+        isl::pw_aff Size = getDimensionSizePw(u);
+        OS << " " << Size << " ";
+      } else {
+        OS << *getDimensionSize(u);
+      }
+
+      OS << "]";
+    }
+  } else {
+    OS << "(Strides)";
+    for (; u < getNumberOfDimensions(); u++) {
+      OS << "[";
+      const SCEV *Stride = Shape.strides()[u];
+      assert(Stride);
+      OS << *Stride;
+      OS << "]";
+    }
   }
 
   OS << ";";
@@ -787,6 +799,9 @@ isl::basic_map MemoryAccess::createBasicAccessMap(ScopStmt *Statement) {
 void MemoryAccess::assumeNoOutOfBound() {
   if (PollyIgnoreInbounds)
     return;
+  if (Shape.hasStrides())
+    return;
+
   auto *SAI = getScopArrayInfo();
   isl::space Space = getOriginalAccessRelationSpace().range();
   isl::set Outside = isl::set::empty(Space);
@@ -893,6 +908,10 @@ void MemoryAccess::computeBoundsOnAccessRelation(unsigned ElementSize) {
 }
 
 void MemoryAccess::foldAccessRelation() {
+  // If we are stride-based, it makes no sense to deliniearlise;
+  if (Shape.hasStrides())
+    return;
+
   if (Shape.getNumberOfDimensions() < 2 || isa<SCEVConstant>(Shape.sizes()[1]))
     return;
 
@@ -2237,6 +2256,8 @@ void Scop::addParameterBounds() {
 static std::vector<isl::id> getFortranArrayIds(Scop::array_range Arrays) {
   std::vector<isl::id> OutermostSizeIds;
   for (auto Array : Arrays) {
+    if (Array->hasStrides())
+      continue;
     // To check if an array is a Fortran array, we check if it has a isl_pw_aff
     // for its outermost dimension. Fortran arrays will have this since the
     // outermost dimension size can be picked up from their runtime description.
@@ -3434,6 +3455,9 @@ void Scop::foldSizeConstantsToRight() {
 
   for (auto Array : arrays()) {
     if (Array->getNumberOfDimensions() <= 1)
+      continue;
+
+    if (Array->hasStrides())
       continue;
 
     isl_space *Space = Array->getSpace().release();
