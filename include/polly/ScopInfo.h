@@ -2897,7 +2897,7 @@ public:
   /// @param Kind        The kind of the array info object.
   /// @param BaseName    The optional name of this memory reference.
   ScopArrayInfo *getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
-                                          ArrayRef<const SCEV *> Sizes,
+                                          ShapeInfo Shape,
                                           MemoryKind Kind,
                                           const char *BaseName = nullptr);
 

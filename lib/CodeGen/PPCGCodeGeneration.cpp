@@ -2019,7 +2019,7 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
       Sizes.push_back(SE.getSCEV(V));
     }
     const ScopArrayInfo *SAIRep =
-        S.getOrCreateScopArrayInfo(Val, EleTy, Sizes, MemoryKind::Array);
+        S.getOrCreateScopArrayInfo(Val, EleTy, ShapeInfo::fromSizes(Sizes), MemoryKind::Array);
     LocalArrays.push_back(Val);
 
     isl_ast_build_free(Build);
@@ -2252,7 +2252,7 @@ void GPUNodeBuilder::createKernelVariables(ppcg_kernel *Kernel, Function *FN) {
       llvm_unreachable("unknown variable type");
     }
     SAI =
-        S.getOrCreateScopArrayInfo(Allocation, EleTy, Sizes, MemoryKind::Array);
+        S.getOrCreateScopArrayInfo(Allocation, EleTy, ShapeInfo::fromSizes(Sizes), MemoryKind::Array);
     Id = isl_id_alloc(S.getIslCtx(), Var.name, nullptr);
     IDToValue[Id] = Allocation;
     LocalArrays.push_back(Allocation);

@@ -1025,7 +1025,7 @@ void ScopBuilder::ensurePHIWrite(PHINode *PHI, ScopStmt *IncomingStmt,
   // will create an exit PHI SAI object. It is needed during code generation
   // and would be created later anyway.
   if (IsExitBlock)
-    scop->getOrCreateScopArrayInfo(PHI, PHI->getType(), {},
+    scop->getOrCreateScopArrayInfo(PHI, PHI->getType(), ShapeInfo::fromSizes({}),
                                    MemoryKind::ExitPHI);
 
   // This is possible if PHI is in the SCoP's entry block. The incoming blocks
@@ -1232,7 +1232,7 @@ void ScopBuilder::buildAccessRelations(ScopStmt &Stmt) {
 
     // NOTE: This is why We need to teach ScopArrayInfo to accept Shape.
     auto *SAI = scop->getOrCreateScopArrayInfo(
-        Access->getOriginalBaseAddr(), ElementType, Access->Shape.sizes(), Ty);
+        Access->getOriginalBaseAddr(), ElementType, Access->Shape, Ty);
     Access->buildAccessRelation(SAI);
     scop->addAccessData(Access);
   }

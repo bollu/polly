@@ -1862,7 +1862,7 @@ MemoryAccess *ScopStmt::ensureValueRead(Value *V) {
     return Access;
 
   ScopArrayInfo *SAI =
-      Parent.getOrCreateScopArrayInfo(V, V->getType(), {}, MemoryKind::Value);
+      Parent.getOrCreateScopArrayInfo(V, V->getType(), ShapeInfo::fromSizes({}), MemoryKind::Value);
   Access =
       new MemoryAccess(this, nullptr, MemoryAccess::READ, V, V->getType(), true,
                        {}, ShapeInfo::fromSizes({}), V, MemoryKind::Value);
@@ -4048,7 +4048,7 @@ void Scop::canonicalizeDynamicBasePtrs() {
 }
 
 ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
-                                              ArrayRef<const SCEV *> Sizes,
+                                              ShapeInfo Shape,
                                               MemoryKind Kind,
                                               const char *BaseName) {
   assert((BasePtr || BaseName) &&
@@ -4059,14 +4059,14 @@ ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
   if (!SAI) {
     auto &DL = getFunction().getParent()->getDataLayout();
     SAI.reset(new ScopArrayInfo(BasePtr, ElementType, getIslCtx(),
-                                ShapeInfo::fromSizes(Sizes), Kind, DL, this,
+                                Shape, Kind, DL, this,
                                 BaseName));
     ScopArrayInfoSet.insert(SAI.get());
   } else {
     SAI->updateElementType(ElementType);
     // In case of mismatching array sizes, we bail out by setting the run-time
     // context to false.
-    if (!SAI->updateSizes(Sizes))
+    if (!SAI->updateSizes(Shape.sizes()))
       invalidate(DELINEARIZATION, DebugLoc());
   }
   return SAI.get();
@@ -4084,7 +4084,7 @@ ScopArrayInfo *Scop::createScopArrayInfo(Type *ElementType,
     else
       SCEVSizes.push_back(nullptr);
 
-  auto *SAI = getOrCreateScopArrayInfo(nullptr, ElementType, SCEVSizes,
+  auto *SAI = getOrCreateScopArrayInfo(nullptr, ElementType, ShapeInfo::fromSizes(SCEVSizes),
                                        MemoryKind::Array, BaseName.c_str());
   return SAI;
 }
