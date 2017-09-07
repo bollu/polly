@@ -1428,6 +1428,8 @@ static bool isValidFunctionInKernel(llvm::Function *F, bool AllowLibDevice) {
   if (AllowLibDevice && getCUDALibDeviceFuntion(F).length() > 0)
     return true;
 
+  if (Name.count("polly_array_index")) return true;
+
   return F->isIntrinsic() &&
          (Name.startswith("llvm.sqrt") || Name.startswith("llvm.fabs") ||
           Name.startswith("llvm.copysign"));
@@ -2862,22 +2864,24 @@ public:
     for (unsigned i = 1; i < NumDims; ++i)
       Extent = Extent.lower_bound_si(isl::dim::set, i, 0);
 
-    for (unsigned i = 0; i < NumDims; ++i) {
-      isl::pw_aff PwAff = Array->getDimensionSizePw(i);
+    if (!Array->hasStrides()) {
+        for (unsigned i = 0; i < NumDims; ++i) {
+            isl::pw_aff PwAff = Array->getDimensionSizePw(i);
 
-      // isl_pw_aff can be NULL for zero dimension. Only in the case of a
-      // Fortran array will we have a legitimate dimension.
-      if (PwAff.is_null()) {
-        assert(i == 0 && "invalid dimension isl_pw_aff for nonzero dimension");
-        continue;
-      }
+            // isl_pw_aff can be NULL for zero dimension. Only in the case of a
+            // Fortran array will we have a legitimate dimension.
+            if (PwAff.is_null()) {
+                assert(i == 0 && "invalid dimension isl_pw_aff for nonzero dimension");
+                continue;
+            }
 
-      isl::pw_aff Val = isl::aff::var_on_domain(
-          isl::local_space(Array->getSpace()), isl::dim::set, i);
-      PwAff = PwAff.add_dims(isl::dim::in, Val.dim(isl::dim::in));
-      PwAff = PwAff.set_tuple_id(isl::dim::in, Val.get_tuple_id(isl::dim::in));
-      isl::set Set = PwAff.gt_set(Val);
-      Extent = Set.intersect(Extent);
+            isl::pw_aff Val = isl::aff::var_on_domain(
+                    isl::local_space(Array->getSpace()), isl::dim::set, i);
+            PwAff = PwAff.add_dims(isl::dim::in, Val.dim(isl::dim::in));
+            PwAff = PwAff.set_tuple_id(isl::dim::in, Val.get_tuple_id(isl::dim::in));
+            isl::set Set = PwAff.gt_set(Val);
+            Extent = Set.intersect(Extent);
+        }
     }
 
     return Extent;
@@ -3507,6 +3511,7 @@ public:
   }
 
   bool runOnScop(Scop &CurrentScop) override {
+     errs() << "PPCGCodeGen running on :" << CurrentScop.getFunction().getName() << "\n";
     S = &CurrentScop;
     LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
     DT = &getAnalysis<DominatorTreeWrapperPass>().getDomTree();
