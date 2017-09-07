@@ -170,11 +170,10 @@ public:
       return Sizes->size();
 
     if (Strides)
-        return Strides->size();
+      return Strides->size();
 
     return 0;
   }
-
 
   /// Set the sizes of the Shape. It checks the invariant
   /// That this shape does not have strides.
@@ -183,11 +182,22 @@ public:
     assert(!bool(Strides));
 
     if (!bool(Sizes)) {
-      // errs() << "Initializing sizes();\n";
       Sizes = {};
     }
 
     Sizes = NewSizes;
+  }
+
+  /// Set the strides of the Shape. It checks the invariant
+  /// That this shape does not have sizes.
+  void setStrides(ArrayRef<const SCEV *> NewStrides) {
+    assert(!bool(Sizes));
+
+    if (!Strides)
+      Strides = {};
+
+    Strides->clear();
+    Strides->insert(Strides->begin(), NewStrides.begin(), NewStrides.end());
   }
 
   const SmallVector<const SCEV *, 4> &sizes() const {
@@ -207,49 +217,48 @@ public:
     return Strides.getValue();
   }
 
-  bool hasSizes() {
-      return bool(Sizes);
-  }
+  bool hasSizes() { return bool(Sizes); }
 
-  template<typename Ret>
-  Ret mapSizes(std::function<Ret(SmallVector<const SCEV *, 4> &)> func, Ret otherwise) {
-      if (Sizes)
-          return func(*Sizes);
+  template <typename Ret>
+  Ret mapSizes(std::function<Ret(SmallVector<const SCEV *, 4> &)> func,
+               Ret otherwise) {
+    if (Sizes)
+      return func(*Sizes);
 
-      return otherwise;
+    return otherwise;
   }
 
   void mapSizes(std::function<void(SmallVector<const SCEV *, 4> &)> func) {
-      if (Sizes) func(*Sizes);
+    if (Sizes)
+      func(*Sizes);
   }
 
-  raw_ostream& print(raw_ostream &OS) const {
-      if (Sizes) {
-          OS << "Sizes: ";
-          for (auto Size : *Sizes) {
-              if (Size)
-                  OS << *Size << ", ";
-              else
-                  OS << "null" << ", " ;
-          }
-          return OS;
+  raw_ostream &print(raw_ostream &OS) const {
+    if (Sizes) {
+      OS << "Sizes: ";
+      for (auto Size : *Sizes) {
+        if (Size)
+          OS << *Size << ", ";
+        else
+          OS << "null"
+             << ", ";
       }
-      else if (Strides) {
-          OS << "Strides: ";
-          for (auto Stride : *Strides) {
-              if (Stride)
-                  OS << *Stride << ", ";
-              else
-                  OS << "null" << ", " ;
-          }
-          return OS;
-      }
-      OS << "Uninitialized.\n";
       return OS;
+    } else if (Strides) {
+      OS << "Strides: ";
+      for (auto Stride : *Strides) {
+        if (Stride)
+          OS << *Stride << ", ";
+        else
+          OS << "null"
+             << ", ";
+      }
+      return OS;
+    }
+    OS << "Uninitialized.\n";
+    return OS;
   }
-
 };
-
 
 raw_ostream &operator<<(raw_ostream &OS, const ShapeInfo &Shape);
 
@@ -436,6 +445,9 @@ public:
   ///  @param CheckConsistency Update sizes, even if new sizes are inconsistent
   ///                          with old sizes
   bool updateSizes(ArrayRef<const SCEV *> Sizes, bool CheckConsistency = true);
+
+  /// Update the strides of a ScopArrayInfo object.
+  bool updateStrides(ArrayRef<const SCEV *> Strides);
 
   /// Make the ScopArrayInfo model a Fortran array.
   /// It receives the Fortran array descriptor and stores this.
@@ -2943,8 +2955,7 @@ public:
   /// @param Kind        The kind of the array info object.
   /// @param BaseName    The optional name of this memory reference.
   ScopArrayInfo *getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
-                                          ShapeInfo Shape,
-                                          MemoryKind Kind,
+                                          ShapeInfo Shape, MemoryKind Kind,
                                           const char *BaseName = nullptr);
 
   /// Create an array and return the corresponding ScopArrayInfo object.

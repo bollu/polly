@@ -247,7 +247,7 @@ static cl::opt<bool> PollyPrintInstructions(
 //===----------------------------------------------------------------------===//
 
 raw_ostream &polly::operator<<(raw_ostream &OS, const ShapeInfo &Shape) {
-    return Shape.print(OS);
+  return Shape.print(OS);
 }
 // Create a sequence of two schedules. Either argument may be null and is
 // interpreted as the empty schedule. Can also return null if both schedules are
@@ -333,9 +333,12 @@ ScopArrayInfo::ScopArrayInfo(Value *BasePtr, Type *ElementType, isl::ctx Ctx,
                                       UseInstructionNames);
   Id = isl::id::alloc(Ctx, BasePtrName, this);
 
-  // Shape.mapSizes([&] (SmallVector<const SCEV*, 4> &Sizes)  { this->updateSizes(Sizes); });
+  // Shape.mapSizes([&] (SmallVector<const SCEV*, 4> &Sizes)  {
+  // this->updateSizes(Sizes); });
   if (Shape.hasSizes())
-      updateSizes(Shape.sizes());
+    updateSizes(Shape.sizes());
+  else
+    updateStrides(Shape.strides());
 
   if (!BasePtr || Kind != MemoryKind::Array) {
     BasePtrOriginSAI = nullptr;
@@ -350,7 +353,7 @@ ScopArrayInfo::ScopArrayInfo(Value *BasePtr, Type *ElementType, isl::ctx Ctx,
 ScopArrayInfo::~ScopArrayInfo() = default;
 
 isl::space ScopArrayInfo::getSpace() const {
-  errs() << __PRETTY_FUNCTION__ << "Shape: " << this->Shape << "\n";
+  // errs() << __PRETTY_FUNCTION__ << "Shape: " << this->Shape << "\n";
   auto Space = isl::space(Id.get_ctx(), 0, getNumberOfDimensions());
   Space = Space.set_tuple_id(isl::dim::set, Id);
   return Space;
@@ -421,6 +424,10 @@ void ScopArrayInfo::applyAndSetFAD(Value *FAD) {
 
   DimensionSizesPw[0] = PwAff;
 }
+
+bool ScopArrayInfo::updateStrides(ArrayRef<const SCEV *> Strides) {
+  Shape.setStrides(Strides);
+};
 
 bool ScopArrayInfo::updateSizes(ArrayRef<const SCEV *> NewSizes,
                                 bool CheckConsistency) {
@@ -575,7 +582,7 @@ void MemoryAccess::updateDimensionality() {
   auto *SAI = getScopArrayInfo();
   isl::space ArraySpace = SAI->getSpace();
 
-  errs() << "-ArraySpace: " << ArraySpace << "\n";
+  // errs() << "-ArraySpace: " << ArraySpace << "\n";
   isl::space AccessSpace = AccessRelation.get_space().range();
   isl::ctx Ctx = ArraySpace.get_ctx();
 
@@ -583,9 +590,9 @@ void MemoryAccess::updateDimensionality() {
   auto DimsAccess = AccessSpace.dim(isl::dim::set);
   auto DimsMissing = DimsArray - DimsAccess;
 
-  errs() << "-DimsArray: " << DimsArray << "\n";
-  errs() << "-DimsAccess: " << DimsAccess << "\n";
-  errs() << "-DimsMissing: " << DimsMissing << "\n";
+  // errs() << "-DimsArray: " << DimsArray << "\n";
+  // errs() << "-DimsAccess: " << DimsAccess << "\n";
+  // errs() << "-DimsMissing: " << DimsMissing << "\n";
 
   auto *BB = getStatement()->getEntryBlock();
   auto &DL = BB->getModule()->getDataLayout();
@@ -1873,8 +1880,8 @@ MemoryAccess *ScopStmt::ensureValueRead(Value *V) {
   if (Access)
     return Access;
 
-  ScopArrayInfo *SAI =
-      Parent.getOrCreateScopArrayInfo(V, V->getType(), ShapeInfo::fromSizes({}), MemoryKind::Value);
+  ScopArrayInfo *SAI = Parent.getOrCreateScopArrayInfo(
+      V, V->getType(), ShapeInfo::fromSizes({}), MemoryKind::Value);
   Access =
       new MemoryAccess(this, nullptr, MemoryAccess::READ, V, V->getType(), true,
                        {}, ShapeInfo::fromSizes({}), V, MemoryKind::Value);
@@ -4060,8 +4067,7 @@ void Scop::canonicalizeDynamicBasePtrs() {
 }
 
 ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
-                                              ShapeInfo Shape,
-                                              MemoryKind Kind,
+                                              ShapeInfo Shape, MemoryKind Kind,
                                               const char *BaseName) {
   assert((BasePtr || BaseName) &&
          "BasePtr and BaseName can not be nullptr at the same time.");
@@ -4070,9 +4076,8 @@ ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
                       : ScopArrayNameMap[BaseName];
   if (!SAI) {
     auto &DL = getFunction().getParent()->getDataLayout();
-    SAI.reset(new ScopArrayInfo(BasePtr, ElementType, getIslCtx(),
-                                Shape, Kind, DL, this,
-                                BaseName));
+    SAI.reset(new ScopArrayInfo(BasePtr, ElementType, getIslCtx(), Shape, Kind,
+                                DL, this, BaseName));
     ScopArrayInfoSet.insert(SAI.get());
   } else {
     SAI->updateElementType(ElementType);
@@ -4096,7 +4101,8 @@ ScopArrayInfo *Scop::createScopArrayInfo(Type *ElementType,
     else
       SCEVSizes.push_back(nullptr);
 
-  auto *SAI = getOrCreateScopArrayInfo(nullptr, ElementType, ShapeInfo::fromSizes(SCEVSizes),
+  auto *SAI = getOrCreateScopArrayInfo(nullptr, ElementType,
+                                       ShapeInfo::fromSizes(SCEVSizes),
                                        MemoryKind::Array, BaseName.c_str());
   return SAI;
 }

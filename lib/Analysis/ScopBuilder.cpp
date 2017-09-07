@@ -772,7 +772,7 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
   // NOTE: To be able to change this, we need to teach ScopArrayInfo to recieve
   // a Shape object. So, do that first.
   addArrayAccess(Stmt, Inst, AccType, BasePtr, ElementType, true, Subscripts,
-                 ShapeInfo::fromSizes(Strides), Val);
+                 ShapeInfo::fromStrides(Strides), Val);
 
   if (AbstractMatrixDebug)
     errs() << "Added array access successfully!\n";
@@ -1025,8 +1025,8 @@ void ScopBuilder::ensurePHIWrite(PHINode *PHI, ScopStmt *IncomingStmt,
   // will create an exit PHI SAI object. It is needed during code generation
   // and would be created later anyway.
   if (IsExitBlock)
-    scop->getOrCreateScopArrayInfo(PHI, PHI->getType(), ShapeInfo::fromSizes({}),
-                                   MemoryKind::ExitPHI);
+    scop->getOrCreateScopArrayInfo(
+        PHI, PHI->getType(), ShapeInfo::fromSizes({}), MemoryKind::ExitPHI);
 
   // This is possible if PHI is in the SCoP's entry block. The incoming blocks
   // from outside the SCoP's region have no statement representation.
@@ -1231,8 +1231,8 @@ void ScopBuilder::buildAccessRelations(ScopStmt &Stmt) {
       Ty = MemoryKind::Array;
 
     // NOTE: This is why We need to teach ScopArrayInfo to accept Shape.
-    auto *SAI = scop->getOrCreateScopArrayInfo(
-        Access->getOriginalBaseAddr(), ElementType, Access->Shape, Ty);
+    auto *SAI = scop->getOrCreateScopArrayInfo(Access->getOriginalBaseAddr(),
+                                               ElementType, Access->Shape, Ty);
     Access->buildAccessRelation(SAI);
     scop->addAccessData(Access);
   }
