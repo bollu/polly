@@ -246,6 +246,9 @@ static cl::opt<bool> PollyPrintInstructions(
 
 //===----------------------------------------------------------------------===//
 
+raw_ostream &polly::operator<<(raw_ostream &OS, const ShapeInfo &Shape) {
+    return Shape.print(OS);
+}
 // Create a sequence of two schedules. Either argument may be null and is
 // interpreted as the empty schedule. Can also return null if both schedules are
 // empty.
@@ -330,7 +333,9 @@ ScopArrayInfo::ScopArrayInfo(Value *BasePtr, Type *ElementType, isl::ctx Ctx,
                                       UseInstructionNames);
   Id = isl::id::alloc(Ctx, BasePtrName, this);
 
-  updateSizes(Shape.sizes());
+  // Shape.mapSizes([&] (SmallVector<const SCEV*, 4> &Sizes)  { this->updateSizes(Sizes); });
+  if (Shape.hasSizes())
+      updateSizes(Shape.sizes());
 
   if (!BasePtr || Kind != MemoryKind::Array) {
     BasePtrOriginSAI = nullptr;
@@ -345,6 +350,7 @@ ScopArrayInfo::ScopArrayInfo(Value *BasePtr, Type *ElementType, isl::ctx Ctx,
 ScopArrayInfo::~ScopArrayInfo() = default;
 
 isl::space ScopArrayInfo::getSpace() const {
+  errs() << __PRETTY_FUNCTION__ << "Shape: " << this->Shape << "\n";
   auto Space = isl::space(Id.get_ctx(), 0, getNumberOfDimensions());
   Space = Space.set_tuple_id(isl::dim::set, Id);
   return Space;
@@ -568,12 +574,18 @@ void MemoryAccess::wrapConstantDimensions() {
 void MemoryAccess::updateDimensionality() {
   auto *SAI = getScopArrayInfo();
   isl::space ArraySpace = SAI->getSpace();
+
+  errs() << "-ArraySpace: " << ArraySpace << "\n";
   isl::space AccessSpace = AccessRelation.get_space().range();
   isl::ctx Ctx = ArraySpace.get_ctx();
 
   auto DimsArray = ArraySpace.dim(isl::dim::set);
   auto DimsAccess = AccessSpace.dim(isl::dim::set);
   auto DimsMissing = DimsArray - DimsAccess;
+
+  errs() << "-DimsArray: " << DimsArray << "\n";
+  errs() << "-DimsAccess: " << DimsAccess << "\n";
+  errs() << "-DimsMissing: " << DimsMissing << "\n";
 
   auto *BB = getStatement()->getEntryBlock();
   auto &DL = BB->getModule()->getDataLayout();

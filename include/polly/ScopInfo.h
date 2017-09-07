@@ -168,12 +168,13 @@ public:
     // assert(isInitialized());
     if (Sizes)
       return Sizes->size();
-    else
-      return 0;
 
-    assert(Strides);
-    return Strides->size();
+    if (Strides)
+        return Strides->size();
+
+    return 0;
   }
+
 
   /// Set the sizes of the Shape. It checks the invariant
   /// That this shape does not have strides.
@@ -205,7 +206,52 @@ public:
     assert(!bool(Sizes));
     return Strides.getValue();
   }
+
+  bool hasSizes() {
+      return bool(Sizes);
+  }
+
+  template<typename Ret>
+  Ret mapSizes(std::function<Ret(SmallVector<const SCEV *, 4> &)> func, Ret otherwise) {
+      if (Sizes)
+          return func(*Sizes);
+
+      return otherwise;
+  }
+
+  void mapSizes(std::function<void(SmallVector<const SCEV *, 4> &)> func) {
+      if (Sizes) func(*Sizes);
+  }
+
+  raw_ostream& print(raw_ostream &OS) const {
+      if (Sizes) {
+          OS << "Sizes: ";
+          for (auto Size : *Sizes) {
+              if (Size)
+                  OS << *Size << ", ";
+              else
+                  OS << "null" << ", " ;
+          }
+          return OS;
+      }
+      else if (Strides) {
+          OS << "Strides: ";
+          for (auto Stride : *Strides) {
+              if (Stride)
+                  OS << *Stride << ", ";
+              else
+                  OS << "null" << ", " ;
+          }
+          return OS;
+      }
+      OS << "Uninitialized.\n";
+      return OS;
+  }
+
 };
+
+
+raw_ostream &operator<<(raw_ostream &OS, const ShapeInfo &Shape);
 
 /// Enum to distinguish between assumptions and restrictions.
 enum AssumptionSign { AS_ASSUMPTION, AS_RESTRICTION };
