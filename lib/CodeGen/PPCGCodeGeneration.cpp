@@ -2933,7 +2933,61 @@ public:
       }
     }
 
-    for (unsigned i = 1; i < PPCGArray.n_index; ++i) {
+    static const bool DumpBoundsCreation = true;
+    if (Array->hasStrides()) {
+
+      isl::set Domain;
+      for (ScopStmt &Stmt : *S) {
+        for (MemoryAccess *MemAcc : Stmt) {
+            // Note that this is wrong, we need to take the inverse image wrt to
+            // the access functions.  if (!Domain)
+          if (MemAcc->getScopArrayInfo() == Array)
+              Domain = Stmt.getDomain();
+            else
+              Domain = Domain.unite(Stmt.getDomain());
+          }
+      }
+      if (DumpBoundsCreation) errs() << "Total domain: " << Domain << "\n";
+      for (unsigned i = 1; i < PPCGArray.n_index; ++i) {
+        isl_set *Dom = Domain.copy();
+#define DIST(begin, end) ((end) - (begin) + 1)
+        if (DumpBoundsCreation) {
+          errs() << i << "|Dom: ";
+          isl_set_dump(Dom);
+        }
+        Dom = isl_set_project_out(Dom, isl_dim_set, 0, DIST(0, i - 1));
+        if (DumpBoundsCreation) {
+          errs() << i << "|Dom: ";
+          isl_set_dump(Dom);
+        }
+        Dom = isl_set_project_out(Dom, isl_dim_set, 1,
+                                  DIST(i + 1, PPCGArray.n_index - 1));
+#undef DIST
+        if (DumpBoundsCreation) {
+          errs() << i << "|Dom: ";
+          isl_set_dump(Dom);
+        }
+
+        isl_pw_aff *Bound = isl_set_dim_max(isl_set_copy(Dom), 0);
+        isl_set_free(Dom);
+        if (DumpBoundsCreation) {
+          errs() << i << "|" << "Bound: ";
+          isl_pw_aff_dump(Bound);
+        }
+
+        Dom = isl_pw_aff_domain(isl_pw_aff_copy(Bound));
+        isl_local_space *LS =
+            isl_local_space_from_space(isl_set_get_space(Dom));
+        isl_aff *Constant = isl_aff_zero_on_domain(LS);
+        Constant = isl_aff_add_constant_si(Constant, 1000);
+        isl_aff_free(Constant);
+        isl_set_free(Dom);
+        // Bound = isl_pw_aff_add(Bound, isl_pw_aff_alloc(Dom, Constant));
+        Bound = isl_pw_aff_gist(Bound, S->getContext().release());
+        Bounds.push_back(Bound);
+      }
+    } else {
+      for (unsigned i = 1; i < PPCGArray.n_index; ++i) {
         isl_pw_aff *Bound = Array->getDimensionSizePw(i).release();
         auto LS = isl_pw_aff_get_domain_space(Bound);
         auto Aff = isl_multi_aff_zero(LS);
@@ -2965,6 +3019,7 @@ public:
 
         Bound = isl_pw_aff_pullback_multi_aff(Bound, Aff);
         Bounds.push_back(Bound);
+      }
     }
 
     /// To construct a `isl_multi_pw_aff`, we need all the indivisual `pw_aff`
