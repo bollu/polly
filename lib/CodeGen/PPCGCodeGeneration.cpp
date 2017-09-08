@@ -532,7 +532,7 @@ private:
   ///
   /// @param Array The array for which to compute the offset.
   /// @returns An llvm::Value that contains the offset of the array.
-  Value *getArrayOffset(gpu_array_info *Array);
+  Value *getArrayOffset(const ScopArrayInfo *SAI, gpu_array_info *Array);
 
   /// Prepare the kernel arguments for kernel code generation
   ///
@@ -782,7 +782,7 @@ void GPUNodeBuilder::allocateDeviceArrays() {
     DevArrayName.append(Array->name);
 
     Value *ArraySize = getArraySize(Array);
-    Value *Offset = getArrayOffset(Array);
+    Value *Offset = getArrayOffset(ScopArray, Array);
     if (Offset)
       ArraySize = Builder.CreateSub(
           ArraySize,
@@ -823,7 +823,8 @@ void GPUNodeBuilder::prepareManagedDeviceArrays() {
       HostPtr = ScopArray->getBasePtr();
     HostPtr = getLatestValue(HostPtr);
 
-    Value *Offset = getArrayOffset(Array);
+    /*
+    Value *Offset = getArrayOffset(ScopArray, Array);
     if (Offset) {
       HostPtr = Builder.CreatePointerCast(
           HostPtr, ScopArray->getElementType()->getPointerTo());
@@ -831,6 +832,7 @@ void GPUNodeBuilder::prepareManagedDeviceArrays() {
     }
 
     HostPtr = Builder.CreatePointerCast(HostPtr, Builder.getInt8PtrTy());
+    */
     DeviceAllocations[ScopArray] = HostPtr;
   }
 }
@@ -1055,6 +1057,7 @@ Value *GPUNodeBuilder::createCallInitContext() {
     break;
   case GPURuntime::OpenCL:
     Name = "polly_initContextCL";
+
     break;
   }
 
@@ -1122,9 +1125,14 @@ Value *GPUNodeBuilder::getArraySize(gpu_array_info *Array) {
   return ArraySize;
 }
 
-Value *GPUNodeBuilder::getArrayOffset(gpu_array_info *Array) {
+Value *GPUNodeBuilder::getArrayOffset(const ScopArrayInfo *SAI, gpu_array_info *Array) {
   if (gpu_array_is_scalar(Array))
     return nullptr;
+
+  if (SAI->hasStrides()) {
+      return Builder.getInt64(0);
+  }
+
 
   isl::ast_build Build = isl::ast_build::from_context(S.getContext());
 
@@ -1178,7 +1186,7 @@ void GPUNodeBuilder::createDataTransfer(__isl_take isl_ast_node *TransferStmt,
   auto ScopArray = (ScopArrayInfo *)(Array->user);
 
   Value *Size = getArraySize(Array);
-  Value *Offset = getArrayOffset(Array);
+  Value *Offset = getArrayOffset(ScopArray, Array);
   Value *DevPtr = DeviceAllocations[ScopArray];
 
   Value *HostPtr;
@@ -1647,6 +1655,7 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     if (Runtime == GPURuntime::OpenCL)
       ArgSizes[Index] = SAI->getElemSizeInBytes();
 
+    errs() << "SAI for array:"; SAI->print(errs(), true); errs() << "\n";
     Value *DevArray = nullptr;
     if (PollyManagedMemory) {
       DevArray = getManagedDeviceArray(&Prog->array[i],
@@ -1655,16 +1664,23 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
       DevArray = DeviceAllocations[const_cast<ScopArrayInfo *>(SAI)];
       DevArray = createCallGetDevicePtr(DevArray);
     }
-    assert(DevArray != nullptr && "Array to be offloaded to device not "
-                                  "initialized");
-    Value *Offset = getArrayOffset(&Prog->array[i]);
+
+    errs() << "DevArray(Raw): " << *DevArray << "\n";
+
+    Value *Offset = getArrayOffset(SAI, &Prog->array[i]);
 
     if (Offset) {
+        
+        errs() << "Offset: " << *Offset << "\n";
       DevArray = Builder.CreatePointerCast(
-          DevArray, SAI->getElementType()->getPointerTo());
+              DevArray, SAI->getElementType()->getPointerTo());
       DevArray = Builder.CreateGEP(DevArray, Builder.CreateNeg(Offset));
       DevArray = Builder.CreatePointerCast(DevArray, Builder.getInt8PtrTy());
     }
+    errs() << "---\n";
+    errs() << "DevArray(With Offset): " << *DevArray << "\n";
+    assert(DevArray != nullptr && "Array to be offloaded to device not "
+                                  "initialized");
     Value *Slot = Builder.CreateGEP(
         Parameters, {Builder.getInt64(0), Builder.getInt64(Index)});
 
@@ -2025,14 +2041,10 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
 
     if (SAI->hasStrides()) {
       for (long j = 0, n = Kernel->array[i].array->n_index; j < n; j++) {
-        errs() << "\n----\nj: " << j << "\n";
         isl_ast_expr *DimSize = isl_ast_build_expr_from_pw_aff(
             Build,
             isl_multi_pw_aff_get_pw_aff(Kernel->array[i].array->bound, j));
-        errs() << "DimSize: ";
-        isl_ast_expr_dump(DimSize);
         auto V = ExprBuilder.create(DimSize);
-        errs() << "V: " << *V << "\n";
         Sizes.push_back(SE.getSCEV(V));
       }
       NewShape = ShapeInfo::fromStrides(Sizes);

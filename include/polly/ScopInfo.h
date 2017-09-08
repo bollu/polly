@@ -124,12 +124,19 @@ private:
 
   llvm::Optional<SmallVector<const SCEV *, 4>> Sizes;
   llvm::Optional<SmallVector<const SCEV *, 4>> Strides;
+  llvm::Optional<const SCEV *> Offset;
+
+
 
   ShapeInfo(Optional<ArrayRef<const SCEV *>> SizesRef,
-            Optional<ArrayRef<const SCEV *>> StridesRef) {
+            Optional<ArrayRef<const SCEV *>> StridesRef,
+            llvm::Optional<const SCEV *> Offset) : Offset(Offset) {
     // Can check for XOR
     assert(bool(SizesRef) || bool(StridesRef));
     assert(!(bool(SizesRef) && bool(StridesRef)));
+
+    if (StridesRef) assert(Offset);
+    if (Offset) assert(StridesRef);
 
     if (SizesRef)
       Sizes =
@@ -158,8 +165,9 @@ public:
     return *this;
   }
 
-  static ShapeInfo fromStrides(ArrayRef<const SCEV *> Strides) {
-    return ShapeInfo(None, OptionalSCEVArrayRefTy(Strides));
+  static ShapeInfo fromStrides(ArrayRef<const SCEV *> Strides, const SCEV *Offset) {
+      assert(Offset && "offset is null");
+    return ShapeInfo(None, OptionalSCEVArrayRefTy(Strides), Optional<const SCEV *>(Offset);
   }
 
   static ShapeInfo none() { return ShapeInfo(None); }
@@ -206,6 +214,10 @@ public:
   const SmallVector<const SCEV *, 4> &sizes() const {
     assert(!bool(Strides));
     return Sizes.getValue();
+  }
+
+  const SCEV* offset() const {
+      return Offset.getValue();
   }
 
   SmallVector<const SCEV *, 4> &sizes_mut() {
