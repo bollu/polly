@@ -485,6 +485,8 @@ public:
     return Shape.getNumberOfDimensions();
   }
 
+  ShapeInfo getShape() const { return Shape; }
+
   /// Return the size of dimension @p dim as SCEV*.
   //
   //  Scalars do not have array dimensions and the first dimension of
@@ -586,7 +588,7 @@ public:
   /// @returns True, if the arrays are compatible, False otherwise.
   bool isCompatibleWith(const ScopArrayInfo *Array) const;
 
-  bool hasStrides() { return Shape.hasStrides(); }
+  bool hasStrides() const { return Shape.hasStrides(); }
 
 private:
   void addDerivedSAI(ScopArrayInfo *DerivedSAI) {

@@ -262,17 +262,15 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
   }
 
   IndexOp = nullptr;
-  for (unsigned u = 1, e = isl_ast_expr_get_op_n_arg(Expr); u < e; u++) {
-    Value *NextIndex = create(isl_ast_expr_get_op_arg(Expr, u));
-    assert(NextIndex->getType()->isIntegerTy() &&
-           "Access index should be an integer");
+  if (SAI->hasStrides()) {
+    assert(false);
+    errs() << "Linearising access!";
 
-    if (PollyDebugPrinting)
-      RuntimeDebugBuilder::createCPUPrinter(Builder, "[", NextIndex, "]");
+    for (unsigned u = 0, e = isl_ast_expr_get_op_n_arg(Expr); u < e; u++) {
+      Value *NextIndex = create(isl_ast_expr_get_op_arg(Expr, u));
+      assert(NextIndex->getType()->isIntegerTy() &&
+             "Access index should be an integer");
 
-    if (!IndexOp) {
-      IndexOp = NextIndex;
-    } else {
       Type *Ty = getWidestType(NextIndex->getType(), IndexOp->getType());
 
       if (Ty != NextIndex->getType())
@@ -280,32 +278,81 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
       if (Ty != IndexOp->getType())
         IndexOp = Builder.CreateIntCast(IndexOp, Ty, true);
 
-      IndexOp = createAdd(IndexOp, NextIndex, "polly.access.add." + BaseName);
+      const SCEV *DimSCEV = SAI->getDimensionSize(u);
+
+      llvm::ValueToValueMap Map(GlobalMap.begin(), GlobalMap.end());
+      DimSCEV = SCEVParameterRewriter::rewrite(DimSCEV, SE, Map);
+      Value *DimSize =
+          expandCodeFor(S, SE, DL, "polly", DimSCEV, DimSCEV->getType(),
+                        &*Builder.GetInsertPoint(), nullptr,
+                        StartBlock->getSinglePredecessor());
+
+      if (Ty != NextIndex->getType())
+        NextIndex = Builder.CreateSExtOrTrunc(NextIndex, Ty,
+                                              "polly.access.sext." + BaseName);
+      if (Ty != DimSize->getType())
+        DimSize = Builder.CreateSExtOrTrunc(DimSize, Ty,
+                                            "polly.access.sext." + BaseName);
+      if (Ty != IndexOp->getType())
+        IndexOp = Builder.CreateIntCast(IndexOp, Ty, true);
+
+      NextIndex = createMul(NextIndex, DimSize, "polly.access.mul." + BaseName);
+
+      if (PollyDebugPrinting)
+        RuntimeDebugBuilder::createCPUPrinter(Builder, "[", NextIndex, "]");
+      if (!IndexOp) {
+        IndexOp = NextIndex;
+      } else {
+        IndexOp = createAdd(IndexOp, NextIndex, "polly.access.add." + BaseName);
+      } // end else
+    }   // end for loop over stride dims
+  }     // end hasStride
+  else {
+    for (unsigned u = 1, e = isl_ast_expr_get_op_n_arg(Expr); u < e; u++) {
+      Value *NextIndex = create(isl_ast_expr_get_op_arg(Expr, u));
+      assert(NextIndex->getType()->isIntegerTy() &&
+             "Access index should be an integer");
+
+      if (PollyDebugPrinting)
+        RuntimeDebugBuilder::createCPUPrinter(Builder, "[", NextIndex, "]");
+
+      if (!IndexOp) {
+        IndexOp = NextIndex;
+      } else {
+        Type *Ty = getWidestType(NextIndex->getType(), IndexOp->getType());
+
+        if (Ty != NextIndex->getType())
+          NextIndex = Builder.CreateIntCast(NextIndex, Ty, true);
+        if (Ty != IndexOp->getType())
+          IndexOp = Builder.CreateIntCast(IndexOp, Ty, true);
+
+        IndexOp = createAdd(IndexOp, NextIndex, "polly.access.add." + BaseName);
+      }
+
+      // For every but the last dimension multiply the size, for the last
+      // dimension we can exit the loop.
+      if (u + 1 >= e)
+        break;
+
+      const SCEV *DimSCEV = SAI->getDimensionSize(u);
+
+      llvm::ValueToValueMap Map(GlobalMap.begin(), GlobalMap.end());
+      DimSCEV = SCEVParameterRewriter::rewrite(DimSCEV, SE, Map);
+      Value *DimSize =
+          expandCodeFor(S, SE, DL, "polly", DimSCEV, DimSCEV->getType(),
+                        &*Builder.GetInsertPoint(), nullptr,
+                        StartBlock->getSinglePredecessor());
+
+      Type *Ty = getWidestType(DimSize->getType(), IndexOp->getType());
+
+      if (Ty != IndexOp->getType())
+        IndexOp = Builder.CreateSExtOrTrunc(IndexOp, Ty,
+                                            "polly.access.sext." + BaseName);
+      if (Ty != DimSize->getType())
+        DimSize = Builder.CreateSExtOrTrunc(DimSize, Ty,
+                                            "polly.access.sext." + BaseName);
+      IndexOp = createMul(IndexOp, DimSize, "polly.access.mul." + BaseName);
     }
-
-    // For every but the last dimension multiply the size, for the last
-    // dimension we can exit the loop.
-    if (u + 1 >= e)
-      break;
-
-    const SCEV *DimSCEV = SAI->getDimensionSize(u);
-
-    llvm::ValueToValueMap Map(GlobalMap.begin(), GlobalMap.end());
-    DimSCEV = SCEVParameterRewriter::rewrite(DimSCEV, SE, Map);
-    Value *DimSize =
-        expandCodeFor(S, SE, DL, "polly", DimSCEV, DimSCEV->getType(),
-                      &*Builder.GetInsertPoint(), nullptr,
-                      StartBlock->getSinglePredecessor());
-
-    Type *Ty = getWidestType(DimSize->getType(), IndexOp->getType());
-
-    if (Ty != IndexOp->getType())
-      IndexOp = Builder.CreateSExtOrTrunc(IndexOp, Ty,
-                                          "polly.access.sext." + BaseName);
-    if (Ty != DimSize->getType())
-      DimSize = Builder.CreateSExtOrTrunc(DimSize, Ty,
-                                          "polly.access.sext." + BaseName);
-    IndexOp = createMul(IndexOp, DimSize, "polly.access.mul." + BaseName);
   }
 
   Access = Builder.CreateGEP(Base, IndexOp, "polly.access." + BaseName);

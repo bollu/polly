@@ -2028,8 +2028,10 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
       auto V = ExprBuilder.create(DimSize);
       Sizes.push_back(SE.getSCEV(V));
     }
-    const ScopArrayInfo *SAIRep = S.getOrCreateScopArrayInfo(
-        Val, EleTy, ShapeInfo::fromSizes(Sizes), MemoryKind::Array);
+    ShapeInfo NewShape =
+        SAI->hasStrides() ? SAI->getShape() : ShapeInfo::fromSizes(Sizes);
+    const ScopArrayInfo *SAIRep =
+        S.getOrCreateScopArrayInfo(Val, EleTy, NewShape, MemoryKind::Array);
     LocalArrays.push_back(Val);
 
     isl_ast_build_free(Build);
@@ -2226,6 +2228,10 @@ void GPUNodeBuilder::createKernelVariables(ppcg_kernel *Kernel, Function *FN) {
   for (int i = 0; i < Kernel->n_var; ++i) {
     struct ppcg_kernel_var &Var = Kernel->var[i];
     isl_id *Id = isl_space_get_tuple_id(Var.array->space, isl_dim_set);
+    const ScopArrayInfo *OriginalSAI =
+        ScopArrayInfo::getFromId(isl::manage(isl_id_copy(Id)));
+    assert(OriginalSAI);
+
     Type *EleTy = ScopArrayInfo::getFromId(isl::manage(Id))->getElementType();
 
     Type *ArrayTy = EleTy;
@@ -2246,6 +2252,10 @@ void GPUNodeBuilder::createKernelVariables(ppcg_kernel *Kernel, Function *FN) {
       ArrayTy = ArrayType::get(ArrayTy, Bound);
     }
 
+    ShapeInfo NewShape = OriginalSAI->hasStrides()
+                             ? OriginalSAI->getShape()
+                             : ShapeInfo::fromSizes(Sizes);
+
     const ScopArrayInfo *SAI;
     Value *Allocation;
     if (Var.type == ppcg_access_shared) {
@@ -2261,8 +2271,8 @@ void GPUNodeBuilder::createKernelVariables(ppcg_kernel *Kernel, Function *FN) {
     } else {
       llvm_unreachable("unknown variable type");
     }
-    SAI = S.getOrCreateScopArrayInfo(
-        Allocation, EleTy, ShapeInfo::fromSizes(Sizes), MemoryKind::Array);
+    SAI = S.getOrCreateScopArrayInfo(Allocation, EleTy, NewShape,
+                                     MemoryKind::Array);
     Id = isl_id_alloc(S.getIslCtx(), Var.name, nullptr);
     IDToValue[Id] = Allocation;
     LocalArrays.push_back(Allocation);
