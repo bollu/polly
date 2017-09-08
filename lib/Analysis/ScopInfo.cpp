@@ -324,8 +324,8 @@ ScopArrayInfo::ScopArrayInfo(Value *BasePtr, Type *ElementType, isl::ctx Ctx,
                              ShapeInfo Shape, MemoryKind Kind,
                              const DataLayout &DL, Scop *S,
                              const char *BaseName)
-    : BasePtr(BasePtr), ElementType(ElementType), Kind(Kind), DL(DL), S(*S),
-      Shape(ShapeInfo::none()) {
+    : BasePtr(BasePtr), ElementType(ElementType), Kind(Kind), DL(DL),
+      Shape(ShapeInfo::none()), S(*S) {
   std::string BasePtrName =
       BaseName ? BaseName
                : getIslCompatibleName("MemRef", BasePtr, S->getNextArrayIdx(),
@@ -442,7 +442,7 @@ bool ScopArrayInfo::updateStrides(ArrayRef<const SCEV *> Strides) {
     DimensionSizesPw.push_back(PwAff);
   }
   return true;
-};
+}
 
 bool ScopArrayInfo::updateSizes(ArrayRef<const SCEV *> NewSizes,
                                 bool CheckConsistency) {
@@ -1094,9 +1094,8 @@ MemoryAccess::MemoryAccess(ScopStmt *Stmt, Instruction *AccessInst,
 
 MemoryAccess::MemoryAccess(ScopStmt *Stmt, AccessType AccType, isl::map AccRel)
     : Kind(MemoryKind::Array), AccType(AccType), Statement(Stmt),
-      InvalidDomain(nullptr), AccessRelation(nullptr),
-      NewAccessRelation(AccRel), FAD(nullptr),
-      Shape(ShapeInfo::fromSizes({nullptr})) {
+      InvalidDomain(nullptr), Shape(ShapeInfo::fromSizes({nullptr})),
+      AccessRelation(nullptr), NewAccessRelation(AccRel), FAD(nullptr) {
   isl::id ArrayInfoId = NewAccessRelation.get_tuple_id(isl::dim::out);
   auto *SAI = ScopArrayInfo::getFromId(ArrayInfoId);
   // Sizes.push_back(nullptr);

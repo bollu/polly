@@ -262,25 +262,28 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
   }
 
   IndexOp = nullptr;
-  errs() << "Full expr: "; isl_ast_expr_dump(Expr); errs() <<"\n";
+  errs() << "Full expr: ";
+  isl_ast_expr_dump(Expr);
+  errs() << "\n";
   if (SAI->hasStrides()) {
     for (unsigned u = 1, e = isl_ast_expr_get_op_n_arg(Expr); u < e; u++) {
-        errs() << "---\n";
+      errs() << "---\n";
       errs() << "u: " << u << "\n";
-      errs() << "Expr[u]: "; isl_ast_expr_dump(isl_ast_expr_get_op_arg(Expr, u));
+      errs() << "Expr[u]: ";
+      isl_ast_expr_dump(isl_ast_expr_get_op_arg(Expr, u));
 
       Value *NextIndex = create(isl_ast_expr_get_op_arg(Expr, u));
       errs() << __LINE__ << "\n";
-      
+
       errs() << "NextIndex: " << *NextIndex << "\n";
       assert(NextIndex->getType()->isIntegerTy() &&
              "Access index should be an integer");
 
-      Type *Ty = [&] () {
-          if (IndexOp)
-              return getWidestType(NextIndex->getType(), IndexOp->getType());
-          else
-              return NextIndex->getType();
+      Type *Ty = [&]() {
+        if (IndexOp)
+          return getWidestType(NextIndex->getType(), IndexOp->getType());
+        else
+          return NextIndex->getType();
       }();
 
       if (Ty != NextIndex->getType())
@@ -289,8 +292,7 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
 
       const SCEV *DimSCEV = SAI->getDimensionStride(u - 1);
       assert(DimSCEV);
-      errs() << "DimSCEV: " << *DimSCEV; 
-
+      errs() << "DimSCEV: " << *DimSCEV;
 
       errs() << __LINE__ << "\n";
 
@@ -318,8 +320,8 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
       if (!IndexOp) {
         IndexOp = NextIndex;
       } else {
-          if (Ty != IndexOp->getType())
-              IndexOp = Builder.CreateIntCast(IndexOp, Ty, true);
+        if (Ty != IndexOp->getType())
+          IndexOp = Builder.CreateIntCast(IndexOp, Ty, true);
 
         IndexOp = createAdd(IndexOp, NextIndex, "polly.access.add." + BaseName);
       } // end else

@@ -182,7 +182,8 @@ public:
     assert(!bool(Strides));
 
     if (!bool(Sizes)) {
-      Sizes = {};
+      Sizes = Optional<SmallVector<const SCEV *, 4>>(
+          SmallVector<const SCEV *, 4>());
     }
 
     Sizes = NewSizes;
@@ -193,8 +194,10 @@ public:
   void setStrides(ArrayRef<const SCEV *> NewStrides) {
     assert(!bool(Sizes));
 
+    // Be explicit because GCC(5.3.0) is unable to deduce this.
     if (!Strides)
-      Strides = {};
+      Strides = Optional<SmallVector<const SCEV *, 4>>(
+          SmallVector<const SCEV *, 4>());
 
     Strides->clear();
     Strides->insert(Strides->begin(), NewStrides.begin(), NewStrides.end());
@@ -619,9 +622,6 @@ private:
   /// True if the newly allocated array is on heap.
   bool IsOnHeap = false;
 
-  /// The sizes of each dimension as SCEV*.
-  ShapeInfo Shape;
-
   /// The sizes of each dimension as isl::pw_aff.
   SmallVector<isl::pw_aff, 4> DimensionSizesPw;
 
@@ -632,6 +632,9 @@ private:
 
   /// The data layout of the module.
   const DataLayout &DL;
+
+  /// The sizes of each dimension as SCEV*.
+  ShapeInfo Shape;
 
   /// The scop this SAI object belongs to.
   Scop &S;
