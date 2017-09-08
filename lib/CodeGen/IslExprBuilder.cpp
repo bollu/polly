@@ -262,20 +262,12 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
   }
 
   IndexOp = nullptr;
-  errs() << "Full expr: ";
-  isl_ast_expr_dump(Expr);
-  errs() << "\n";
   if (SAI->hasStrides()) {
     for (unsigned u = 1, e = isl_ast_expr_get_op_n_arg(Expr); u < e; u++) {
-      errs() << "---\n";
-      errs() << "u: " << u << "\n";
-      errs() << "Expr[u]: ";
       isl_ast_expr_dump(isl_ast_expr_get_op_arg(Expr, u));
 
       Value *NextIndex = create(isl_ast_expr_get_op_arg(Expr, u));
-      errs() << __LINE__ << "\n";
 
-      errs() << "NextIndex: " << *NextIndex << "\n";
       assert(NextIndex->getType()->isIntegerTy() &&
              "Access index should be an integer");
 
@@ -288,24 +280,18 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
 
       if (Ty != NextIndex->getType())
         NextIndex = Builder.CreateIntCast(NextIndex, Ty, true);
-      errs() << __LINE__ << "\n";
 
       const SCEV *DimSCEV = SAI->getDimensionStride(u - 1);
       assert(DimSCEV);
-      errs() << "DimSCEV: " << *DimSCEV;
 
-      errs() << __LINE__ << "\n";
 
       llvm::ValueToValueMap Map(GlobalMap.begin(), GlobalMap.end());
-      errs() << __LINE__ << "\n";
       DimSCEV = SCEVParameterRewriter::rewrite(DimSCEV, SE, Map);
-      errs() << __LINE__ << "\n";
       Value *DimSize =
           expandCodeFor(S, SE, DL, "polly", DimSCEV, DimSCEV->getType(),
                         &*Builder.GetInsertPoint(), nullptr,
                         StartBlock->getSinglePredecessor());
 
-      errs() << __LINE__ << "\n";
       if (Ty != NextIndex->getType())
         NextIndex = Builder.CreateSExtOrTrunc(NextIndex, Ty,
                                               "polly.access.sext." + BaseName);
