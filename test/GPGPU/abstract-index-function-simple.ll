@@ -24,7 +24,7 @@
 ; HOST-IR:
 
 ; Check that the call to polly_array_index has been eliminated.
-; KERNEL-IR-NOT: polly_array_index
+; KERNEL-IR-NOT: call i64 @_gfortran_polly_array_index_2
 
 ; MODULE m
 ; IMPLICIT NONE
