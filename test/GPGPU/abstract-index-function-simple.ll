@@ -27,28 +27,28 @@
 ; Check that the call to polly_array_index has been eliminated.
 ; KERNEL-IR-NOT: call i64 @_gfortran_polly_array_index_2
 
-! MODULE m
-! IMPLICIT NONE
-!     ! REAL :: &
-!     !     g_arr_const_5_5(5, 5)
-!     REAL, ALLOCATABLE :: &
-!         g_arr(:,:)
-!
-! CONTAINS
-!     SUBROUTINE f()
-!         INTEGER :: &
-!             i, j
-!
-!         REAL :: &
-!             coeff
-!
-!         DO i=1,3
-!            DO j=1,3
-!               g_arr(i*5, j*2) = 100
-!            END DO
-!         END DO
-!     END SUBROUTINE f
-! END MODULE m
+; MODULE m
+; IMPLICIT NONE
+;     ! REAL :: &
+;     !     g_arr_const_5_5(5, 5)
+;     REAL, ALLOCATABLE :: &
+;         g_arr(:,:)
+;
+; CONTAINS
+;     SUBROUTINE f()
+;         INTEGER :: &
+;             i, j
+;
+;         REAL :: &
+;             coeff
+;
+;         DO i=1,3
+;            DO j=1,3
+;               g_arr(i*5, j*2) = 100
+;            END DO
+;         END DO
+;     END SUBROUTINE f
+; END MODULE m
 ; ModuleID = 'm.ll'
 source_filename = "m.bc"
 target datalayout = "e-p:64:64:64-S128-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f16:16:16-f32:32:32-f64:64:64-f128:128:128-v64:64:64-v128:128:128-a0:0:64-s0:64:64-f80:128:128-n8:16:32:64"
