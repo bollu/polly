@@ -794,10 +794,9 @@ void GPUNodeBuilder::allocateDeviceArrays() {
     // choose to be defensive and catch this at the compile phase. It is
     // most likely that we are doing something wrong with size computation.
     if (SizeSCEV->isZero()) {
-      errs() << getUniqueScopName(&S)
-             << " has array size 0.\n "
+      errs() << getUniqueScopName(&S) << " has array size 0.\n "
              << "Array with size 0: " << *(ScopArray->getBasePtr())
-             << "Size expression: " << *ArraySize 
+             << "Size expression: " << *ArraySize
              << "\nThis is illegal, exiting.\n";
       report_fatal_error("array size was computed to be 0");
     }
@@ -2934,37 +2933,37 @@ public:
     }
 
     for (unsigned i = 1; i < PPCGArray.n_index; ++i) {
-        isl_pw_aff *Bound = Array->getDimensionSizePw(i).release();
-        auto LS = isl_pw_aff_get_domain_space(Bound);
-        auto Aff = isl_multi_aff_zero(LS);
+      isl_pw_aff *Bound = Array->getDimensionSizePw(i).release();
+      auto LS = isl_pw_aff_get_domain_space(Bound);
+      auto Aff = isl_multi_aff_zero(LS);
 
-        // We need types to work out, which is why we perform this weird dance
-        // with `Aff` and `Bound`. Consider this example:
+      // We need types to work out, which is why we perform this weird dance
+      // with `Aff` and `Bound`. Consider this example:
 
-        // LS: [p] -> { [] }
-        // Zero: [p] -> { [] } | Implicitly, is [p] -> { ~ -> [] }.
-        // This `~` is used to denote a "null space" (which is different from
-        // a *zero dimensional* space), which is something that ISL does not
-        // show you when pretty printing.
+      // LS: [p] -> { [] }
+      // Zero: [p] -> { [] } | Implicitly, is [p] -> { ~ -> [] }.
+      // This `~` is used to denote a "null space" (which is different from
+      // a *zero dimensional* space), which is something that ISL does not
+      // show you when pretty printing.
 
-        // Bound: [p] -> { [] -> [(10p)] } | Here, the [] is a *zero
-        // dimensional* space, not a "null space" which does not exist at all.
+      // Bound: [p] -> { [] -> [(10p)] } | Here, the [] is a *zero
+      // dimensional* space, not a "null space" which does not exist at all.
 
-        // When we pullback (precompose) `Bound` with `Zero`, we get:
-        // Bound . Zero =
-        //     ([p] -> { [] -> [(10p)] }) . ([p] -> {~ -> [] }) =
-        //     [p] -> { ~ -> [(10p)] } =
-        //     [p] -> [(10p)] (as ISL pretty prints it)
-        // Bound Pullback: [p] -> { [(10p)] }
+      // When we pullback (precompose) `Bound` with `Zero`, we get:
+      // Bound . Zero =
+      //     ([p] -> { [] -> [(10p)] }) . ([p] -> {~ -> [] }) =
+      //     [p] -> { ~ -> [(10p)] } =
+      //     [p] -> [(10p)] (as ISL pretty prints it)
+      // Bound Pullback: [p] -> { [(10p)] }
 
-        // We want this kind of an expression for Bound, without a
-        // zero dimensional input, but with a "null space" input for the types
-        // to work out later on, as far as I (Siddharth Bhat) understand.
-        // I was unable to find a reference to this in the ISL manual.
-        // References: Tobias Grosser.
+      // We want this kind of an expression for Bound, without a
+      // zero dimensional input, but with a "null space" input for the types
+      // to work out later on, as far as I (Siddharth Bhat) understand.
+      // I was unable to find a reference to this in the ISL manual.
+      // References: Tobias Grosser.
 
-        Bound = isl_pw_aff_pullback_multi_aff(Bound, Aff);
-        Bounds.push_back(Bound);
+      Bound = isl_pw_aff_pullback_multi_aff(Bound, Aff);
+      Bounds.push_back(Bound);
     }
 
     /// To construct a `isl_multi_pw_aff`, we need all the indivisual `pw_aff`

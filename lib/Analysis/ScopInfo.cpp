@@ -430,16 +430,17 @@ bool ScopArrayInfo::updateStrides(ArrayRef<const SCEV *> Strides) {
 
   DimensionSizesPw.clear();
   for (size_t i = 0; i < Strides.size(); i++) {
-      assert(Strides[i]);
-  isl::space Space(S.getIslCtx(), 1, 0);
+    assert(Strides[i]);
+    isl::space Space(S.getIslCtx(), 1, 0);
 
-  std::string param_name = getName();
-  param_name += "stride_size_";
-  param_name += std::to_string(i);
-  isl::id IdPwAff = isl::id::alloc(S.getIslCtx(), param_name, this);
-  Space = Space.set_dim_id(isl::dim::param, 0, IdPwAff);
-  isl::pw_aff PwAff =
-      isl::aff::var_on_domain(isl::local_space(Space), isl::dim::param, 0);
+    std::string param_name = getName();
+    param_name += "stride_size_";
+    param_name += std::to_string(i);
+    isl::id IdPwAff = isl::id::alloc(S.getIslCtx(), param_name, this);
+
+    Space = Space.set_dim_id(isl::dim::param, 0, IdPwAff);
+    isl::pw_aff PwAff =
+        isl::aff::var_on_domain(isl::local_space(Space), isl::dim::param, 0);
     DimensionSizesPw.push_back(PwAff);
   }
   return true;
