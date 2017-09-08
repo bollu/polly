@@ -535,6 +535,17 @@ public:
     return DimensionSizesPw[Dim];
   }
 
+  isl::pw_aff getOffsetPw() const {
+      assert(this->hasStrides());
+      assert(OffsetPw);
+      return OffsetPw;
+  }
+
+  const SCEV* getOffset() const {
+      assert(this->hasStrides());
+      return this->Shape.offset();
+  }
+
   /// Get the canonical element type of this array.
   ///
   /// @returns The canonical element type of this array.
@@ -644,6 +655,7 @@ private:
 
   /// The sizes of each dimension as isl::pw_aff.
   SmallVector<isl::pw_aff, 4> DimensionSizesPw;
+  isl::pw_aff OffsetPw;
 
   /// The type of this scop array info object.
   ///
