@@ -118,6 +118,8 @@ public:
   /// materialized. True otherwise.
   bool materializeFortranArrayOutermostDimension();
 
+  bool materializeStridedArraySizes();
+
   /// Generate code that evaluates @p Condition at run-time.
   ///
   /// This function is typically called to generate the LLVM-IR for the

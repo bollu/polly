@@ -495,6 +495,11 @@ public:
     return Shape.sizes()[Dim];
   }
 
+  const SCEV *getDimensionStride(unsigned Dim) const {
+    assert(Dim < getNumberOfDimensions() && "Invalid dimension");
+    return Shape.strides()[Dim];
+  }
+
   /// Return the size of dimension @p dim as isl::pw_aff.
   //
   //  Scalars do not have array dimensions and the first dimension of

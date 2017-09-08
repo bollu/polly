@@ -21,7 +21,8 @@
 ; SCOP-NEXT:    Region: %"3"---%return
 ; SCOP-NEXT:    Max Loop Depth:  2
 
-; HOST-IR:
+; THIS IS A HACK!
+; HOST-IR: call
 
 ; Check that the call to polly_array_index has been eliminated.
 ; KERNEL-IR-NOT: call i64 @_gfortran_polly_array_index_2
