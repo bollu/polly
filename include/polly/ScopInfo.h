@@ -76,7 +76,6 @@ class ScalarEvolution;
 class SCEV;
 class Type;
 class Value;
-typedef llvm::MapVector<isl_id *, llvm::AssertingVH<llvm::Value>> IDToValueTy;
 
 void initializeScopInfoRegionPassPass(PassRegistry &);
 void initializeScopInfoWrapperPassPass(PassRegistry &);
@@ -486,11 +485,6 @@ public:
     return Shape.getNumberOfDimensions();
   }
 
-  const SCEV *getDimensionStride(unsigned Dim) const {
-    assert(Dim < getNumberOfDimensions() && "Invalid dimension");
-    return Shape.strides()[Dim];
-  }
-
   /// Return the size of dimension @p dim as SCEV*.
   //
   //  Scalars do not have array dimensions and the first dimension of
@@ -587,7 +581,7 @@ public:
   /// @returns True, if the arrays are compatible, False otherwise.
   bool isCompatibleWith(const ScopArrayInfo *Array) const;
 
-  bool hasStrides() const { return Shape.hasStrides(); }
+  bool hasStrides() { return Shape.hasStrides(); }
 
 private:
   void addDerivedSAI(ScopArrayInfo *DerivedSAI) {

@@ -1209,27 +1209,6 @@ bool IslNodeBuilder::materializeFortranArrayOutermostDimension() {
   return true;
 }
 
-bool IslNodeBuilder::materializeStridedArraySizes() {
-  for (ScopArrayInfo *Array : S.arrays()) {
-    if (!Array->hasStrides())
-      continue;
-
-    for (size_t i = 0; i < Array->getNumberOfDimensions(); i++) {
-      const SCEV *StrideSCEV = Array->getDimensionStride(i);
-      isl_pw_aff *ParametricPwAff = Array->getDimensionSizePw(i).release();
-      assert(ParametricPwAff && "parametric pw_aff corresponding "
-                                "to outermost dimension does not "
-                                "exist");
-
-      isl_id *Id = isl_pw_aff_get_dim_id(ParametricPwAff, isl_dim_param, 0);
-      isl_pw_aff_free(ParametricPwAff);
-      Value *Value = generateSCEV(StrideSCEV);
-      IDToValue[Id] = Value;
-    }
-  }
-  return true;
-}
-
 Value *IslNodeBuilder::preloadUnconditionally(isl_set *AccessRange,
                                               isl_ast_build *Build,
                                               Instruction *AccInst) {
@@ -1565,8 +1544,6 @@ void IslNodeBuilder::addParameters(__isl_take isl_set *Context) {
   // the SCEVs. We don't have a corresponding SCEV for the array size
   // parameter
   materializeFortranArrayOutermostDimension();
-
-  materializeStridedArraySizes();
 
   // Generate values for the current loop iteration for all surrounding loops.
   //

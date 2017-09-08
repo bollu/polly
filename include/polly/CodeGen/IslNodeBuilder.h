@@ -111,8 +111,6 @@ public:
 
   void addParameters(__isl_take isl_set *Context);
 
-  bool materializeStridedArraySizes();
-
   /// Create Values which hold the sizes of the outermost dimension of all
   /// Fortran arrays in the current scop.
   ///
