@@ -2019,17 +2019,34 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     Type *EleTy = SAI->getElementType();
     Value *Val = &*Arg;
     SmallVector<const SCEV *, 4> Sizes;
+    ShapeInfo NewShape = ShapeInfo::none();
     isl_ast_build *Build =
         isl_ast_build_from_context(isl_set_copy(Prog->context));
-    Sizes.push_back(nullptr);
-    for (long j = 1, n = Kernel->array[i].array->n_index; j < n; j++) {
-      isl_ast_expr *DimSize = isl_ast_build_expr_from_pw_aff(
-          Build, isl_multi_pw_aff_get_pw_aff(Kernel->array[i].array->bound, j));
-      auto V = ExprBuilder.create(DimSize);
-      Sizes.push_back(SE.getSCEV(V));
+
+    if (SAI->hasStrides()) {
+      for (long j = 0, n = Kernel->array[i].array->n_index; j < n; j++) {
+        errs() << "\n----\nj: " << j << "\n";
+        isl_ast_expr *DimSize = isl_ast_build_expr_from_pw_aff(
+            Build,
+            isl_multi_pw_aff_get_pw_aff(Kernel->array[i].array->bound, j));
+        errs() << "DimSize: ";
+        isl_ast_expr_dump(DimSize);
+        auto V = ExprBuilder.create(DimSize);
+        errs() << "V: " << *V << "\n";
+        Sizes.push_back(SE.getSCEV(V));
+      }
+      NewShape = ShapeInfo::fromStrides(Sizes);
+    } else {
+      Sizes.push_back(nullptr);
+      for (long j = 1, n = Kernel->array[i].array->n_index; j < n; j++) {
+        isl_ast_expr *DimSize = isl_ast_build_expr_from_pw_aff(
+            Build,
+            isl_multi_pw_aff_get_pw_aff(Kernel->array[i].array->bound, j));
+        auto V = ExprBuilder.create(DimSize);
+        Sizes.push_back(SE.getSCEV(V));
+      }
+      NewShape = ShapeInfo::fromSizes(Sizes);
     }
-    ShapeInfo NewShape =
-        SAI->hasStrides() ? SAI->getShape() : ShapeInfo::fromSizes(Sizes);
     const ScopArrayInfo *SAIRep =
         S.getOrCreateScopArrayInfo(Val, EleTy, NewShape, MemoryKind::Array);
     LocalArrays.push_back(Val);
@@ -2235,26 +2252,43 @@ void GPUNodeBuilder::createKernelVariables(ppcg_kernel *Kernel, Function *FN) {
     Type *EleTy = ScopArrayInfo::getFromId(isl::manage(Id))->getElementType();
 
     Type *ArrayTy = EleTy;
-    SmallVector<const SCEV *, 4> Sizes;
+    ShapeInfo NewShape = ShapeInfo::none();
+    if (OriginalSAI->hasStrides()) {
+      SmallVector<const SCEV *, 4> Strides;
+      for (unsigned int j = 0; j < Var.array->n_index; ++j) {
+        isl_val *Val = isl_vec_get_element_val(Var.size, j);
+        long Bound = isl_val_get_num_si(Val);
+        isl_val_free(Val);
+        Strides.push_back(S.getSE()->getConstant(Builder.getInt64Ty(), Bound));
+      }
 
-    Sizes.push_back(nullptr);
-    for (unsigned int j = 1; j < Var.array->n_index; ++j) {
-      isl_val *Val = isl_vec_get_element_val(Var.size, j);
-      long Bound = isl_val_get_num_si(Val);
-      isl_val_free(Val);
-      Sizes.push_back(S.getSE()->getConstant(Builder.getInt64Ty(), Bound));
+      for (int j = Var.array->n_index - 1; j >= 0; --j) {
+        isl_val *Val = isl_vec_get_element_val(Var.size, j);
+        long Bound = isl_val_get_num_si(Val);
+        isl_val_free(Val);
+        ArrayTy = ArrayType::get(ArrayTy, Bound);
+      }
+
+      NewShape = ShapeInfo::fromStrides(Strides);
+    } else {
+      SmallVector<const SCEV *, 4> Sizes;
+      Sizes.push_back(nullptr);
+      for (unsigned int j = 1; j < Var.array->n_index; ++j) {
+        isl_val *Val = isl_vec_get_element_val(Var.size, j);
+        long Bound = isl_val_get_num_si(Val);
+        isl_val_free(Val);
+        Sizes.push_back(S.getSE()->getConstant(Builder.getInt64Ty(), Bound));
+      }
+
+      // ASK TOBIAS: what is going on here?
+      for (int j = Var.array->n_index - 1; j >= 0; --j) {
+        isl_val *Val = isl_vec_get_element_val(Var.size, j);
+        long Bound = isl_val_get_num_si(Val);
+        isl_val_free(Val);
+        ArrayTy = ArrayType::get(ArrayTy, Bound);
+      }
+      NewShape = ShapeInfo::fromSizes(Sizes);
     }
-
-    for (int j = Var.array->n_index - 1; j >= 0; --j) {
-      isl_val *Val = isl_vec_get_element_val(Var.size, j);
-      long Bound = isl_val_get_num_si(Val);
-      isl_val_free(Val);
-      ArrayTy = ArrayType::get(ArrayTy, Bound);
-    }
-
-    ShapeInfo NewShape = OriginalSAI->hasStrides()
-                             ? OriginalSAI->getShape()
-                             : ShapeInfo::fromSizes(Sizes);
 
     const ScopArrayInfo *SAI;
     Value *Allocation;
@@ -2918,31 +2952,34 @@ public:
   void setArrayBounds(gpu_array_info &PPCGArray, ScopArrayInfo *Array) {
     std::vector<isl_pw_aff *> Bounds;
 
-    if (PPCGArray.n_index > 0) {
-      if (isl_set_is_empty(PPCGArray.extent)) {
-        isl_set *Dom = isl_set_copy(PPCGArray.extent);
-        isl_local_space *LS = isl_local_space_from_space(
-            isl_space_params(isl_set_get_space(Dom)));
-        isl_set_free(Dom);
-        isl_pw_aff *Zero = isl_pw_aff_from_aff(isl_aff_zero_on_domain(LS));
-        Bounds.push_back(Zero);
-      } else {
-        isl_set *Dom = isl_set_copy(PPCGArray.extent);
-        Dom = isl_set_project_out(Dom, isl_dim_set, 1, PPCGArray.n_index - 1);
-        isl_pw_aff *Bound = isl_set_dim_max(isl_set_copy(Dom), 0);
-        isl_set_free(Dom);
-        Dom = isl_pw_aff_domain(isl_pw_aff_copy(Bound));
-        isl_local_space *LS =
-            isl_local_space_from_space(isl_set_get_space(Dom));
-        isl_aff *One = isl_aff_zero_on_domain(LS);
-        One = isl_aff_add_constant_si(One, 1);
-        Bound = isl_pw_aff_add(Bound, isl_pw_aff_alloc(Dom, One));
-        Bound = isl_pw_aff_gist(Bound, S->getContext().release());
-        Bounds.push_back(Bound);
+    if (!Array->hasStrides()) {
+      if (PPCGArray.n_index > 0) {
+        if (isl_set_is_empty(PPCGArray.extent)) {
+          isl_set *Dom = isl_set_copy(PPCGArray.extent);
+          isl_local_space *LS = isl_local_space_from_space(
+              isl_space_params(isl_set_get_space(Dom)));
+          isl_set_free(Dom);
+          isl_pw_aff *Zero = isl_pw_aff_from_aff(isl_aff_zero_on_domain(LS));
+          Bounds.push_back(Zero);
+        } else {
+          isl_set *Dom = isl_set_copy(PPCGArray.extent);
+          Dom = isl_set_project_out(Dom, isl_dim_set, 1, PPCGArray.n_index - 1);
+          isl_pw_aff *Bound = isl_set_dim_max(isl_set_copy(Dom), 0);
+          isl_set_free(Dom);
+          Dom = isl_pw_aff_domain(isl_pw_aff_copy(Bound));
+          isl_local_space *LS =
+              isl_local_space_from_space(isl_set_get_space(Dom));
+          isl_aff *One = isl_aff_zero_on_domain(LS);
+          One = isl_aff_add_constant_si(One, 1);
+          Bound = isl_pw_aff_add(Bound, isl_pw_aff_alloc(Dom, One));
+          Bound = isl_pw_aff_gist(Bound, S->getContext().release());
+          Bounds.push_back(Bound);
+        }
       }
     }
 
-    for (unsigned i = 1; i < PPCGArray.n_index; ++i) {
+    const int BeginIndex = Array->hasStrides() ? 0 : 1;
+    for (unsigned i = BeginIndex; i < PPCGArray.n_index; ++i) {
       isl_pw_aff *Bound = Array->getDimensionSizePw(i).release();
       auto LS = isl_pw_aff_get_domain_space(Bound);
       auto Aff = isl_multi_aff_zero(LS);
