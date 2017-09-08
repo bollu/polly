@@ -794,10 +794,9 @@ void GPUNodeBuilder::allocateDeviceArrays() {
     // choose to be defensive and catch this at the compile phase. It is
     // most likely that we are doing something wrong with size computation.
     if (SizeSCEV->isZero()) {
-      errs() << getUniqueScopName(&S)
-             << " has array size 0.\n "
+      errs() << getUniqueScopName(&S) << " has array size 0.\n "
              << "Array with size 0: " << *(ScopArray->getBasePtr())
-             << "Size expression: " << *ArraySize 
+             << "Size expression: " << *ArraySize
              << "\nThis is illegal, exiting.\n";
       report_fatal_error("array size was computed to be 0");
     }
@@ -2939,15 +2938,16 @@ public:
       isl::set Domain;
       for (ScopStmt &Stmt : *S) {
         for (MemoryAccess *MemAcc : Stmt) {
-            // Note that this is wrong, we need to take the inverse image wrt to
-            // the access functions.  if (!Domain)
+          // Note that this is wrong, we need to take the inverse image wrt to
+          // the access functions.  if (!Domain)
           if (MemAcc->getScopArrayInfo() == Array)
-              Domain = Stmt.getDomain();
-            else
-              Domain = Domain.unite(Stmt.getDomain());
-          }
+            Domain = Stmt.getDomain();
+          else
+            Domain = Domain.unite(Stmt.getDomain());
+        }
       }
-      if (DumpBoundsCreation) errs() << "Total domain: " << Domain << "\n";
+      if (DumpBoundsCreation)
+        errs() << "Total domain: " << Domain << "\n";
       for (unsigned i = 1; i < PPCGArray.n_index; ++i) {
         isl_set *Dom = Domain.copy();
 #define DIST(begin, end) ((end) - (begin) + 1)
@@ -2971,7 +2971,8 @@ public:
         isl_pw_aff *Bound = isl_set_dim_max(isl_set_copy(Dom), 0);
         isl_set_free(Dom);
         if (DumpBoundsCreation) {
-          errs() << i << "|" << "Bound: ";
+          errs() << i << "|"
+                 << "Bound: ";
           isl_pw_aff_dump(Bound);
         }
 
