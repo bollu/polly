@@ -427,7 +427,6 @@ void ScopArrayInfo::applyAndSetFAD(Value *FAD) {
 
 bool ScopArrayInfo::updateStrides(ArrayRef<const SCEV *> Strides,
                                   const SCEV *Offset) {
-  
   Shape.setStrides(Strides, Offset);
   DimensionSizesPw.clear();
   for (size_t i = 0; i < Shape.getNumberOfDimensions(); i++) {
@@ -443,12 +442,6 @@ bool ScopArrayInfo::updateStrides(ArrayRef<const SCEV *> Strides,
 
     DimensionSizesPw.push_back(PwAff);
   }
-
-  isl::space Space(S.getIslCtx(), 1, 0);
-  isl::id IdPwAff = isl::id::alloc(S.getIslCtx(), "param_stride_offset", this);
-
-  Space = Space.set_dim_id(isl::dim::param, 0, IdPwAff);
-  this->OffsetPw = isl::aff::var_on_domain(isl::local_space(Space), isl::dim::param, 0);
   return true;
 }
 

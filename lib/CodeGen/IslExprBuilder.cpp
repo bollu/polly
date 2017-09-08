@@ -311,20 +311,6 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
         IndexOp = createAdd(IndexOp, NextIndex, "polly.access.add." + BaseName);
       } // end else
     }   // end for loop over stride dims
-    // compute offset of array
-    {
-
-        /*
-      llvm::ValueToValueMap Map(GlobalMap.begin(), GlobalMap.end());
-      const SCEV *OffsetSCEV = SAI->getOffset();
-      OffsetSCEV = SCEVParameterRewriter::rewrite(OffsetSCEV, SE, Map);
-      Value * Offset =
-          expandCodeFor(S, SE, DL, "polly", OffsetSCEV, OffsetSCEV->getType(),
-                        &*Builder.GetInsertPoint(), nullptr,
-                        StartBlock->getSinglePredecessor());
-      IndexOp = createAdd(IndexOp, Offset, "polly.acces.ofsetted." + BaseName);
-      */
-    }
   }     // end hasStride
   else {
     for (unsigned u = 1, e = isl_ast_expr_get_op_n_arg(Expr); u < e; u++) {

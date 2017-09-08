@@ -1214,13 +1214,6 @@ bool IslNodeBuilder::materializeStridedArraySizes() {
     if (!Array->hasStrides())
       continue;
 
-
-    {
-      isl_pw_aff *OffsetPwAff = Array->getOffsetPw().release();
-      isl_id *Id = isl_pw_aff_get_dim_id(OffsetPwAff, isl_dim_param, 0);
-      IDToValue[Id] = this->generateSCEV(Array->getStrideOffset());
-    }
-
     for (unsigned i = 0; i < Array->getNumberOfDimensions(); i++) {
       isl_pw_aff *ParametricPwAff = Array->getDimensionSizePw(i).release();
       assert(ParametricPwAff && "parametric pw_aff corresponding "
