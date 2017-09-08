@@ -3,9 +3,16 @@
 ; RUN: -polly-invariant-load-hoisting -debug-only=polly-scops < %s 2>&1 | FileCheck %s
 
 
+; Check that we detect the scop.
 ; CHECK:    Function: __m_MOD_f
 ; CHECK:    Region: %"3"---%return
 ; CHECK:    Max Loop Depth:  2
+
+; Check that we generate pw_affs for strides.
+; CHECK:    Arrays (Bounds as pw_affs) {
+; CHECK-NEXT:        float* MemRef___m_MOD_g_arr[*]; // Element size 8
+; CHECK-NEXT:        float MemRef1(Strides)[ [0_param_stride_size] -> { [] -> [(0_param_stride_size)] } ][ [1_param_stride_size] -> { [] -> [(1_param_stride_size)] } ]; [BasePtrOrigin: MemRef___m_MOD_g_arr] // Element size 4
+; CHECK-NEXT:    }
 
 ; MODULE m
 ; IMPLICIT NONE

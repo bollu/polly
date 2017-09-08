@@ -427,6 +427,21 @@ void ScopArrayInfo::applyAndSetFAD(Value *FAD) {
 
 bool ScopArrayInfo::updateStrides(ArrayRef<const SCEV *> Strides) {
   Shape.setStrides(Strides);
+  DimensionSizesPw.clear();
+  for (size_t i = 0; i < Shape.getNumberOfDimensions(); i++) {
+    isl::space Space(S.getIslCtx(), 1, 0);
+
+    std::string param_name = std::to_string(i);
+    param_name += "_param_stride_size";
+    isl::id IdPwAff = isl::id::alloc(S.getIslCtx(), param_name, this);
+
+    Space = Space.set_dim_id(isl::dim::param, 0, IdPwAff);
+    isl::pw_aff PwAff =
+        isl::aff::var_on_domain(isl::local_space(Space), isl::dim::param, 0);
+
+    DimensionSizesPw.push_back(PwAff);
+  }
+  return true;
 };
 
 bool ScopArrayInfo::updateSizes(ArrayRef<const SCEV *> NewSizes,
@@ -510,9 +525,14 @@ void ScopArrayInfo::print(raw_ostream &OS, bool SizeAsPwAff) const {
     OS << "(Strides)";
     for (; u < getNumberOfDimensions(); u++) {
       OS << "[";
-      const SCEV *Stride = Shape.strides()[u];
-      assert(Stride);
-      OS << *Stride;
+      if (SizeAsPwAff) {
+        isl::pw_aff Size = getDimensionSizePw(u);
+        OS << " " << Size << " ";
+      } else {
+        const SCEV *Stride = Shape.strides()[u];
+        assert(Stride);
+        OS << *Stride;
+      }
       OS << "]";
     }
   }
