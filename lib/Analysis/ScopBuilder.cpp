@@ -702,7 +702,8 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
   if (AbstractMatrixDebug)
     errs() << "Called name: " << Call->getCalledFunction()->getName() << "\n";
 
-  assert(Call->getNumArgOperands() % 2 == 0 && "expect stride, offset pairs\n");
+  assert(Call->getNumArgOperands() % 2 == 1 &&
+         "expect offset, stride, index pairs\n");
   const int NArrayDims = Call->getNumArgOperands() / 2;
   if (AbstractMatrixDebug)
     errs() << "Num array dims: " << NArrayDims << "\n";
@@ -712,9 +713,12 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
   std::vector<const SCEV *> Subscripts;
   std::vector<const SCEV *> Strides;
 
+  const SCEV *Offset = SE.getSCEV(Call->getArgOperand(0));
+  if (AbstractMatrixDebug)
+    errs() << "Offset: " << *Offset << "\n";
   for (int i = 0; i < NArrayDims; i++) {
-    Value *Ix = Call->getArgOperand(NArrayDims + i);
-    Value *Stride = Call->getArgOperand(i);
+    Value *Ix = Call->getArgOperand(1 + NArrayDims + i);
+    Value *Stride = Call->getArgOperand(1 + i);
 
     if (AbstractMatrixDebug)
       errs() << i << " |Raw Ix: " << *Ix << " |Raw Stride: " << *Stride << "\n";
@@ -772,7 +776,7 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
   // NOTE: To be able to change this, we need to teach ScopArrayInfo to recieve
   // a Shape object. So, do that first.
   addArrayAccess(Stmt, Inst, AccType, BasePtr, ElementType, true, Subscripts,
-                 ShapeInfo::fromStrides(Strides), Val);
+                 ShapeInfo::fromStrides(Strides, Offset), Val);
 
   if (AbstractMatrixDebug)
     errs() << "Added array access successfully!\n";

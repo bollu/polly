@@ -338,7 +338,7 @@ ScopArrayInfo::ScopArrayInfo(Value *BasePtr, Type *ElementType, isl::ctx Ctx,
   if (Shape.hasSizes())
     updateSizes(Shape.sizes());
   else
-    updateStrides(Shape.strides());
+    updateStrides(Shape.strides(), Shape.offset());
 
   if (!BasePtr || Kind != MemoryKind::Array) {
     BasePtrOriginSAI = nullptr;
@@ -425,8 +425,9 @@ void ScopArrayInfo::applyAndSetFAD(Value *FAD) {
   DimensionSizesPw[0] = PwAff;
 }
 
-bool ScopArrayInfo::updateStrides(ArrayRef<const SCEV *> Strides) {
-  Shape.setStrides(Strides);
+bool ScopArrayInfo::updateStrides(ArrayRef<const SCEV *> Strides,
+                                  const SCEV *Offset) {
+  Shape.setStrides(Strides, Offset);
   DimensionSizesPw.clear();
   for (size_t i = 0; i < Shape.getNumberOfDimensions(); i++) {
     isl::space Space(S.getIslCtx(), 1, 0);
@@ -535,6 +536,7 @@ void ScopArrayInfo::print(raw_ostream &OS, bool SizeAsPwAff) const {
       }
       OS << "]";
     }
+    OS << ";[Offset: " << *Shape.offset() << "]";
   }
 
   OS << ";";

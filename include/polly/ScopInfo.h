@@ -126,17 +126,20 @@ private:
   llvm::Optional<SmallVector<const SCEV *, 4>> Strides;
   llvm::Optional<const SCEV *> Offset;
 
-
-
   ShapeInfo(Optional<ArrayRef<const SCEV *>> SizesRef,
             Optional<ArrayRef<const SCEV *>> StridesRef,
-            llvm::Optional<const SCEV *> Offset) : Offset(Offset) {
+            llvm::Optional<const SCEV *> Offset)
+      : Offset(Offset) {
     // Can check for XOR
     assert(bool(SizesRef) || bool(StridesRef));
     assert(!(bool(SizesRef) && bool(StridesRef)));
 
-    if (StridesRef) assert(Offset);
-    if (Offset) assert(StridesRef);
+    if (StridesRef || Offset) {
+      assert(Offset);
+      assert(StridesRef);
+      errs() << __PRETTY_FUNCTION__ << "\n";
+      errs() << "Offset: " << **Offset << "\n";
+    }
 
     if (SizesRef)
       Sizes =
@@ -147,27 +150,31 @@ private:
           SCEVArrayTy(StridesRef->begin(), StridesRef->end()));
   }
 
-  ShapeInfo(NoneType) : Sizes(None), Strides(None) {}
+  ShapeInfo(NoneType) : Sizes(None), Strides(None), Offset(None) {}
 
 public:
   static ShapeInfo fromSizes(ArrayRef<const SCEV *> Sizes) {
-    return ShapeInfo(OptionalSCEVArrayRefTy(Sizes), None);
+    return ShapeInfo(OptionalSCEVArrayRefTy(Sizes), None, None);
   }
 
   ShapeInfo(const ShapeInfo &other) {
     Sizes = other.Sizes;
     Strides = other.Strides;
+    Offset = other.Offset;
   }
 
   ShapeInfo &operator=(const ShapeInfo &other) {
     Sizes = other.Sizes;
     Strides = other.Strides;
+    Offset = other.Offset;
     return *this;
   }
 
-  static ShapeInfo fromStrides(ArrayRef<const SCEV *> Strides, const SCEV *Offset) {
-      assert(Offset && "offset is null");
-    return ShapeInfo(None, OptionalSCEVArrayRefTy(Strides), Optional<const SCEV *>(Offset);
+  static ShapeInfo fromStrides(ArrayRef<const SCEV *> Strides,
+                               const SCEV *Offset) {
+    assert(Offset && "offset is null");
+    return ShapeInfo(None, OptionalSCEVArrayRefTy(Strides),
+                     Optional<const SCEV *>(Offset));
   }
 
   static ShapeInfo none() { return ShapeInfo(None); }
@@ -199,7 +206,8 @@ public:
 
   /// Set the strides of the Shape. It checks the invariant
   /// That this shape does not have sizes.
-  void setStrides(ArrayRef<const SCEV *> NewStrides) {
+  void setStrides(ArrayRef<const SCEV *> NewStrides, const SCEV *NewOffset) {
+    Offset = NewOffset;
     assert(!bool(Sizes));
 
     // Be explicit because GCC(5.3.0) is unable to deduce this.
@@ -216,9 +224,7 @@ public:
     return Sizes.getValue();
   }
 
-  const SCEV* offset() const {
-      return Offset.getValue();
-  }
+  const SCEV *offset() const { return Offset.getValue(); }
 
   SmallVector<const SCEV *, 4> &sizes_mut() {
     assert(!bool(Strides));
@@ -463,7 +469,7 @@ public:
   bool updateSizes(ArrayRef<const SCEV *> Sizes, bool CheckConsistency = true);
 
   /// Update the strides of a ScopArrayInfo object.
-  bool updateStrides(ArrayRef<const SCEV *> Strides);
+  bool updateStrides(ArrayRef<const SCEV *> Strides, const SCEV *Offset);
 
   /// Make the ScopArrayInfo model a Fortran array.
   /// It receives the Fortran array descriptor and stores this.
@@ -516,6 +522,8 @@ public:
     assert(Dim < getNumberOfDimensions() && "Invalid dimension");
     return Shape.strides()[Dim];
   }
+
+  const SCEV *getStrideOffset() const { return Shape.offset(); }
 
   /// Return the size of dimension @p dim as isl::pw_aff.
   //

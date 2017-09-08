@@ -1,6 +1,6 @@
 ; RUN: opt %loadPolly -polly-scops -analyze -polly-allow-nonaffine \
 ; RUN: -polly-ignore-aliasing -polly-use-llvm-names \
-; RUN: -polly-invariant-load-hoisting -debug-only=polly-scops < %s 2>&1 | FileCheck %s
+; RUN: -polly-invariant-load-hoisting  < %s  | FileCheck %s
 
 
 ; Check that we detect the scop.
@@ -9,10 +9,15 @@
 ; CHECK:    Max Loop Depth:  2
 
 ; Check that we generate pw_affs for strides.
-; CHECK:    Arrays (Bounds as pw_affs) {
-; CHECK-NEXT:        float* MemRef___m_MOD_g_arr[*]; // Element size 8
-; CHECK-NEXT:        float MemRef1(Strides)[ [0_param_stride_size] -> { [] -> [(0_param_stride_size)] } ][ [1_param_stride_size] -> { [] -> [(1_param_stride_size)] } ]; [BasePtrOrigin: MemRef___m_MOD_g_arr] // Element size 4
-; CHECK-NEXT:    }
+; CHECK:       Arrays {
+; CHECK-NEXT:      float* MemRef___m_MOD_g_arr[*]; // Element size 8
+; CHECK-NEXT:      float MemRef1(Strides)[%3][1];[Offset: %4]; [BasePtrOrigin: MemRef___m_MOD_g_arr] // Element size 4
+; CHECK-NEXT:  }
+; CHECK-NEXT:  Arrays (Bounds as pw_affs) {
+; CHECK-NEXT:      float* MemRef___m_MOD_g_arr[*]; // Element size 8
+; CHECK-NEXT:      float MemRef1(Strides)[ [0_param_stride_size] -> { [] -> [(0_param_stride_size)] } ][ [1_param_stride_size] -> { [] -> [(1_param_stride_size)] } ];[Offset: %4]; [BasePtrOrigin: MemRef___m_MOD_g_arr] // Element size 4
+; CHECK-NEXT:  }
+
 
 ; MODULE m
 ; IMPLICIT NONE

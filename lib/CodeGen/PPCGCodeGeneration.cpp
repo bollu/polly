@@ -1123,14 +1123,14 @@ Value *GPUNodeBuilder::getArraySize(gpu_array_info *Array) {
   return ArraySize;
 }
 
-Value *GPUNodeBuilder::getArrayOffset(const ScopArrayInfo *SAI, gpu_array_info *Array) {
+Value *GPUNodeBuilder::getArrayOffset(const ScopArrayInfo *SAI,
+                                      gpu_array_info *Array) {
   if (gpu_array_is_scalar(Array))
     return nullptr;
 
   if (SAI->hasStrides()) {
-      return Builder.getInt64(0);
+    return generateSCEV(SAI->getStrideOffset());
   }
-
 
   isl::ast_build Build = isl::ast_build::from_context(S.getContext());
 
@@ -1653,7 +1653,9 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     if (Runtime == GPURuntime::OpenCL)
       ArgSizes[Index] = SAI->getElemSizeInBytes();
 
-    errs() << "SAI for array:"; SAI->print(errs(), true); errs() << "\n";
+    errs() << "SAI for array:";
+    SAI->print(errs(), true);
+    errs() << "\n";
     Value *DevArray = nullptr;
     if (PollyManagedMemory) {
       DevArray = getManagedDeviceArray(&Prog->array[i],
@@ -1668,10 +1670,10 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     Value *Offset = getArrayOffset(SAI, &Prog->array[i]);
 
     if (Offset) {
-        
-        errs() << "Offset: " << *Offset << "\n";
+
+      errs() << "Offset: " << *Offset << "\n";
       DevArray = Builder.CreatePointerCast(
-              DevArray, SAI->getElementType()->getPointerTo());
+          DevArray, SAI->getElementType()->getPointerTo());
       DevArray = Builder.CreateGEP(DevArray, Builder.CreateNeg(Offset));
       DevArray = Builder.CreatePointerCast(DevArray, Builder.getInt8PtrTy());
     }
@@ -2045,7 +2047,7 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
         auto V = ExprBuilder.create(DimSize);
         Sizes.push_back(SE.getSCEV(V));
       }
-      NewShape = ShapeInfo::fromStrides(Sizes);
+      NewShape = ShapeInfo::fromStrides(Sizes, SAI->getStrideOffset());
     } else {
       Sizes.push_back(nullptr);
       for (long j = 1, n = Kernel->array[i].array->n_index; j < n; j++) {
@@ -2279,7 +2281,8 @@ void GPUNodeBuilder::createKernelVariables(ppcg_kernel *Kernel, Function *FN) {
         ArrayTy = ArrayType::get(ArrayTy, Bound);
       }
 
-      NewShape = ShapeInfo::fromStrides(Strides);
+      NewShape =
+          ShapeInfo::fromStrides(Strides, OriginalSAI->getStrideOffset());
     } else {
       SmallVector<const SCEV *, 4> Sizes;
       Sizes.push_back(nullptr);

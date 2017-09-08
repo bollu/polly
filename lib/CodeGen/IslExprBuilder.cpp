@@ -284,7 +284,6 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
       const SCEV *DimSCEV = SAI->getDimensionStride(u - 1);
       assert(DimSCEV);
 
-
       llvm::ValueToValueMap Map(GlobalMap.begin(), GlobalMap.end());
       DimSCEV = SCEVParameterRewriter::rewrite(DimSCEV, SE, Map);
       Value *DimSize =
