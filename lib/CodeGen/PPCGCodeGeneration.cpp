@@ -823,6 +823,7 @@ void GPUNodeBuilder::prepareManagedDeviceArrays() {
       HostPtr = ScopArray->getBasePtr();
     HostPtr = getLatestValue(HostPtr);
 
+    /*
     Value *Offset = getArrayOffset(ScopArray, Array);
     if (Offset) {
       HostPtr = Builder.CreatePointerCast(
@@ -831,6 +832,7 @@ void GPUNodeBuilder::prepareManagedDeviceArrays() {
     }
 
     HostPtr = Builder.CreatePointerCast(HostPtr, Builder.getInt8PtrTy());
+    */
     DeviceAllocations[ScopArray] = HostPtr;
   }
 }
