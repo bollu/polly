@@ -137,8 +137,6 @@ private:
     if (StridesRef || Offset) {
       assert(Offset);
       assert(StridesRef);
-      errs() << __PRETTY_FUNCTION__ << "\n";
-      errs() << "Offset: " << **Offset << "\n";
     }
 
     if (SizesRef)

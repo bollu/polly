@@ -1130,7 +1130,6 @@ Value *GPUNodeBuilder::getArrayOffset(const ScopArrayInfo *SAI,
   if (gpu_array_is_scalar(Array))
     return nullptr;
 
-
   if (SAI->hasStrides()) {
     return generateSCEV(SAI->getStrideOffset());
   }
@@ -1680,9 +1679,9 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
 
       // NO NEGATION FOR STRIDES ARRAY.
       if (SAI->hasStrides())
-          DevArray = Builder.CreateGEP(DevArray, Offset);
+        DevArray = Builder.CreateGEP(DevArray, Offset);
       else
-          DevArray = Builder.CreateGEP(DevArray, Builder.CreateNeg(Offset));
+        DevArray = Builder.CreateGEP(DevArray, Builder.CreateNeg(Offset));
       DevArray = Builder.CreatePointerCast(DevArray, Builder.getInt8PtrTy());
     }
     errs() << "---\n";
