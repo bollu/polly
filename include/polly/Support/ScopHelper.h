@@ -458,6 +458,7 @@ llvm::Loop *getFirstNonBoxedLoopFor(llvm::Loop *L, llvm::LoopInfo &LI,
 llvm::Loop *getFirstNonBoxedLoopFor(llvm::BasicBlock *BB, llvm::LoopInfo &LI,
                                     const BoxedLoopsSetTy &BoxedLoops);
 
+static const std::string POLLY_ABSTRACT_INDEX_BASENAME = "polly_array_index";
 llvm::Optional<std::pair<llvm::CallInst *, llvm::GEPOperator *>>
 getAbstractMatrixCall(MemAccInst Inst);
 } // namespace polly

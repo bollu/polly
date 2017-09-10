@@ -2905,6 +2905,7 @@ public:
   /// @returns An isl_set describing the extent of the array.
   isl::set getExtent(ScopArrayInfo *Array) {
     unsigned NumDims = Array->getNumberOfDimensions();
+    errs() << "Array: "; Array->print(errs(), true);
 
     if (Array->getNumberOfDimensions() == 0)
       return isl::set::universe(Array->getSpace());
@@ -2915,6 +2916,7 @@ public:
     AccessUSet = AccessUSet.detect_equalities();
     AccessUSet = AccessUSet.coalesce();
 
+    errs() << __LINE__ << "\n";
     if (AccessUSet.is_empty())
       return isl::set::empty(Array->getSpace());
 
@@ -2922,6 +2924,7 @@ public:
 
     isl::local_space LS = isl::local_space(Array->getSpace());
 
+    errs() << __LINE__ << "\n";
     isl::pw_aff Val = isl::aff::var_on_domain(LS, isl::dim::set, 0);
     isl::pw_aff OuterMin = AccessSet.dim_min(0);
     isl::pw_aff OuterMax = AccessSet.dim_max(0);
@@ -2929,6 +2932,7 @@ public:
     OuterMax = OuterMax.add_dims(isl::dim::in, Val.dim(isl::dim::in));
     OuterMin = OuterMin.set_tuple_id(isl::dim::in, Array->getBasePtrId());
     OuterMax = OuterMax.set_tuple_id(isl::dim::in, Array->getBasePtrId());
+    errs() << __LINE__ << "\n";
 
     isl::set Extent = isl::set::universe(Array->getSpace());
 
@@ -2937,6 +2941,7 @@ public:
 
     for (unsigned i = 1; i < NumDims; ++i)
       Extent = Extent.lower_bound_si(isl::dim::set, i, 0);
+    errs() << __LINE__ << "\n";
 
     if (!Array->hasStrides()) {
       for (unsigned i = 0; i < NumDims; ++i) {

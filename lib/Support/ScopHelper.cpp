@@ -638,7 +638,7 @@ polly::getAbstractMatrixCall(MemAccInst Inst) {
   if (AbstractMatrixDebug)
     errs() << "\tCall(for sure): " << *Call << "\n";
 
-  if (!Call->getCalledFunction()->getName().count("polly_array_index"))
+  if (!Call->getCalledFunction()->getName().count(POLLY_ABSTRACT_INDEX_BASENAME))
     return Optional<std::pair<CallInst *, GEPOperator *>>(None);
   if (AbstractMatrixDebug)
     errs() << "Called name: " << Call->getCalledFunction()->getName() << "\n";

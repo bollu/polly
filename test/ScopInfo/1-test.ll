@@ -1,6 +1,7 @@
 ; RUN: opt %loadPolly -polly-canonicalize \
 ; RUN: -polly-invariant-load-hoisting \
 ; RUN: -polly-detect-fortran-arrays \
+; RUN: -polly-ignore-aliasing \
 ; RUN: -polly-rewrite-byref-params \
 ; RUN: -polly-ignore-integer-wrapping \
 ; RUN: -polly-ignore-parameter-bounds \
@@ -8,14 +9,14 @@
 ; RUN: -polly-rtc-max-parameters=9000 \
 ; RUN: -polly-rtc-max-arrays-per-group=9000 \
 ; RUN: -polly-ignore-inbounds \
-; RUN: -polly-scops \
-; RUN: -analyze \
+; RUN: -polly-codegen-ppcg \
+; RUN: -polly-acc-codegen-managed-memory \
+; RUN: -S \
 ; RUN: -pass-remarks=polly \
-; RUN: -dot-scops \
 ; RUN: < %s | FileCheck %s
 
 
-; CHECK: xx
+; CHECK: XX
 
 
 

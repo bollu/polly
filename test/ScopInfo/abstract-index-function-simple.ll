@@ -4,6 +4,7 @@
 
 
 ; Check that we detect the scop.
+; CHECK: xx
 ; CHECK:    Function: __m_MOD_f
 ; CHECK:    Region: %"3"---%return
 ; CHECK:    Max Loop Depth:  2
