@@ -654,53 +654,12 @@ void ScopBuilder::buildMemoryAccess(MemAccInst Inst, ScopStmt *Stmt) {
 static const bool AbstractMatrixDebug = false;
 bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
                                                  ScopStmt *Stmt) {
-  // Case 1. (Total size of array not known)
-  // %2 = tail call i64 @_gfortran_polly_array_index_2(i64 1, i64 %1, i64
-  // %indvars.iv1, i64 %indvars.iv) #1 %3 = getelementptr float, float* %0, i64
-  // %2 store float 2.000000e+00, float* %3, align 4 STORE <val> (GEP <arr>
-  // (CALL index_2(<strides>, <ixs>)))
 
-  // Case 2. (Total size of array statically known)
-  // %4 = tail call i64 @_gfortran_polly_array_index_2(i64 1, i64 5, i64
-  // %indvars.iv1, i64 %indvars.iv) #1 %5 = getelementptr [25 x float], [25 x
-  // float]* @__m_MOD_g_arr_const_5_5, i64 0, i64 %4 store float 4.200000e+01,
-  // float* %5, align 4
+    auto optionalCallGEP = getAbstractMatrixCall(Inst);
+    if (!optionalCallGEP) return false;
 
-  if (AbstractMatrixDebug) {
-    errs() << "@@@" << __PRETTY_FUNCTION__ << "\n";
-    errs() << "\nInst: " << *Inst.get() << "\n";
-  }
-  auto *MaybeGEP = Inst.getPointerOperand();
-  if (MaybeGEP == nullptr)
-    return false;
-
-  if (AbstractMatrixDebug)
-    errs() << "\tGEP(maybe): " << *MaybeGEP << "\n";
-  GEPOperator *GEP = dyn_cast<GEPOperator>(MaybeGEP);
-
-  if (!GEP)
-    return false;
-
-  if (AbstractMatrixDebug)
-    errs() << "\tGEP(for sure): " << *GEP << "\n";
-  if (GEP->getNumIndices() != 1)
-    return false;
-
-  auto *MaybeCall = GEP->getOperand(1);
-  assert(MaybeCall);
-  if (AbstractMatrixDebug)
-    errs() << "\tCall(maybe): " << *MaybeCall << "\n";
-
-  CallInst *Call = dyn_cast<CallInst>(MaybeCall);
-  if (!Call)
-    return false;
-  if (AbstractMatrixDebug)
-    errs() << "\tCall(for sure): " << *Call << "\n";
-
-  if (!Call->getCalledFunction()->getName().count("polly_array_index"))
-    return false;
-  if (AbstractMatrixDebug)
-    errs() << "Called name: " << Call->getCalledFunction()->getName() << "\n";
+  CallInst *Call; GEPOperator *GEP;
+  std::tie(Call, GEP) = *optionalCallGEP;
 
   assert(Call->getNumArgOperands() % 2 == 1 &&
          "expect offset, stride, index pairs\n");

@@ -16,7 +16,9 @@
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SetVector.h"
+#include "llvm/ADT/Optional.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/Operator.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/ValueHandle.h"
 #include <tuple>
@@ -455,5 +457,7 @@ llvm::Loop *getFirstNonBoxedLoopFor(llvm::Loop *L, llvm::LoopInfo &LI,
 // @param BoxedLoops    Set of Boxed Loops we get from the SCoP.
 llvm::Loop *getFirstNonBoxedLoopFor(llvm::BasicBlock *BB, llvm::LoopInfo &LI,
                                     const BoxedLoopsSetTy &BoxedLoops);
+
+llvm::Optional<std::pair<llvm::CallInst *, llvm::GEPOperator *>> getAbstractMatrixCall(MemAccInst Inst);
 } // namespace polly
 #endif

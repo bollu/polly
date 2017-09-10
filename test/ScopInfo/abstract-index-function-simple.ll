@@ -1,4 +1,4 @@
-; RUN: opt %loadPolly -polly-scops -analyze -polly-allow-nonaffine \
+; RUN: opt %loadPolly -polly-scops -analyze \
 ; RUN: -polly-ignore-aliasing -polly-use-llvm-names \
 ; RUN: -polly-invariant-load-hoisting  < %s  | FileCheck %s
 
