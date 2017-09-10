@@ -374,9 +374,19 @@ bool ScopArrayInfo::isCompatibleWith(const ScopArrayInfo *Array) const {
   if (Array->getNumberOfDimensions() != getNumberOfDimensions())
     return false;
 
-  for (unsigned i = 0; i < getNumberOfDimensions(); i++)
-    if (Array->getDimensionSize(i) != getDimensionSize(i))
-      return false;
+
+  if (this->hasStrides() != Array->hasStrides()) return false;
+
+  if (this->hasStrides()) {
+      for (unsigned i = 0; i < getNumberOfDimensions(); i++)
+          if (Array->getDimensionStride(i) != getDimensionStride(i))
+              return false;
+  }
+  else {
+      for (unsigned i = 0; i < getNumberOfDimensions(); i++)
+          if (Array->getDimensionSize(i) != getDimensionSize(i))
+              return false;
+  }
 
   return true;
 }
