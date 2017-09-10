@@ -1045,10 +1045,6 @@ bool ScopDetection::hasAffineMemoryAccesses(DetectionContext &Context) const {
 bool ScopDetection::isValidAccess(Instruction *Inst, const SCEV *AF,
                                   const SCEVUnknown *BP,
                                   DetectionContext &Context) const {
-
-  errs() << ">>>-*-*<<<\n";
-  errs() << __PRETTY_FUNCTION__ << "\n";
-  errs() << "Inst: " << *Inst << "\n";
   if (!BP)
     return invalid<ReportNoBasePtr>(Context, /*Assert=*/true, Inst);
 
@@ -1153,7 +1149,7 @@ bool ScopDetection::isValidAccess(Instruction *Inst, const SCEV *AF,
 
 bool ScopDetection::isValidMemoryAccess(MemAccInst Inst,
                                         DetectionContext &Context) const {
-    
+
     if(getAbstractMatrixCall(Inst)) return true;
 
   Value *Ptr = Inst.getPointerOperand();

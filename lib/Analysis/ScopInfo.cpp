@@ -408,21 +408,24 @@ void ScopArrayInfo::applyAndSetFAD(Value *FAD) {
     return;
   }
 
-  assert(DimensionSizesPw.size() > 0 && !DimensionSizesPw[0]);
-  assert(!this->FAD);
-  this->FAD = FAD;
+  if (!this->hasStrides()) {
+      errs() << "WARNING: Fortran SAI: " << getName() << "does not have strides!\n";
+      assert(DimensionSizesPw.size() > 0 && !DimensionSizesPw[0]);
+      assert(!this->FAD);
+      this->FAD = FAD;
 
-  isl::space Space(S.getIslCtx(), 1, 0);
+      isl::space Space(S.getIslCtx(), 1, 0);
 
-  std::string param_name = getName();
-  param_name += "_fortranarr_size";
-  isl::id IdPwAff = isl::id::alloc(S.getIslCtx(), param_name, this);
+      std::string param_name = getName();
+      param_name += "_fortranarr_size";
+      isl::id IdPwAff = isl::id::alloc(S.getIslCtx(), param_name, this);
 
-  Space = Space.set_dim_id(isl::dim::param, 0, IdPwAff);
-  isl::pw_aff PwAff =
-      isl::aff::var_on_domain(isl::local_space(Space), isl::dim::param, 0);
+      Space = Space.set_dim_id(isl::dim::param, 0, IdPwAff);
+      isl::pw_aff PwAff =
+          isl::aff::var_on_domain(isl::local_space(Space), isl::dim::param, 0);
 
-  DimensionSizesPw[0] = PwAff;
+      DimensionSizesPw[0] = PwAff;
+  }
 }
 
 bool ScopArrayInfo::updateStrides(ArrayRef<const SCEV *> Strides,
@@ -4128,8 +4131,12 @@ ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
     SAI->updateElementType(ElementType);
     // In case of mismatching array sizes, we bail out by setting the run-time
     // context to false.
-    if (!SAI->updateSizes(Shape.sizes()))
-      invalidate(DELINEARIZATION, DebugLoc());
+    if (SAI->hasStrides()) {
+        SAI->updateStrides(Shape.strides(), Shape.offset());
+    } else {
+        if (!SAI->updateSizes(Shape.sizes()))
+            invalidate(DELINEARIZATION, DebugLoc());
+    }
   }
   return SAI.get();
 }
