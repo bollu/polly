@@ -593,7 +593,8 @@ llvm::Loop *polly::getFirstNonBoxedLoopFor(llvm::BasicBlock *BB,
 }
 
 static const bool AbstractMatrixDebug = false;
-llvm::Optional<std::pair<CallInst *, GEPOperator *>> polly::getAbstractMatrixCall(MemAccInst Inst) {
+llvm::Optional<std::pair<CallInst *, GEPOperator *>>
+polly::getAbstractMatrixCall(MemAccInst Inst) {
   // Case 1. (Total size of array not known)
   // %2 = tail call i64 @_gfortran_polly_array_index_2(i64 1, i64 %1, i64
   // %indvars.iv1, i64 %indvars.iv) #1 %3 = getelementptr float, float* %0, i64

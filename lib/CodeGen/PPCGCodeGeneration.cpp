@@ -1708,7 +1708,9 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
           new AllocaInst(Builder.getInt8PtrTy(), AddressSpace,
                          Launch + "_param_" + std::to_string(Index),
                          EntryBlock->getTerminator());
-      Builder.CreateStore(DevArray, Param);
+      Value *DevArrayCast =
+          Builder.CreatePointerCast(DevArray, Builder.getInt8PtrTy());
+      Builder.CreateStore(DevArrayCast, Param);
       Value *ParamTyped =
           Builder.CreatePointerCast(Param, Builder.getInt8PtrTy());
       Builder.CreateStore(ParamTyped, Slot);

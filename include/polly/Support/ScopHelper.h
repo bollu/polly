@@ -15,11 +15,11 @@
 #define POLLY_SUPPORT_IRHELPER_H
 
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/Optional.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/IR/Instructions.h"
-#include "llvm/IR/Operator.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/Operator.h"
 #include "llvm/IR/ValueHandle.h"
 #include <tuple>
 #include <vector>
@@ -458,6 +458,7 @@ llvm::Loop *getFirstNonBoxedLoopFor(llvm::Loop *L, llvm::LoopInfo &LI,
 llvm::Loop *getFirstNonBoxedLoopFor(llvm::BasicBlock *BB, llvm::LoopInfo &LI,
                                     const BoxedLoopsSetTy &BoxedLoops);
 
-llvm::Optional<std::pair<llvm::CallInst *, llvm::GEPOperator *>> getAbstractMatrixCall(MemAccInst Inst);
+llvm::Optional<std::pair<llvm::CallInst *, llvm::GEPOperator *>>
+getAbstractMatrixCall(MemAccInst Inst);
 } // namespace polly
 #endif

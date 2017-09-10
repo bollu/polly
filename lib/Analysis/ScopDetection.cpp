@@ -1150,7 +1150,8 @@ bool ScopDetection::isValidAccess(Instruction *Inst, const SCEV *AF,
 bool ScopDetection::isValidMemoryAccess(MemAccInst Inst,
                                         DetectionContext &Context) const {
 
-    if(getAbstractMatrixCall(Inst)) return true;
+  if (getAbstractMatrixCall(Inst))
+    return true;
 
   Value *Ptr = Inst.getPointerOperand();
   Loop *L = LI.getLoopFor(Inst->getParent());

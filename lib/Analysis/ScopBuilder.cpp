@@ -655,10 +655,12 @@ static const bool AbstractMatrixDebug = false;
 bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
                                                  ScopStmt *Stmt) {
 
-    auto optionalCallGEP = getAbstractMatrixCall(Inst);
-    if (!optionalCallGEP) return false;
+  auto optionalCallGEP = getAbstractMatrixCall(Inst);
+  if (!optionalCallGEP)
+    return false;
 
-  CallInst *Call; GEPOperator *GEP;
+  CallInst *Call;
+  GEPOperator *GEP;
   std::tie(Call, GEP) = *optionalCallGEP;
 
   assert(Call->getNumArgOperands() % 2 == 1 &&
@@ -1194,9 +1196,6 @@ void ScopBuilder::buildAccessRelations(ScopStmt &Stmt) {
       Ty = MemoryKind::Array;
 
     // NOTE: This is why We need to teach ScopArrayInfo to accept Shape.
-    errs() << "\n";
-    errs() << __PRETTY_FUNCTION__<< "\n";
-    errs() << "Shape: " << Access->Shape; 
     auto *SAI = scop->getOrCreateScopArrayInfo(Access->getOriginalBaseAddr(),
                                                ElementType, Access->Shape, Ty);
     Access->buildAccessRelation(SAI);
