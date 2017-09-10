@@ -674,12 +674,14 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
   std::vector<const SCEV *> Subscripts;
   std::vector<const SCEV *> Strides;
 
+  if (isa<UndefValue>(Call->getArgOperand(0))) return false;
   const SCEV *Offset = SE.getSCEV(Call->getArgOperand(0));
   if (AbstractMatrixDebug)
     errs() << "Offset: " << *Offset << "\n";
   for (int i = 0; i < NArrayDims; i++) {
     Value *Ix = Call->getArgOperand(1 + NArrayDims + i);
     Value *Stride = Call->getArgOperand(1 + i);
+    if(isa<UndefValue>(Ix) || isa<UndefValue>(Stride)) return false;
 
     if (AbstractMatrixDebug)
       errs() << i << " |Raw Ix: " << *Ix << " |Raw Stride: " << *Stride << "\n";
