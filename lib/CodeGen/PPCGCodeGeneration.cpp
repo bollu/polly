@@ -2905,7 +2905,6 @@ public:
   /// @returns An isl_set describing the extent of the array.
   isl::set getExtent(ScopArrayInfo *Array) {
     unsigned NumDims = Array->getNumberOfDimensions();
-    errs() << "Array: "; Array->print(errs(), true);
 
     if (Array->getNumberOfDimensions() == 0)
       return isl::set::universe(Array->getSpace());
@@ -2916,7 +2915,6 @@ public:
     AccessUSet = AccessUSet.detect_equalities();
     AccessUSet = AccessUSet.coalesce();
 
-    errs() << __LINE__ << "\n";
     if (AccessUSet.is_empty())
       return isl::set::empty(Array->getSpace());
 
@@ -2924,7 +2922,6 @@ public:
 
     isl::local_space LS = isl::local_space(Array->getSpace());
 
-    errs() << __LINE__ << "\n";
     isl::pw_aff Val = isl::aff::var_on_domain(LS, isl::dim::set, 0);
     isl::pw_aff OuterMin = AccessSet.dim_min(0);
     isl::pw_aff OuterMax = AccessSet.dim_max(0);
@@ -2932,7 +2929,6 @@ public:
     OuterMax = OuterMax.add_dims(isl::dim::in, Val.dim(isl::dim::in));
     OuterMin = OuterMin.set_tuple_id(isl::dim::in, Array->getBasePtrId());
     OuterMax = OuterMax.set_tuple_id(isl::dim::in, Array->getBasePtrId());
-    errs() << __LINE__ << "\n";
 
     isl::set Extent = isl::set::universe(Array->getSpace());
 
@@ -2941,7 +2937,6 @@ public:
 
     for (unsigned i = 1; i < NumDims; ++i)
       Extent = Extent.lower_bound_si(isl::dim::set, i, 0);
-    errs() << __LINE__ << "\n";
 
     if (!Array->hasStrides()) {
       for (unsigned i = 0; i < NumDims; ++i) {
@@ -3049,6 +3044,8 @@ public:
     /// So, use the helper `alignPwAffs` to align all the `isl_pw_aff` together.
     isl_space *SeedAlignSpace = S->getParamSpace().release();
     SeedAlignSpace = isl_space_add_dims(SeedAlignSpace, isl_dim_set, 1);
+    SeedAlignSpace = isl_space_align_params(SeedAlignSpace, isl_set_get_space(PPCGArray.extent));
+    errs() << "SeedAlignSpace: "; isl_space_dump(SeedAlignSpace);
 
     isl_space *AlignSpace = nullptr;
     std::vector<isl_pw_aff *> AlignedBounds;
@@ -3056,6 +3053,7 @@ public:
         alignPwAffs(std::move(Bounds), SeedAlignSpace);
 
     assert(AlignSpace && "alignPwAffs did not initialise AlignSpace");
+    errs() << "AlignSpace: "; isl_space_dump(AlignSpace);
 
     isl_pw_aff_list *BoundsList =
         createPwAffList(S->getIslCtx(), std::move(AlignedBounds));
@@ -3066,8 +3064,13 @@ public:
     assert(BoundsSpace && "Unable to access space of array.");
     assert(BoundsList && "Unable to access list of bounds.");
 
+    errs() << "BoundsSpace: "; isl_space_dump(BoundsSpace);
+    errs() << "BoundsList: "; isl_pw_aff_list_dump(BoundsList);
     PPCGArray.bound =
         isl_multi_pw_aff_from_pw_aff_list(BoundsSpace, BoundsList);
+    errs() << "PPCGarray.bound: ";
+    if (PPCGArray.bound) isl_multi_pw_aff_dump(PPCGArray.bound); 
+    else errs() << "nullptr\n";
     assert(PPCGArray.bound && "PPCGArray.bound was not constructed correctly.");
   }
 

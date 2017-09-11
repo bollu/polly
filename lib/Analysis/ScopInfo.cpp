@@ -3647,6 +3647,7 @@ void Scop::updateAccessDimensionality() {
         continue;
       ScopArrayInfo *Array =
           const_cast<ScopArrayInfo *>(Access->getScopArrayInfo());
+      if(Array->hasStrides()) return;
 
       if (Array->getNumberOfDimensions() != 1)
         continue;

@@ -592,7 +592,7 @@ llvm::Loop *polly::getFirstNonBoxedLoopFor(llvm::BasicBlock *BB,
   return getFirstNonBoxedLoopFor(L, LI, BoxedLoops);
 }
 
-static const bool AbstractMatrixDebug = true;
+static const bool AbstractMatrixDebug = false;
 llvm::Optional<std::pair<CallInst *, GEPOperator *>>
 polly::getAbstractMatrixCall(MemAccInst Inst) {
   // Case 1. (Total size of array not known)
