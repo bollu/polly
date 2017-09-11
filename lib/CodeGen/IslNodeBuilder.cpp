@@ -1403,10 +1403,9 @@ bool IslNodeBuilder::preloadInvariantEquivClass(
 
   // If the size of a dimension is dependent on another class, make sure it is
   // preloaded.
-  for (unsigned i = 1, e = SAI->getNumberOfDimensions(); i < e; ++i) {
-    const SCEV *Dim = SAI->getDimensionSize(i);
+  auto PreloadSCEV = [&](const SCEV *ToPreload) {
     SetVector<Value *> Values;
-    findValues(Dim, SE, Values);
+    findValues(ToPreload, SE, Values);
     for (auto *Val : Values) {
       if (auto *BaseIAClass = S.lookupInvariantEquivClass(Val)) {
         if (!preloadInvariantEquivClass(*BaseIAClass))
@@ -1417,6 +1416,21 @@ bool IslNodeBuilder::preloadInvariantEquivClass(
         isl_set *BaseExecutionCtx = isl_set_copy(BaseIAClass->ExecutionContext);
         ExecutionCtx = isl_set_intersect(ExecutionCtx, BaseExecutionCtx);
       }
+    }
+    return true;
+  };
+
+  if (SAI->hasStrides()) {
+    if (!PreloadSCEV(SAI->getStrideOffset()))
+      return false;
+    for (unsigned i = 0, e = SAI->getNumberOfDimensions(); i < e; ++i) {
+      if (!PreloadSCEV(SAI->getDimensionStride(i)))
+        return false;
+    }
+  } else {
+    for (unsigned i = 1, e = SAI->getNumberOfDimensions(); i < e; ++i) {
+      if (!PreloadSCEV(SAI->getDimensionSize(i)))
+        return false;
     }
   }
 
