@@ -592,12 +592,13 @@ llvm::Loop *polly::getFirstNonBoxedLoopFor(llvm::BasicBlock *BB,
   return getFirstNonBoxedLoopFor(L, LI, BoxedLoops);
 }
 
-static const bool AbstractMatrixDebug = false;
+static const bool AbstractMatrixDebug = true;
 llvm::Optional<std::pair<CallInst *, GEPOperator *>>
 polly::getAbstractMatrixCall(MemAccInst Inst) {
   // Case 1. (Total size of array not known)
   // %2 = tail call i64 @_gfortran_polly_array_index_2(i64 1, i64 %1, i64
-  // %indvars.iv1, i64 %indvars.iv) #1 %3 = getelementptr float, float* %0, i64
+  // %indvars.iv1, i64 %indvars.iv) #1
+  // %3 = getelementptr float, float* %0, i64
   // %2 store float 2.000000e+00, float* %3, align 4 STORE <val> (GEP <arr>
   // (CALL index_2(<strides>, <ixs>)))
 
@@ -624,10 +625,12 @@ polly::getAbstractMatrixCall(MemAccInst Inst) {
 
   if (AbstractMatrixDebug)
     errs() << "\tGEP(for sure): " << *GEP << "\n";
+  /*
   if (GEP->getNumIndices() != 1)
     return Optional<std::pair<CallInst *, GEPOperator *>>(None);
+  */
 
-  auto *MaybeCall = GEP->getOperand(1);
+  auto *MaybeCall = GEP->getOperand(GEP->getNumOperands() - 1);
   assert(MaybeCall);
   if (AbstractMatrixDebug)
     errs() << "\tCall(maybe): " << *MaybeCall << "\n";

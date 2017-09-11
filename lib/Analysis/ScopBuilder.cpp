@@ -651,13 +651,16 @@ void ScopBuilder::buildMemoryAccess(MemAccInst Inst, ScopStmt *Stmt) {
 
   buildAccessSingleDim(Inst, Stmt);
 }
-static const bool AbstractMatrixDebug = false;
+static const bool AbstractMatrixDebug = true;
 bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
                                                  ScopStmt *Stmt) {
 
   auto optionalCallGEP = getAbstractMatrixCall(Inst);
-  if (!optionalCallGEP)
+  if (!optionalCallGEP) {
+      errs() << "- NO.\n";
     return false;
+  }
+  errs() << "- YES.\n";
 
   CallInst *Call;
   GEPOperator *GEP;
@@ -697,7 +700,8 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
   }
 
   Value *BasePtr = GEP->getPointerOperand();
-  Type *ElementType = GEP->getSourceElementType();
+  Value *Val = Inst.getValueOperand();
+  Type *ElementType = Val->getType();
   assert(BasePtr);
   assert(ElementType);
 
@@ -706,7 +710,6 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
   if (AbstractMatrixDebug)
     errs() << "ElementType: " << *ElementType << "\n";
 
-  Value *Val = Inst.getValueOperand();
   if (AbstractMatrixDebug)
     errs() << "Val: " << *Val << "\n";
 
