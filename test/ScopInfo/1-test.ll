@@ -16,8 +16,6 @@
 ; RUN: < %s | FileCheck %s
 
 
-; CHECK: XX
-
 
 
 ; ModuleID = 'linked.inlined.s'

@@ -1655,9 +1655,6 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     if (Runtime == GPURuntime::OpenCL)
       ArgSizes[Index] = SAI->getElemSizeInBytes();
 
-    errs() << "SAI for array:";
-    SAI->print(errs(), true);
-    errs() << "\n";
     Value *DevArray = nullptr;
     if (PollyManagedMemory) {
       DevArray = getManagedDeviceArray(&Prog->array[i],
@@ -1667,13 +1664,9 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
       DevArray = createCallGetDevicePtr(DevArray);
     }
 
-    errs() << "DevArray(Raw): " << *DevArray << "\n";
-
     Value *Offset = getArrayOffset(SAI, &Prog->array[i]);
 
     if (Offset) {
-
-      errs() << "Offset: " << *Offset << "\n";
       DevArray = Builder.CreatePointerCast(
           DevArray, SAI->getElementType()->getPointerTo());
 
@@ -1684,8 +1677,6 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
         DevArray = Builder.CreateGEP(DevArray, Builder.CreateNeg(Offset));
       DevArray = Builder.CreatePointerCast(DevArray, Builder.getInt8PtrTy());
     }
-    errs() << "---\n";
-    errs() << "DevArray(With Offset): " << *DevArray << "\n";
     assert(DevArray != nullptr && "Array to be offloaded to device not "
                                   "initialized");
     Value *Slot = Builder.CreateGEP(
@@ -3044,8 +3035,8 @@ public:
     /// So, use the helper `alignPwAffs` to align all the `isl_pw_aff` together.
     isl_space *SeedAlignSpace = S->getParamSpace().release();
     SeedAlignSpace = isl_space_add_dims(SeedAlignSpace, isl_dim_set, 1);
-    SeedAlignSpace = isl_space_align_params(SeedAlignSpace, isl_set_get_space(PPCGArray.extent));
-    errs() << "SeedAlignSpace: "; isl_space_dump(SeedAlignSpace);
+    SeedAlignSpace = isl_space_align_params(
+        SeedAlignSpace, isl_set_get_space(PPCGArray.extent));
 
     isl_space *AlignSpace = nullptr;
     std::vector<isl_pw_aff *> AlignedBounds;
@@ -3053,7 +3044,6 @@ public:
         alignPwAffs(std::move(Bounds), SeedAlignSpace);
 
     assert(AlignSpace && "alignPwAffs did not initialise AlignSpace");
-    errs() << "AlignSpace: "; isl_space_dump(AlignSpace);
 
     isl_pw_aff_list *BoundsList =
         createPwAffList(S->getIslCtx(), std::move(AlignedBounds));
@@ -3064,13 +3054,8 @@ public:
     assert(BoundsSpace && "Unable to access space of array.");
     assert(BoundsList && "Unable to access list of bounds.");
 
-    errs() << "BoundsSpace: "; isl_space_dump(BoundsSpace);
-    errs() << "BoundsList: "; isl_pw_aff_list_dump(BoundsList);
     PPCGArray.bound =
         isl_multi_pw_aff_from_pw_aff_list(BoundsSpace, BoundsList);
-    errs() << "PPCGarray.bound: ";
-    if (PPCGArray.bound) isl_multi_pw_aff_dump(PPCGArray.bound); 
-    else errs() << "nullptr\n";
     assert(PPCGArray.bound && "PPCGArray.bound was not constructed correctly.");
   }
 

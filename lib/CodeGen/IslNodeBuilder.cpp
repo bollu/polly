@@ -562,8 +562,13 @@ void IslNodeBuilder::createForSequential(__isl_take isl_ast_node *For,
   UB = getUpperBound(For, Predicate);
 
   ValueLB = ExprBuilder.create(Init);
+  ValueLB = getLatestValue(ValueLB);
+
   ValueUB = ExprBuilder.create(UB);
+  ValueUB = getLatestValue(ValueUB);
+
   ValueInc = ExprBuilder.create(Inc);
+  ValueInc = getLatestValue(ValueInc);
 
   MaxType = ExprBuilder.getType(Iterator);
   MaxType = ExprBuilder.getWidestType(MaxType, ValueLB->getType());
