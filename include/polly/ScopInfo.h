@@ -467,6 +467,9 @@ public:
   bool updateSizes(ArrayRef<const SCEV *> Sizes, bool CheckConsistency = true);
 
   /// Update the strides of a ScopArrayInfo object.
+  void overwriteSizeWithStrides(ArrayRef<const SCEV *> Strides, const SCEV *Offset);
+
+  /// Update the strides of a ScopArrayInfo object.
   bool updateStrides(ArrayRef<const SCEV *> Strides, const SCEV *Offset);
 
   /// Make the ScopArrayInfo model a Fortran array.

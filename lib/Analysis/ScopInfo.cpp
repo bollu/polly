@@ -438,6 +438,16 @@ void ScopArrayInfo::applyAndSetFAD(Value *FAD) {
   }
 }
 
+
+void ScopArrayInfo::overwriteSizeWithStrides(ArrayRef<const SCEV *> Strides,
+                                  const SCEV *Offset) {
+
+  // HACK: first set our shape to a stride based shape so that we don't
+  // assert within updateStrides. Move this into a bool parameter of
+  // updateStrides
+  Shape = ShapeInfo::fromStrides(Strides, Offset);
+  updateStrides(Strides, Offset);
+}
 bool ScopArrayInfo::updateStrides(ArrayRef<const SCEV *> Strides,
                                   const SCEV *Offset) {
   Shape.setStrides(Strides, Offset);
@@ -4143,6 +4153,19 @@ ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
     SAI->updateElementType(ElementType);
     // In case of mismatching array sizes, we bail out by setting the run-time
     // context to false.
+    if (SAI->hasStrides() != Shape.hasStrides()) {
+        DEBUG(dbgs() << "SAI and new shape do not agree:\n");
+        DEBUG(dbgs() << "SAI: "; SAI->print(errs(), true); errs() << "\n");
+        DEBUG(dbgs() << "Shape: " << Shape << "\n");
+
+        if (Shape.hasStrides()) {
+            DEBUG(dbgs() << "Shape has strides, SAI had size. Overwriting size with strides");
+            SAI->overwriteSizeWithStrides(Shape.strides(), Shape.offset());
+        }
+        else {
+            report_fatal_error("SAI has strides, Shape is size based. This should not happen");
+        }
+    }
     if (SAI->hasStrides()) {
       SAI->updateStrides(Shape.strides(), Shape.offset());
     } else {
