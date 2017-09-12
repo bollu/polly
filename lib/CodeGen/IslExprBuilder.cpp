@@ -264,7 +264,6 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
   IndexOp = nullptr;
   if (SAI->hasStrides()) {
     for (unsigned u = 1, e = isl_ast_expr_get_op_n_arg(Expr); u < e; u++) {
-      isl_ast_expr_dump(isl_ast_expr_get_op_arg(Expr, u));
 
       Value *NextIndex = create(isl_ast_expr_get_op_arg(Expr, u));
 

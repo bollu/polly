@@ -1200,8 +1200,6 @@ void ScopBuilder::buildAccessRelations(ScopStmt &Stmt) {
       Ty = MemoryKind::Array;
 
     // NOTE: This is why We need to teach ScopArrayInfo to accept Shape.
-    errs() << "Access:\n"; Access->print(errs()); errs()  << "\n";
-    errs() << "\t-BaseAddr: " << *Access->getOriginalBaseAddr() << "\n";
     auto *SAI = scop->getOrCreateScopArrayInfo(Access->getOriginalBaseAddr(),
                                                ElementType, Access->Shape, Ty);
     Access->buildAccessRelation(SAI);
