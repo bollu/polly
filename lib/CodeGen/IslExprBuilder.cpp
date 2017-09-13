@@ -40,12 +40,14 @@ static cl::opt<OverflowTrackingChoice> OTMode(
     cl::Hidden, cl::init(OT_REQUEST), cl::ZeroOrMore, cl::cat(PollyCategory));
 
 IslExprBuilder::IslExprBuilder(Scop &S, PollyIRBuilder &Builder,
-                               IDToValueTy &IDToValue, ValueMapT &GlobalMap,
+                               IDToValueTy &IDToValue,
+                               SCEVToValueTy &SCEVToValue, ValueMapT &GlobalMap,
                                const DataLayout &DL, ScalarEvolution &SE,
                                DominatorTree &DT, LoopInfo &LI,
                                BasicBlock *StartBlock)
-    : S(S), Builder(Builder), IDToValue(IDToValue), GlobalMap(GlobalMap),
-      DL(DL), SE(SE), DT(DT), LI(LI), StartBlock(StartBlock) {
+    : S(S), Builder(Builder), IDToValue(IDToValue), SCEVToValue(SCEVToValue),
+      GlobalMap(GlobalMap), DL(DL), SE(SE), DT(DT), LI(LI),
+      StartBlock(StartBlock) {
   OverflowState = (OTMode == OT_ALWAYS) ? Builder.getFalse() : nullptr;
 }
 
@@ -283,12 +285,31 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
       const SCEV *DimSCEV = SAI->getDimensionStride(u - 1);
       assert(DimSCEV);
 
+      Value *DimSize = nullptr;
       llvm::ValueToValueMap Map(GlobalMap.begin(), GlobalMap.end());
-      DimSCEV = SCEVParameterRewriter::rewrite(DimSCEV, SE, Map);
-      Value *DimSize =
-          expandCodeFor(S, SE, DL, "polly", DimSCEV, DimSCEV->getType(),
-                        &*Builder.GetInsertPoint(), nullptr,
-                        StartBlock->getSinglePredecessor());
+
+      // HUGE HACK!
+      const std::string Name = Builder.GetInsertBlock()->getModule()->getName();
+
+      // HACK: we do this because we know the kernel name.
+      errs() << "Name: " << Name << "\n";
+      if (Name.find("FUNC__") != std::string::npos) {
+        auto OldValue = SCEVToValue.find(DimSCEV);
+        if (OldValue == SCEVToValue.end())
+          assert(false && "!OldValue");
+
+        auto NewDimSizeIt = Map.find(OldValue->second);
+        if (NewDimSizeIt == Map.end())
+          assert(false && "!NewDimSizeIt");
+        DimSize = NewDimSizeIt->second;
+      } else {
+
+        DimSCEV = SCEVParameterRewriter::rewrite(DimSCEV, SE, Map);
+        DimSize = expandCodeFor(S, SE, DL, "polly", DimSCEV, DimSCEV->getType(),
+                                &*Builder.GetInsertPoint(), nullptr,
+                                StartBlock->getSinglePredecessor());
+      }
+      assert(DimSize && "dimsize uninitialized");
 
       if (Ty != NextIndex->getType())
         NextIndex = Builder.CreateSExtOrTrunc(NextIndex, Ty,
@@ -370,7 +391,8 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
 Value *IslExprBuilder::createOpAccess(isl_ast_expr *Expr) {
   Value *Addr = createAccessAddress(Expr);
   assert(Addr && "Could not create op access address");
-  return Builder.CreateLoad(Addr, Addr->getName() + ".load");
+  auto LoadVal = Builder.CreateLoad(Addr, Addr->getName() + ".load");
+  return LoadVal;
 }
 
 Value *IslExprBuilder::createOpBin(__isl_take isl_ast_expr *Expr) {

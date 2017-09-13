@@ -1233,7 +1233,11 @@ bool IslNodeBuilder::materializeStridedArraySizes() {
       Value *Val = this->generateSCEV(Array->getDimensionStride(i));
       assert(Val && "unable to build Value for stride");
 
+      // We need to pass a SCEV to the IslExprBuilder for
+      // kernel strides. We can't synthesize a value because it would be
+      // different across host and kernel code.
       IDToValue[Id] = Val;
+      SCEVToValue[Array->getDimensionStride(i)] = Val;
       isl_id_free(Id);
     }
   }

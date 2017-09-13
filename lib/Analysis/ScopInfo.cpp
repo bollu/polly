@@ -353,7 +353,6 @@ ScopArrayInfo::ScopArrayInfo(Value *BasePtr, Type *ElementType, isl::ctx Ctx,
 ScopArrayInfo::~ScopArrayInfo() = default;
 
 isl::space ScopArrayInfo::getSpace() const {
-  // errs() << __PRETTY_FUNCTION__ << "Shape: " << this->Shape << "\n";
   auto Space = isl::space(Id.get_ctx(), 0, getNumberOfDimensions());
   Space = Space.set_tuple_id(isl::dim::set, Id);
   return Space;
@@ -438,9 +437,8 @@ void ScopArrayInfo::applyAndSetFAD(Value *FAD) {
   }
 }
 
-
 void ScopArrayInfo::overwriteSizeWithStrides(ArrayRef<const SCEV *> Strides,
-                                  const SCEV *Offset) {
+                                             const SCEV *Offset) {
 
   // HACK: first set our shape to a stride based shape so that we don't
   // assert within updateStrides. Move this into a bool parameter of
@@ -4154,17 +4152,18 @@ ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
     // In case of mismatching array sizes, we bail out by setting the run-time
     // context to false.
     if (SAI->hasStrides() != Shape.hasStrides()) {
-        DEBUG(dbgs() << "SAI and new shape do not agree:\n");
-        DEBUG(dbgs() << "SAI: "; SAI->print(errs(), true); errs() << "\n");
-        DEBUG(dbgs() << "Shape: " << Shape << "\n");
+      DEBUG(dbgs() << "SAI and new shape do not agree:\n");
+      DEBUG(dbgs() << "SAI: "; SAI->print(errs(), true); errs() << "\n");
+      DEBUG(dbgs() << "Shape: " << Shape << "\n");
 
-        if (Shape.hasStrides()) {
-            DEBUG(dbgs() << "Shape has strides, SAI had size. Overwriting size with strides");
-            SAI->overwriteSizeWithStrides(Shape.strides(), Shape.offset());
-        }
-        else {
-            report_fatal_error("SAI has strides, Shape is size based. This should not happen");
-        }
+      if (Shape.hasStrides()) {
+        DEBUG(dbgs() << "Shape has strides, SAI had size. Overwriting size "
+                        "with strides");
+        SAI->overwriteSizeWithStrides(Shape.strides(), Shape.offset());
+      } else {
+        report_fatal_error(
+            "SAI has strides, Shape is size based. This should not happen");
+      }
     }
     if (SAI->hasStrides()) {
       SAI->updateStrides(Shape.strides(), Shape.offset());

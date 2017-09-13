@@ -2047,7 +2047,8 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
         auto V = ExprBuilder.create(DimSize);
         Sizes.push_back(SE.getSCEV(V));
       }
-      NewShape = ShapeInfo::fromStrides(Sizes, SAI->getStrideOffset());
+      NewShape = SAI->getShape();
+      // NewShape = ShapeInfo::fromStrides(Sizes, SAI->getStrideOffset());
     } else {
       Sizes.push_back(nullptr);
       for (long j = 1, n = Kernel->array[i].array->n_index; j < n; j++) {
@@ -2061,6 +2062,7 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     }
     const ScopArrayInfo *SAIRep =
         S.getOrCreateScopArrayInfo(Val, EleTy, NewShape, MemoryKind::Array);
+
     LocalArrays.push_back(Val);
 
     isl_ast_build_free(Build);
@@ -2281,8 +2283,9 @@ void GPUNodeBuilder::createKernelVariables(ppcg_kernel *Kernel, Function *FN) {
         ArrayTy = ArrayType::get(ArrayTy, Bound);
       }
 
-      NewShape =
-          ShapeInfo::fromStrides(Strides, OriginalSAI->getStrideOffset());
+      NewShape = OriginalSAI->getShape();
+      // NewShape =
+      //     ShapeInfo::fromStrides(Strides, OriginalSAI->getStrideOffset());
     } else {
       SmallVector<const SCEV *, 4> Sizes;
       Sizes.push_back(nullptr);
@@ -3609,8 +3612,6 @@ public:
   }
 
   bool runOnScop(Scop &CurrentScop) override {
-    errs() << "PPCGCodeGen running on :" << CurrentScop.getFunction().getName()
-           << "\n";
     S = &CurrentScop;
     LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
     DT = &getAnalysis<DominatorTreeWrapperPass>().getDomTree();

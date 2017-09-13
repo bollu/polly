@@ -191,7 +191,6 @@ public:
   /// Set the sizes of the Shape. It checks the invariant
   /// That this shape does not have strides.
   void setSizes(SmallVector<const SCEV *, 4> NewSizes) {
-    // errs() << __PRETTY_FUNCTION__ << "\n";
     assert(!bool(Strides));
 
     if (!bool(Sizes)) {
@@ -215,6 +214,8 @@ public:
 
     Strides->clear();
     Strides->insert(Strides->begin(), NewStrides.begin(), NewStrides.end());
+
+    assert(Offset && "offset is null");
   }
 
   const SmallVector<const SCEV *, 4> &sizes() const {
@@ -467,7 +468,8 @@ public:
   bool updateSizes(ArrayRef<const SCEV *> Sizes, bool CheckConsistency = true);
 
   /// Update the strides of a ScopArrayInfo object.
-  void overwriteSizeWithStrides(ArrayRef<const SCEV *> Strides, const SCEV *Offset);
+  void overwriteSizeWithStrides(ArrayRef<const SCEV *> Strides,
+                                const SCEV *Offset);
 
   /// Update the strides of a ScopArrayInfo object.
   bool updateStrides(ArrayRef<const SCEV *> Strides, const SCEV *Offset);
@@ -535,6 +537,18 @@ public:
     assert(Dim < getNumberOfDimensions() && "Invalid dimension");
     return DimensionSizesPw[Dim];
   }
+
+  isl::id getDimensionSizeId(unsigned Dim) const {
+    isl_pw_aff *ParametricPwAff = getDimensionSizePw(Dim).release();
+    assert(ParametricPwAff && "parametric pw_aff corresponding "
+                              "to dimension does not "
+                              "exist");
+
+    isl_id *Id = isl_pw_aff_get_dim_id(ParametricPwAff, isl_dim_param, 0);
+    isl_pw_aff_free(ParametricPwAff);
+    assert(Id && "pw_aff is not parametric");
+    return isl::manage(Id);
+  };
 
   /// Get the canonical element type of this array.
   ///
