@@ -655,7 +655,7 @@ static const bool AbstractMatrixDebug = false;
 bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
                                                  ScopStmt *Stmt) {
 
-  auto optionalCallGEP = getAbstractMatrixCall(Inst);
+  auto optionalCallGEP = getAbstractMatrixCall(Inst, SE);
   if (!optionalCallGEP)
     return false;
 

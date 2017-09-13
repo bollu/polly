@@ -292,7 +292,6 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
       const std::string Name = Builder.GetInsertBlock()->getModule()->getName();
 
       // HACK: we do this because we know the kernel name.
-      errs() << "Name: " << Name << "\n";
       if (Name.find("FUNC__") != std::string::npos) {
         auto OldValue = SCEVToValue.find(DimSCEV);
         if (OldValue == SCEVToValue.end())

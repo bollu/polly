@@ -594,12 +594,13 @@ llvm::Loop *polly::getFirstNonBoxedLoopFor(llvm::BasicBlock *BB,
 
 static const bool AbstractMatrixDebug = false;
 llvm::Optional<std::pair<CallInst *, GEPOperator *>>
-polly::getAbstractMatrixCall(MemAccInst Inst) {
+polly::getAbstractMatrixCall(MemAccInst Inst, ScalarEvolution &SE) {
   // Case 1. (Total size of array not known)
   // %2 = tail call i64 @_gfortran_polly_array_index_2(i64 1, i64 %1, i64
   // %indvars.iv1, i64 %indvars.iv) #1
   // %3 = getelementptr float, float* %0, i64
-  // %2 store float 2.000000e+00, float* %3, align 4 STORE <val> (GEP <arr>
+  // %bitcast = bitcast %3 to <otherty>
+  // %2 store float 2.000000e+00, float* %3, align 4 STORE <val> (GEP <bitcast>)
   // (CALL index_2(<strides>, <ixs>)))
 
   // Case 2. (Total size of array statically known)
@@ -612,12 +613,27 @@ polly::getAbstractMatrixCall(MemAccInst Inst) {
     errs() << "@@@" << __PRETTY_FUNCTION__ << "\n";
     errs() << "\nInst: " << *Inst.get() << "\n";
   }
-  auto *MaybeGEP = Inst.getPointerOperand();
-  if (MaybeGEP == nullptr)
+
+  Value *MaybeBitcast = Inst.getPointerOperand();
+  if (!MaybeBitcast)
     return Optional<std::pair<CallInst *, GEPOperator *>>(None);
 
   if (AbstractMatrixDebug)
+    errs() << "Bitcast(maybe): " << *MaybeBitcast << "\n";
+
+  // If we have a bitcast as the parameter to the instruction, strip off the
+  // bitcast. Otherwise, return the original instruction operand.
+  Value *MaybeGEP = [&]() -> Value * {
+    BitCastOperator *Bitcast = dyn_cast<BitCastOperator>(MaybeBitcast);
+    if (Bitcast) {
+      return Bitcast->getOperand(0);
+    }
+    return Inst.getPointerOperand();
+  }();
+
+  if (AbstractMatrixDebug)
     errs() << "\tGEP(maybe): " << *MaybeGEP << "\n";
+
   GEPOperator *GEP = dyn_cast<GEPOperator>(MaybeGEP);
 
   if (!GEP)
@@ -625,10 +641,6 @@ polly::getAbstractMatrixCall(MemAccInst Inst) {
 
   if (AbstractMatrixDebug)
     errs() << "\tGEP(for sure): " << *GEP << "\n";
-  /*
-  if (GEP->getNumIndices() != 1)
-    return Optional<std::pair<CallInst *, GEPOperator *>>(None);
-  */
 
   auto *MaybeCall = GEP->getOperand(GEP->getNumOperands() - 1);
   assert(MaybeCall);
