@@ -2248,11 +2248,12 @@ void GPUNodeBuilder::finalizeKernelArguments(ppcg_kernel *Kernel) {
     /// To support this case we need to store these scalars back at each
     /// memory store or at least before each kernel barrier.
     if (Kernel->n_block != 0 || Kernel->n_grid != 0) {
-      BuildSuccessful = 0;
-      DEBUG(
-          dbgs() << getUniqueScopName(&S)
-                 << " has a store to a scalar value that"
-                    " would be undefined to run in parallel. Bailing out.\n";);
+      // BuildSuccessful = 0;
+      DEBUG(dbgs() << __PRETTY_FUNCTION__ << "HACK: disabling bailout on StoredScalar\n";);
+      //DEBUG(
+      //    dbgs() << getUniqueScopName(&S)
+      //           << " has a store to a scalar value that"
+      //              " would be undefined to run in parallel. Bailing out.\n";);
     }
   }
 }

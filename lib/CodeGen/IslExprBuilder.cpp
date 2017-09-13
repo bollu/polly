@@ -322,6 +322,8 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
       if (!IndexOp) {
         IndexOp = NextIndex;
       } else {
+
+
         if (Ty != IndexOp->getType())
           IndexOp = Builder.CreateIntCast(IndexOp, Ty, true);
 
@@ -331,8 +333,11 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
     Value *Offset = nullptr;
     const SCEV *OffsetSCEV = SAI->getStrideOffset();
     llvm::ValueToValueMap Map(GlobalMap.begin(), GlobalMap.end());
+    // If we are in the kernel, then the base pointer has already been
+    // offset correctly so we need not do anything about it.
     if (Name.find("FUNC__") != std::string::npos) {
 
+        /*
       auto OldValue = SCEVToValue.find(OffsetSCEV);
       if (OldValue == SCEVToValue.end())
         assert(false && "!OldValue");
@@ -340,9 +345,13 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
       auto NewDimSizeIt = Map.find(OldValue->second);
       if (NewDimSizeIt == Map.end())
         assert(false && "!NewDimSizeIt");
+     
       Offset = NewDimSizeIt->second;
+     */
+        Offset = ConstantInt::get(IndexOp->getType(), 0);
     } else {
 
+      // If we are outside a kernel, then we do need to synthesize an offset.
       OffsetSCEV = SCEVParameterRewriter::rewrite(OffsetSCEV, SE, Map);
       Offset = expandCodeFor(S, SE, DL, "polly", OffsetSCEV,
                              OffsetSCEV->getType(), &*Builder.GetInsertPoint(),
