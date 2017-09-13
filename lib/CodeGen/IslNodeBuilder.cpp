@@ -1240,6 +1240,9 @@ bool IslNodeBuilder::materializeStridedArraySizes() {
       SCEVToValue[Array->getDimensionStride(i)] = Val;
       isl_id_free(Id);
     }
+
+    Value *Val = this->generateSCEV(Array->getStrideOffset());
+    SCEVToValue[Array->getStrideOffset()] = Val;
   }
   return true;
 }

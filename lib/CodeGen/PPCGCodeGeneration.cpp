@@ -1486,6 +1486,9 @@ GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
   for (const auto &I : IDToValue)
     SubtreeValues.insert(I.second);
 
+  for (const auto &I : SCEVToValue)
+    SubtreeValues.insert(I.second);
+
   // NOTE: this is populated in IslNodeBuilder::addParameters
   // See [Code generation of induction variables of loops outside Scops].
   for (const auto &I : OutsideLoopIterations)

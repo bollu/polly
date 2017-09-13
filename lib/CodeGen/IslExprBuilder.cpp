@@ -264,6 +264,7 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
   }
 
   IndexOp = nullptr;
+  const std::string Name = Builder.GetInsertBlock()->getModule()->getName();
   if (SAI->hasStrides()) {
     for (unsigned u = 1, e = isl_ast_expr_get_op_n_arg(Expr); u < e; u++) {
 
@@ -287,9 +288,6 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
 
       Value *DimSize = nullptr;
       llvm::ValueToValueMap Map(GlobalMap.begin(), GlobalMap.end());
-
-      // HUGE HACK!
-      const std::string Name = Builder.GetInsertBlock()->getModule()->getName();
 
       // HACK: we do this because we know the kernel name.
       if (Name.find("FUNC__") != std::string::npos) {
@@ -330,7 +328,29 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
         IndexOp = createAdd(IndexOp, NextIndex, "polly.access.add." + BaseName);
       } // end else
     }   // end for loop over stride dims
-  }     // end hasStride
+    Value *Offset = nullptr;
+    const SCEV *OffsetSCEV = SAI->getStrideOffset();
+    llvm::ValueToValueMap Map(GlobalMap.begin(), GlobalMap.end());
+    if (Name.find("FUNC__") != std::string::npos) {
+
+      auto OldValue = SCEVToValue.find(OffsetSCEV);
+      if (OldValue == SCEVToValue.end())
+        assert(false && "!OldValue");
+
+      auto NewDimSizeIt = Map.find(OldValue->second);
+      if (NewDimSizeIt == Map.end())
+        assert(false && "!NewDimSizeIt");
+      Offset = NewDimSizeIt->second;
+    } else {
+
+      OffsetSCEV = SCEVParameterRewriter::rewrite(OffsetSCEV, SE, Map);
+      Offset = expandCodeFor(S, SE, DL, "polly", OffsetSCEV,
+                             OffsetSCEV->getType(), &*Builder.GetInsertPoint(),
+                             nullptr, StartBlock->getSinglePredecessor());
+    }
+    assert(Offset && "dimsize uninitialized");
+    IndexOp = createAdd(IndexOp, Offset, "polly.access.offseted." + BaseName);
+  } // end hasStride
   else {
     for (unsigned u = 1, e = isl_ast_expr_get_op_n_arg(Expr); u < e; u++) {
       Value *NextIndex = create(isl_ast_expr_get_op_arg(Expr, u));
