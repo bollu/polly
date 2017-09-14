@@ -547,9 +547,13 @@ bool ScopBuilder::buildAccessCallInst(MemAccInst Inst, ScopStmt *Stmt) {
   if (CI->doesNotAccessMemory() || isIgnoredIntrinsic(CI))
     return true;
 
+
   bool ReadOnly = false;
   auto *AF = SE.getConstant(IntegerType::getInt64Ty(CI->getContext()), 0);
   auto *CalledFunction = CI->getCalledFunction();
+  if (CalledFunction->getName().count(POLLY_ABSTRACT_INDEX_BASENAME)) 
+      return true;
+
   switch (AA.getModRefBehavior(CalledFunction)) {
   case FMRB_UnknownModRefBehavior:
     llvm_unreachable("Unknown mod ref behaviour cannot be represented.");

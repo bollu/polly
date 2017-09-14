@@ -713,9 +713,15 @@ bool ScopDetection::isValidCallInst(CallInst &CI,
 
   Function *CalledFunction = CI.getCalledFunction();
 
+
   // Indirect calls are not supported.
   if (CalledFunction == nullptr)
     return false;
+  
+  // Function being called is a polly indexing function.
+  if (CalledFunction->getName().count(POLLY_ABSTRACT_INDEX_BASENAME)) {
+      return true;
+  }
 
   if (AllowModrefCall) {
     switch (AA.getModRefBehavior(CalledFunction)) {
