@@ -453,8 +453,7 @@ bool ScopArrayInfo::updateStrides(ArrayRef<const SCEV *> Strides,
   for (size_t i = 0; i < Shape.getNumberOfDimensions(); i++) {
     isl::space Space(S.getIslCtx(), 1, 0);
 
-    std::string param_name = std::to_string(i);
-    param_name += "_param_stride_size";
+    std::string param_name = getIslCompatibleName("stride_size_", getName(), std::to_string(i));
     isl::id IdPwAff = isl::id::alloc(S.getIslCtx(), param_name, this);
 
     Space = Space.set_dim_id(isl::dim::param, 0, IdPwAff);
@@ -2421,8 +2420,10 @@ buildMinMaxAccess(isl::set Set, Scop::MinMaxVectorTy &MinMaxAccesses, Scop &S) {
 
   Set = Set.remove_divs();
 
-  if (isl_set_n_basic_set(Set.get()) >= MaxDisjunctsInDomain)
+  if (isl_set_n_basic_set(Set.get()) >= MaxDisjunctsInDomain) {
+      errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
     return isl::stat::error;
+  }
 
   // Restrict the number of parameters involved in the access as the lexmin/
   // lexmax computation will take too long if this number is high.
@@ -2444,18 +2445,24 @@ buildMinMaxAccess(isl::set Set, Scop::MinMaxVectorTy &MinMaxAccesses, Scop &S) {
       if (Set.involves_dims(isl::dim::param, u, 1))
         InvolvedParams++;
 
-    if (InvolvedParams > RunTimeChecksMaxParameters)
+    if (InvolvedParams > RunTimeChecksMaxParameters) {
+      errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
       return isl::stat::error;
+    }
   }
 
-  if (isl_set_n_basic_set(Set.get()) > RunTimeChecksMaxAccessDisjuncts)
+  if (isl_set_n_basic_set(Set.get()) > RunTimeChecksMaxAccessDisjuncts) {
+      errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
     return isl::stat::error;
+  }
 
   MinPMA = Set.lexmin_pw_multi_aff();
   MaxPMA = Set.lexmax_pw_multi_aff();
 
-  if (isl_ctx_last_error(Ctx.get()) == isl_error_quota)
+  if (isl_ctx_last_error(Ctx.get()) == isl_error_quota) {
+      errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
     return isl::stat::error;
+  }
 
   MinPMA = MinPMA.coalesce();
   MaxPMA = MaxPMA.coalesce();
@@ -2502,7 +2509,13 @@ static bool calculateMinMaxAccess(Scop::AliasGroupTy AliasGroup, Scop &S,
   auto Lambda = [&MinMaxAccesses, &S](isl::set Set) -> isl::stat {
     return buildMinMaxAccess(Set, MinMaxAccesses, S);
   };
-  return Locations.foreach_set(Lambda) == isl::stat::ok;
+  bool Valid =  Locations.foreach_set(Lambda) == isl::stat::ok;
+
+
+  if (!Valid) {
+      assert(false && "die");
+  }
+  return Valid;
 }
 
 /// Helper to treat non-affine regions and basic blocks the same.
@@ -3316,17 +3329,22 @@ bool Scop::buildAliasGroups(AliasAnalysis &AA) {
   splitAliasGroupsByDomain(AliasGroups);
 
   for (AliasGroupTy &AG : AliasGroups) {
-    if (!hasFeasibleRuntimeContext())
+    if (!hasFeasibleRuntimeContext()) {
+      errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
       return false;
+    }
 
     {
       IslMaxOperationsGuard MaxOpGuard(getIslCtx(), OptComputeOut);
       bool Valid = buildAliasGroup(AG, HasWriteAccess);
-      if (!Valid)
+      if (!Valid) {
+          errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
         return false;
+      }
     }
     if (isl_ctx_last_error(getIslCtx()) == isl_error_quota) {
       invalidate(COMPLEXITY, DebugLoc());
+      errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
       return false;
     }
   }
@@ -3373,6 +3391,7 @@ bool Scop::buildAliasGroup(Scop::AliasGroupTy &AliasGroup,
     if (!MA->isAffine()) {
       invalidate(ALIASING, MA->getAccessInstruction()->getDebugLoc(),
                  MA->getAccessInstruction()->getParent());
+      errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
       return false;
     }
   }
@@ -3395,21 +3414,27 @@ bool Scop::buildAliasGroup(Scop::AliasGroupTy &AliasGroup,
   Valid =
       calculateMinMaxAccess(ReadWriteAccesses, *this, MinMaxAccessesReadWrite);
 
-  if (!Valid)
+  if (!Valid) {
+      errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
     return false;
+  }
 
   // Bail out if the number of values we need to compare is too large.
   // This is important as the number of comparisons grows quadratically with
   // the number of values we need to compare.
   if (MinMaxAccessesReadWrite.size() + ReadOnlyArrays.size() >
-      RunTimeChecksMaxArraysPerGroup)
+      RunTimeChecksMaxArraysPerGroup) {
     return false;
+      errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
+  }
 
   Valid =
       calculateMinMaxAccess(ReadOnlyAccesses, *this, MinMaxAccessesReadOnly);
 
-  if (!Valid)
+  if (!Valid) {
+      errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
     return false;
+  }
 
   return true;
 }
@@ -4246,8 +4271,18 @@ isl::space Scop::getFullParamSpace() const {
   std::vector<isl::id> FortranIDs;
   FortranIDs = getFortranArrayIds(arrays());
 
+  std::vector<isl::id> StrideIDs;
+
+  for(ScopArrayInfo *Array : arrays()) {
+      if (!Array->hasStrides()) continue;
+      for(int i = 0 ; i < Array->getNumberOfDimensions(); i++) {
+          isl::id Id = Array->getDimensionSizeId(i);
+          StrideIDs.push_back(Id);
+      }
+  }
+
   isl::space Space = isl::space::params_alloc(
-      getIslCtx(), ParameterIds.size() + FortranIDs.size());
+      getIslCtx(), ParameterIds.size() + FortranIDs.size() + StrideIDs.size());
 
   unsigned PDim = 0;
   for (const SCEV *Parameter : Parameters) {
@@ -4258,6 +4293,14 @@ isl::space Scop::getFullParamSpace() const {
   for (isl::id Id : FortranIDs)
     Space = Space.set_dim_id(isl::dim::param, PDim++, Id);
 
+  for (isl::id Id : StrideIDs) {
+    Space = Space.set_dim_id(isl::dim::param, PDim++, Id);
+  }
+
+  /*
+  errs() << __PRETTY_FUNCTION__ << __LINE__ << " ParamSpace:\n";
+  Space.dump();
+  */
   return Space;
 }
 

@@ -12771,12 +12771,24 @@ static isl_stat check_basic_map_compatible_range_multi_aff(
 
 	ma_space = isl_multi_aff_get_space(ma);
 
+    /*
+    isl_printer *PRINTER = isl_printer_to_str(isl_basic_map_get_ctx(bmap));
+    isl_printer_print_basic_map(PRINTER, bmap);
+    fprintf(stderr, "PRINTER%s%d:\n%s\n", __PRETTY_FUNCTION__, __LINE__, isl_printer_get_str(PRINTER));
+    PRINTER = isl_printer_flush(PRINTER);
+
+    isl_printer_print_multi_aff(PRINTER, ma);
+    fprintf(stderr, "PRINTER%s%d:\n%s\n", __PRETTY_FUNCTION__, __LINE__, isl_printer_get_str(PRINTER));
+    PRINTER = isl_printer_flush(PRINTER);
+    */
+
 	m = isl_space_has_equal_params(bmap->dim, ma_space);
 	if (m < 0)
 		goto error;
-	if (!m)
+	if (!m) {
 		isl_die(isl_basic_map_get_ctx(bmap), isl_error_invalid,
 			"parameters don't match", goto error);
+    }
 	m = isl_space_tuple_is_equal(bmap->dim, type, ma_space, isl_dim_out);
 	if (m < 0)
 		goto error;

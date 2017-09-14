@@ -1219,6 +1219,9 @@ bool IslNodeBuilder::materializeStridedArraySizes() {
     if (!Array->hasStrides())
       continue;
 
+    errs() << "===\n";
+    errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
+    errs() << "Array: " << Array->getName() << "\n";
     for (unsigned i = 0; i < Array->getNumberOfDimensions(); i++) {
       isl_pw_aff *ParametricPwAff = Array->getDimensionSizePw(i).release();
       assert(ParametricPwAff && "parametric pw_aff corresponding "
@@ -1230,8 +1233,13 @@ bool IslNodeBuilder::materializeStridedArraySizes() {
 
       assert(Id && "pw_aff is not parametric");
 
+      errs() << "-\n";
+      errs() << "i: " << i << "\n";
+      errs() << "ID: " <<Id << "\n";
+      errs() << "StrideSCEV: " << *Array->getDimensionStride(i) << "\n";
       Value *Val = this->generateSCEV(Array->getDimensionStride(i));
       assert(Val && "unable to build Value for stride");
+      errs() << "StrideVal: " << *Val << "\n";
 
       // We need to pass a SCEV to the IslExprBuilder for
       // kernel strides. We can't synthesize a value because it would be

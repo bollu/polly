@@ -267,9 +267,7 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
   const std::string Name = Builder.GetInsertBlock()->getModule()->getName();
   if (SAI->hasStrides()) {
     for (unsigned u = 1, e = isl_ast_expr_get_op_n_arg(Expr); u < e; u++) {
-
       Value *NextIndex = create(isl_ast_expr_get_op_arg(Expr, u));
-
       assert(NextIndex->getType()->isIntegerTy() &&
              "Access index should be an integer");
 
@@ -310,35 +308,32 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
 
       if (Ty != NextIndex->getType())
         NextIndex = Builder.CreateSExtOrTrunc(NextIndex, Ty,
-                                              "polly.access.sext." + BaseName);
+                                              "polly.access.idxval." + BaseName + std::to_string(u - 1));
       if (Ty != DimSize->getType())
         DimSize = Builder.CreateSExtOrTrunc(DimSize, Ty,
-                                            "polly.access.sext." + BaseName);
+                                            "polly.access.stride." + BaseName + std::to_string(u - 1));
 
-      NextIndex = createMul(NextIndex, DimSize, "polly.access.mul." + BaseName);
+      NextIndex = createMul(NextIndex, DimSize, "polly.access.idxval_x_stride." + BaseName + std::to_string(u - 1));
 
       if (PollyDebugPrinting)
         RuntimeDebugBuilder::createCPUPrinter(Builder, "[", NextIndex, "]");
       if (!IndexOp) {
         IndexOp = NextIndex;
       } else {
-
-
         if (Ty != IndexOp->getType())
           IndexOp = Builder.CreateIntCast(IndexOp, Ty, true);
-
-        IndexOp = createAdd(IndexOp, NextIndex, "polly.access.add." + BaseName);
+        IndexOp = createAdd(IndexOp, NextIndex, "polly.access.idx_accum." + BaseName);
       } // end else
     }   // end for loop over stride dims
     assert(IndexOp && "expected correct index op");
     Value *Offset = nullptr;
-    const SCEV *OffsetSCEV = SAI->getStrideOffset();
-    llvm::ValueToValueMap Map(GlobalMap.begin(), GlobalMap.end());
     // If we are in the kernel, then the base pointer has already been
     // offset correctly so we need not do anything about it.
     if (Name.find("FUNC__") != std::string::npos) {
       Offset = ConstantInt::get(IndexOp->getType(), 0, true);
     } else {
+    const SCEV *OffsetSCEV = SAI->getStrideOffset();
+    llvm::ValueToValueMap Map(GlobalMap.begin(), GlobalMap.end());
 
       // If we are outside a kernel, then we do need to synthesize an offset.
       OffsetSCEV = SCEVParameterRewriter::rewrite(OffsetSCEV, SE, Map);

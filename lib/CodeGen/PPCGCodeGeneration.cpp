@@ -3056,7 +3056,7 @@ public:
     /// `-polly-ignore-parameter-bounds` enabled, the Scop::Context does not
     /// contain all parameter dimensions.
     /// So, use the helper `alignPwAffs` to align all the `isl_pw_aff` together.
-    isl_space *SeedAlignSpace = S->getParamSpace().release();
+    isl_space *SeedAlignSpace = S->getFullParamSpace().release();
     SeedAlignSpace = isl_space_add_dims(SeedAlignSpace, isl_dim_set, 1);
     SeedAlignSpace = isl_space_align_params(
         SeedAlignSpace, isl_set_get_space(PPCGArray.extent));
@@ -3322,6 +3322,8 @@ public:
 
     Schedule =
         isl_schedule_align_params(Schedule, S->getFullParamSpace().release());
+    // errs() << S->getFullParamSpace() << "\n";
+    // report_fatal_error("see full param space");
 
     if (!has_permutable || has_permutable < 0) {
       Schedule = isl_schedule_free(Schedule);
