@@ -330,25 +330,14 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
         IndexOp = createAdd(IndexOp, NextIndex, "polly.access.add." + BaseName);
       } // end else
     }   // end for loop over stride dims
+    assert(IndexOp && "expected correct index op");
     Value *Offset = nullptr;
     const SCEV *OffsetSCEV = SAI->getStrideOffset();
     llvm::ValueToValueMap Map(GlobalMap.begin(), GlobalMap.end());
     // If we are in the kernel, then the base pointer has already been
     // offset correctly so we need not do anything about it.
     if (Name.find("FUNC__") != std::string::npos) {
-
-        /*
-      auto OldValue = SCEVToValue.find(OffsetSCEV);
-      if (OldValue == SCEVToValue.end())
-        assert(false && "!OldValue");
-
-      auto NewDimSizeIt = Map.find(OldValue->second);
-      if (NewDimSizeIt == Map.end())
-        assert(false && "!NewDimSizeIt");
-     
-      Offset = NewDimSizeIt->second;
-     */
-        Offset = ConstantInt::get(IndexOp->getType(), 0);
+      Offset = ConstantInt::get(IndexOp->getType(), 0, true);
     } else {
 
       // If we are outside a kernel, then we do need to synthesize an offset.
@@ -356,6 +345,7 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
       Offset = expandCodeFor(S, SE, DL, "polly", OffsetSCEV,
                              OffsetSCEV->getType(), &*Builder.GetInsertPoint(),
                              nullptr, StartBlock->getSinglePredecessor());
+      Offset = Builder.CreateIntCast(Offset, IndexOp->getType(), true);
     }
     assert(Offset && "dimsize uninitialized");
     IndexOp = createAdd(IndexOp, Offset, "polly.access.offseted." + BaseName);
