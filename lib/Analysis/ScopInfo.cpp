@@ -463,7 +463,7 @@ bool ScopArrayInfo::updateStrides(ArrayRef<const SCEV *> Strides,
   for (size_t i = 0; i < Shape.getNumberOfDimensions(); i++) {
     isl::space Space(S.getIslCtx(), 1, 0);
 
-    std::string param_name = getIslCompatibleName("stride_size_", getName(), std::to_string(i));
+    std::string param_name = getIslCompatibleName("stride_" + std::to_string(i) + "__", getName(), "");
     isl::id IdPwAff = isl::id::alloc(S.getIslCtx(), param_name, this);
 
     Space = Space.set_dim_id(isl::dim::param, 0, IdPwAff);
