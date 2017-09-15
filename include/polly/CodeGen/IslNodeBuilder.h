@@ -120,7 +120,7 @@ public:
 
   Value *extractStrideFromFAD(GlobalValue *FAD, int dimension);
   Value *extractOffsetFromFAD(GlobalValue *FAD);
-  bool materializeStridedArraySizes();
+  void materializeStridedArraySizes();
 
   /// Generate code that evaluates @p Condition at run-time.
   ///

@@ -333,6 +333,12 @@ ScopArrayInfo::ScopArrayInfo(Value *BasePtr, Type *ElementType, isl::ctx Ctx,
                                       UseInstructionNames);
   Id = isl::id::alloc(Ctx, BasePtrName, this);
 
+  errs() << "\n" << __PRETTY_FUNCTION__<< ":" << __LINE__<< "\n";
+  if(BasePtr) errs() << "\t-BasePtr: " << *BasePtr << "\n";
+  if(BaseName) errs() << "\t-BaseName: " << BaseName << "\n";
+  errs() << "\t-ElementType: " << *ElementType << "\n";
+
+  
   // Shape.mapSizes([&] (SmallVector<const SCEV*, 4> &Sizes)  {
   // this->updateSizes(Sizes); });
   if (Shape.hasSizes())
@@ -392,6 +398,10 @@ bool ScopArrayInfo::isCompatibleWith(const ScopArrayInfo *Array) const {
 void ScopArrayInfo::updateElementType(Type *NewElementType) {
   if (NewElementType == ElementType)
     return;
+
+  errs() << "\n" <<  __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
+  print(errs(), true);
+  errs() << "\tElementType: " << *ElementType << " | NewElementType: " << *NewElementType << "\n";
 
   auto OldElementSize = DL.getTypeAllocSizeInBits(ElementType);
   auto NewElementSize = DL.getTypeAllocSizeInBits(NewElementType);
@@ -638,17 +648,12 @@ void MemoryAccess::updateDimensionality() {
   auto *SAI = getScopArrayInfo();
   isl::space ArraySpace = SAI->getSpace();
 
-  // errs() << "-ArraySpace: " << ArraySpace << "\n";
   isl::space AccessSpace = AccessRelation.get_space().range();
   isl::ctx Ctx = ArraySpace.get_ctx();
 
   auto DimsArray = ArraySpace.dim(isl::dim::set);
   auto DimsAccess = AccessSpace.dim(isl::dim::set);
   auto DimsMissing = DimsArray - DimsAccess;
-
-  // errs() << "-DimsArray: " << DimsArray << "\n";
-  // errs() << "-DimsAccess: " << DimsAccess << "\n";
-  // errs() << "-DimsMissing: " << DimsMissing << "\n";
 
   auto *BB = getStatement()->getEntryBlock();
   auto &DL = BB->getModule()->getDataLayout();
@@ -3679,10 +3684,15 @@ void Scop::updateAccessDimensionality() {
     for (MemoryAccess *Access : Stmt) {
       if (!Access->isArrayKind())
         continue;
+
       ScopArrayInfo *Array =
           const_cast<ScopArrayInfo *>(Access->getScopArrayInfo());
       if (Array->hasStrides())
-        return;
+        continue;
+
+      
+      errs() << __PRETTY_FUNCTION__  << ":" << __LINE__ << "\n";
+      Array->print(errs(), true);
 
       if (Array->getNumberOfDimensions() != 1)
         continue;

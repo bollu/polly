@@ -1263,48 +1263,62 @@ Value *IslNodeBuilder::extractOffsetFromFAD(GlobalValue *FAD) {
     return Builder.CreateLoad(OffsetLoc);
 }
 
-bool IslNodeBuilder::materializeStridedArraySizes() {
-  for (ScopArrayInfo *Array : S.arrays()) {
-    if (!Array->hasStrides())
-      continue;
+void IslNodeBuilder::materializeStridedArraySizes() {
+    for (ScopArrayInfo *Array : S.arrays()) {
+        if (!Array->hasStrides())
+            continue;
 
-    GlobalValue *FAD = Array->getShape().hackFAD();
-    assert(FAD);
+        GlobalValue *FAD = nullptr;
 
-    errs() << "===\n";
-    errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
-    errs() << "Array: " << Array->getName() << "\n";
-    errs() << "FAD: " << *FAD << "\n";
-    for (unsigned i = 0; i < Array->getNumberOfDimensions(); i++) {
-      isl_pw_aff *ParametricPwAff = Array->getDimensionSizePw(i).release();
-      assert(ParametricPwAff && "parametric pw_aff corresponding "
-                                "to outermost dimension does not "
-                                "exist");
+        for (unsigned i = 0; i < Array->getNumberOfDimensions(); i++) {
+            isl_pw_aff *ParametricPwAff = Array->getDimensionSizePw(i).release();
+            assert(ParametricPwAff && "parametric pw_aff corresponding "
+                    "to outermost dimension does not "
+                    "exist");
 
-      isl_id *Id = isl_pw_aff_get_dim_id(ParametricPwAff, isl_dim_param, 0);
-      isl_pw_aff_free(ParametricPwAff);
+            isl_id *Id = isl_pw_aff_get_dim_id(ParametricPwAff, isl_dim_param, 0);
+            isl_pw_aff_free(ParametricPwAff);
 
-      assert(Id && "pw_aff is not parametric");
+            assert(Id && "pw_aff is not parametric");
 
-      errs() << "-\n";
-      errs() << "i: " << i << "\n";
-      errs() << "ID: " <<Id << "\n";
-      errs() << "StrideSCEV: " << *Array->getDimensionStride(i) << "\n";
+            errs() << "-\n";
+            errs() << "i: " << i << "\n";
+            errs() << "ID: " <<Id << "\n";
+            const SCEV *StrideSCEV = Array->getDimensionStride(i);
+            errs() << "StrideSCEV: " << *StrideSCEV << "\n";
 
-      // We need to pass a SCEV to the IslExprBuilder for
-      // kernel strides. We can't synthesize a value because it would be
-      // different across host and kernel code.
-      Value *Stride = extractStrideFromFAD(FAD, Array->getNumberOfDimensions() - 1 -i);
-      errs() << "StrideVal: " << *Stride << "\n";
-      IDToValue[Id] = Stride;
-      SCEVToValue[Array->getDimensionStride(i)] = Stride;
-      isl_id_free(Id);
+            Value *Stride = nullptr;
+            if (FAD) {
+                assert(false);
+                // We need to pass a SCEV to the IslExprBuilder for
+                // kernel strides. We can't synthesize a value because it would be
+                // different across host and kernel code.
+                Stride = extractStrideFromFAD(FAD, Array->getNumberOfDimensions() - 1 -i);
+            }
+            else {
+                // assert(isa<SCEVConstant>(StrideSCEV));
+                Stride = generateSCEV(StrideSCEV);
+            }
+            assert(Stride);
+
+            errs() << "StrideVal: " << *Stride << "\n";
+            IDToValue[Id] = Stride;
+            SCEVToValue[Array->getDimensionStride(i)] = Stride;
+            isl_id_free(Id);
+        }
+
+        Value *Offset = nullptr;
+        const SCEV *OffsetSCEV = Array->getStrideOffset();
+        if (FAD) {
+            assert(false);
+            Offset = extractOffsetFromFAD(FAD);
+        } else {
+            // assert(isa<SCEVConstant>(OffsetSCEV));
+            Offset = generateSCEV(OffsetSCEV);
+        }
+        assert(Offset);
+        SCEVToValue[OffsetSCEV] = Offset;
     }
-
-    Value *Offset = extractOffsetFromFAD(FAD);
-    SCEVToValue[Array->getStrideOffset()] = Offset;
-  }
-  return true;
 }
 
 Value *IslNodeBuilder::preloadUnconditionally(isl_set *AccessRange,

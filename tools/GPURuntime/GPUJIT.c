@@ -1688,6 +1688,7 @@ void polly_launchKernel(PollyGPUFunction *Kernel, unsigned int GridDimX,
                         void **Parameters) {
   dump_function();
 
+  /*
   void **kernel = (void **)Parameters[0];
   for(int i = 0; i < 4; i++) {
       fprintf(stderr, "\tParam[%d] = %p\n", i, Parameters[i]);
@@ -1697,7 +1698,7 @@ void polly_launchKernel(PollyGPUFunction *Kernel, unsigned int GridDimX,
   fprintf(stderr, "\t\tSTRIDE0: %d\n", *((int *)(Parameters[1])));
   fprintf(stderr, "\t\tSTRIDE1: %d\n", *((int *)(Parameters[2])));
   fprintf(stderr, "\t\tOFFSET: %d\n", *((int *)(Parameters[3])));
-  
+  */
 
   switch (Runtime) {
 #ifdef HAS_LIBCUDART
@@ -1839,7 +1840,7 @@ void *polly_mallocManaged(size_t size) {
 
 #ifdef HAS_LIBCUDART
   void *mem =  mallocManagedCUDA(size);
-  fprintf(stderr, "\tMallocManaged: %zu | %p \n", size, mem);
+  // fprintf(stderr, "\tMallocManaged: %zu | %p \n", size, mem);
  return mem;
 #else
   fprintf(stderr, "No CUDA Runtime. Managed memory only supported by CUDA\n");
