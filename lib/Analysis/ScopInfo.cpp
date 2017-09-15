@@ -2516,10 +2516,6 @@ static bool calculateMinMaxAccess(Scop::AliasGroupTy AliasGroup, Scop &S,
   };
   bool Valid =  Locations.foreach_set(Lambda) == isl::stat::ok;
 
-
-  if (!Valid) {
-      assert(false && "die");
-  }
   return Valid;
 }
 
