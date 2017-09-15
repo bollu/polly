@@ -656,6 +656,12 @@ void ScopBuilder::buildMemoryAccess(MemAccInst Inst, ScopStmt *Stmt) {
   buildAccessSingleDim(Inst, Stmt);
 }
 static const bool AbstractMatrixDebug = false;
+
+GlobalValue *getPointerFromLoadBitcast(Value *V) {
+  LoadInst *L = cast<LoadInst>(V);
+  BitCastOperator *B = cast<BitCastOperator>(L->getPointerOperand());
+  return cast<GlobalValue>(B->getOperand(0));
+}
 bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
                                                  ScopStmt *Stmt) {
 
@@ -719,6 +725,11 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
   enum MemoryAccess::AccessType AccType =
       isa<LoadInst>(Inst) ? MemoryAccess::READ : MemoryAccess::MUST_WRITE;
 
+
+  GlobalValue *FAD = getPointerFromLoadBitcast(BasePtr);
+  if (AbstractMatrixDebug)
+      errs() << "FAD: " << *FAD << "\n";
+
   if (AbstractMatrixDebug) {
     errs() << "AccType: ";
     switch (AccType) {
@@ -745,7 +756,7 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
   // NOTE: To be able to change this, we need to teach ScopArrayInfo to recieve
   // a Shape object. So, do that first.
   addArrayAccess(Stmt, Inst, AccType, BasePtr, ElementType, true, Subscripts,
-                 ShapeInfo::fromStrides(Strides, Offset), Val);
+                 ShapeInfo::fromStrides(Strides, Offset, FAD), Val);
 
   if (AbstractMatrixDebug)
     errs() << "Added array access successfully!\n";

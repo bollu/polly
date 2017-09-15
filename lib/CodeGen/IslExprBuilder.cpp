@@ -330,7 +330,16 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
     // If we are in the kernel, then the base pointer has already been
     // offset correctly so we need not do anything about it.
     if (Name.find("FUNC__") != std::string::npos) {
-      Offset = ConstantInt::get(IndexOp->getType(), 0, true);
+      llvm::ValueToValueMap Map(GlobalMap.begin(), GlobalMap.end());
+        const SCEV *OffsetSCEV = SAI->getStrideOffset();
+        auto OldValue = SCEVToValue.find(OffsetSCEV);
+        if (OldValue == SCEVToValue.end())
+          assert(false && "!OldValue offset");
+
+        auto NewIt = Map.find(OldValue->second);
+        if (NewIt == Map.end())
+          assert(false && "!NewIt offset");
+        Offset = NewIt->second;
     } else {
     const SCEV *OffsetSCEV = SAI->getStrideOffset();
     llvm::ValueToValueMap Map(GlobalMap.begin(), GlobalMap.end());

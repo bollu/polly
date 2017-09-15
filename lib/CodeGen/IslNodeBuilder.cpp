@@ -1214,14 +1214,67 @@ bool IslNodeBuilder::materializeFortranArrayOutermostDimension() {
   return true;
 }
 
+// given a scev of the form baseptr + offset(constant), return baseptr
+Value *getBasePtrFromConstIndexSCEV(const SCEV *S) {
+    errs() << "S:" << *S << "\n";
+    const SCEVAddExpr *Add = cast<SCEVAddExpr>(S);
+    assert(Add->getNumOperands() == 2);
+    if (isa<SCEVUnknown>(Add->getOperand(0)))
+            return cast<SCEVUnknown>(Add->getOperand(0))->getValue();
+
+    if (isa<SCEVUnknown>(Add->getOperand(1)))
+            return cast<SCEVUnknown>(Add->getOperand(1))->getValue();
+    assert(false);
+}
+
+/*
+    struct gfc_array_descriptor
+    {
+      array *data
+      index offset;
+      index dtype;
+      struct descriptor_dimension dimension[N_DIM];
+    }
+
+    struct descriptor_dimension
+    {
+      index stride;
+      index lbound;
+      index ubound;
+    }
+*/
+Value *IslNodeBuilder::extractStrideFromFAD(GlobalValue *FAD, int dimension) {
+    Type *Ity = Builder.getInt32Ty();
+    std::vector<Value *> Idxs =  { ConstantInt::get(Ity, 0), //global idx
+        ConstantInt::get(Ity, 3), // location of descriptor dim array
+        ConstantInt::get(Ity, dimension),//nth descriptor dim array,
+        ConstantInt::get(Ity, 0) // stride 
+    };
+    Value *Loc = Builder.CreateGEP(FAD, Idxs, "stride." + std::to_string(dimension) + ".loc");
+    return Builder.CreateLoad(Loc);
+}
+
+Value *IslNodeBuilder::extractOffsetFromFAD(GlobalValue *FAD) {
+    Type *Ity = Builder.getInt32Ty();
+    std::vector<Value *> Idxs = {ConstantInt::get(Ity, 0) // global idx
+        , ConstantInt::get(Ity, 1) // offset loc
+    };
+    Value *OffsetLoc = Builder.CreateGEP(FAD, Idxs, "offset.loc");
+    return Builder.CreateLoad(OffsetLoc);
+}
+
 bool IslNodeBuilder::materializeStridedArraySizes() {
   for (ScopArrayInfo *Array : S.arrays()) {
     if (!Array->hasStrides())
       continue;
 
+    GlobalValue *FAD = Array->getShape().hackFAD();
+    assert(FAD);
+
     errs() << "===\n";
     errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
     errs() << "Array: " << Array->getName() << "\n";
+    errs() << "FAD: " << *FAD << "\n";
     for (unsigned i = 0; i < Array->getNumberOfDimensions(); i++) {
       isl_pw_aff *ParametricPwAff = Array->getDimensionSizePw(i).release();
       assert(ParametricPwAff && "parametric pw_aff corresponding "
@@ -1237,20 +1290,19 @@ bool IslNodeBuilder::materializeStridedArraySizes() {
       errs() << "i: " << i << "\n";
       errs() << "ID: " <<Id << "\n";
       errs() << "StrideSCEV: " << *Array->getDimensionStride(i) << "\n";
-      Value *Val = this->generateSCEV(Array->getDimensionStride(i));
-      assert(Val && "unable to build Value for stride");
-      errs() << "StrideVal: " << *Val << "\n";
 
       // We need to pass a SCEV to the IslExprBuilder for
       // kernel strides. We can't synthesize a value because it would be
       // different across host and kernel code.
-      IDToValue[Id] = Val;
-      SCEVToValue[Array->getDimensionStride(i)] = Val;
+      Value *Stride = extractStrideFromFAD(FAD, Array->getNumberOfDimensions() - 1 -i);
+      errs() << "StrideVal: " << *Stride << "\n";
+      IDToValue[Id] = Stride;
+      SCEVToValue[Array->getDimensionStride(i)] = Stride;
       isl_id_free(Id);
     }
 
-    Value *Val = this->generateSCEV(Array->getStrideOffset());
-    SCEVToValue[Array->getStrideOffset()] = Val;
+    Value *Offset = extractOffsetFromFAD(FAD);
+    SCEVToValue[Array->getStrideOffset()] = Offset;
   }
   return true;
 }
@@ -1262,6 +1314,8 @@ Value *IslNodeBuilder::preloadUnconditionally(isl_set *AccessRange,
   isl_ast_expr *Access =
       isl_ast_build_access_from_pw_multi_aff(Build, PWAccRel);
   auto *Address = isl_ast_expr_address_of(Access);
+  errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
+  isl_ast_expr_dump(Address);
   auto *AddressValue = ExprBuilder.create(Address);
   Value *PreloadVal;
 

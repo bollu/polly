@@ -126,10 +126,13 @@ private:
   llvm::Optional<SmallVector<const SCEV *, 4>> Strides;
   llvm::Optional<const SCEV *> Offset;
 
+  llvm::Optional<GlobalValue *>HackFAD;
+
   ShapeInfo(Optional<ArrayRef<const SCEV *>> SizesRef,
             Optional<ArrayRef<const SCEV *>> StridesRef,
-            llvm::Optional<const SCEV *> Offset)
-      : Offset(Offset) {
+            llvm::Optional<const SCEV *> Offset, 
+            llvm::Optional<GlobalValue *>HackFAD)
+      : Offset(Offset), HackFAD(HackFAD) {
     // Can check for XOR
     assert(bool(SizesRef) || bool(StridesRef));
     assert(!(bool(SizesRef) && bool(StridesRef)));
@@ -148,31 +151,35 @@ private:
           SCEVArrayTy(StridesRef->begin(), StridesRef->end()));
   }
 
-  ShapeInfo(NoneType) : Sizes(None), Strides(None), Offset(None) {}
+  ShapeInfo(NoneType) : Sizes(None), Strides(None), Offset(None), HackFAD(None) {}
 
 public:
   static ShapeInfo fromSizes(ArrayRef<const SCEV *> Sizes) {
-    return ShapeInfo(OptionalSCEVArrayRefTy(Sizes), None, None);
+    return ShapeInfo(OptionalSCEVArrayRefTy(Sizes), None, None, None);
   }
 
   ShapeInfo(const ShapeInfo &other) {
     Sizes = other.Sizes;
     Strides = other.Strides;
     Offset = other.Offset;
+    HackFAD = other.HackFAD;
   }
 
   ShapeInfo &operator=(const ShapeInfo &other) {
     Sizes = other.Sizes;
     Strides = other.Strides;
     Offset = other.Offset;
+    HackFAD = other.HackFAD;
     return *this;
   }
 
   static ShapeInfo fromStrides(ArrayRef<const SCEV *> Strides,
-                               const SCEV *Offset) {
+                               const SCEV *Offset,
+                               GlobalValue *FAD) {
     assert(Offset && "offset is null");
     return ShapeInfo(None, OptionalSCEVArrayRefTy(Strides),
-                     Optional<const SCEV *>(Offset));
+                     Optional<const SCEV *>(Offset),
+                     Optional<GlobalValue *>(FAD));
   }
 
   static ShapeInfo none() { return ShapeInfo(None); }
@@ -203,7 +210,7 @@ public:
 
   /// Set the strides of the Shape. It checks the invariant
   /// That this shape does not have sizes.
-  void setStrides(ArrayRef<const SCEV *> NewStrides, const SCEV *NewOffset) {
+  void setStrides(ArrayRef<const SCEV *> NewStrides, const SCEV *NewOffset, GlobalValue *NewHackFAD) {
     Offset = NewOffset;
     assert(!bool(Sizes));
 
@@ -215,6 +222,8 @@ public:
     Strides->clear();
     Strides->insert(Strides->begin(), NewStrides.begin(), NewStrides.end());
 
+    HackFAD = NewHackFAD;
+
     assert(Offset && "offset is null");
   }
 
@@ -224,6 +233,9 @@ public:
   }
 
   const SCEV *offset() const { return Offset.getValue(); }
+
+
+  GlobalValue *hackFAD() const { return HackFAD.getValue(); }
 
   SmallVector<const SCEV *, 4> &sizes_mut() {
     assert(!bool(Strides));
@@ -469,10 +481,10 @@ public:
 
   /// Update the strides of a ScopArrayInfo object.
   void overwriteSizeWithStrides(ArrayRef<const SCEV *> Strides,
-                                const SCEV *Offset);
+                                const SCEV *Offset, GlobalValue *HackFAD);
 
   /// Update the strides of a ScopArrayInfo object.
-  bool updateStrides(ArrayRef<const SCEV *> Strides, const SCEV *Offset);
+  bool updateStrides(ArrayRef<const SCEV *> Strides, const SCEV *Offset, GlobalValue *HackFAD);
 
   /// Make the ScopArrayInfo model a Fortran array.
   /// It receives the Fortran array descriptor and stores this.

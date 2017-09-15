@@ -1132,7 +1132,8 @@ Value *GPUNodeBuilder::getArrayOffset(const ScopArrayInfo *SAI,
     return nullptr;
 
   if (SAI->hasStrides()) {
-    return generateSCEV(SAI->getStrideOffset());
+      return nullptr;
+    // return generateSCEV(SAI->getStrideOffset());
   }
 
   isl::ast_build Build = isl::ast_build::from_context(S.getContext());

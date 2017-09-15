@@ -118,6 +118,8 @@ public:
   /// materialized. True otherwise.
   bool materializeFortranArrayOutermostDimension();
 
+  Value *extractStrideFromFAD(GlobalValue *FAD, int dimension);
+  Value *extractOffsetFromFAD(GlobalValue *FAD);
   bool materializeStridedArraySizes();
 
   /// Generate code that evaluates @p Condition at run-time.

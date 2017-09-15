@@ -338,7 +338,7 @@ ScopArrayInfo::ScopArrayInfo(Value *BasePtr, Type *ElementType, isl::ctx Ctx,
   if (Shape.hasSizes())
     updateSizes(Shape.sizes());
   else
-    updateStrides(Shape.strides(), Shape.offset());
+    updateStrides(Shape.strides(), Shape.offset(), Shape.hackFAD());
 
   if (!BasePtr || Kind != MemoryKind::Array) {
     BasePtrOriginSAI = nullptr;
@@ -438,17 +438,19 @@ void ScopArrayInfo::applyAndSetFAD(Value *FAD) {
 }
 
 void ScopArrayInfo::overwriteSizeWithStrides(ArrayRef<const SCEV *> Strides,
-                                             const SCEV *Offset) {
+                                             const SCEV *Offset,
+                                             GlobalValue *FAD) {
 
   // HACK: first set our shape to a stride based shape so that we don't
   // assert within updateStrides. Move this into a bool parameter of
   // updateStrides
-  Shape = ShapeInfo::fromStrides(Strides, Offset);
-  updateStrides(Strides, Offset);
+  Shape = ShapeInfo::fromStrides(Strides, Offset, FAD);
+  updateStrides(Strides, Offset, FAD);
 }
 bool ScopArrayInfo::updateStrides(ArrayRef<const SCEV *> Strides,
-                                  const SCEV *Offset) {
-  Shape.setStrides(Strides, Offset);
+                                  const SCEV *Offset,
+                                  GlobalValue *FAD) {
+  Shape.setStrides(Strides, Offset, FAD);
   DimensionSizesPw.clear();
   for (size_t i = 0; i < Shape.getNumberOfDimensions(); i++) {
     isl::space Space(S.getIslCtx(), 1, 0);
@@ -4184,14 +4186,14 @@ ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
       if (Shape.hasStrides()) {
         DEBUG(dbgs() << "Shape has strides, SAI had size. Overwriting size "
                         "with strides");
-        SAI->overwriteSizeWithStrides(Shape.strides(), Shape.offset());
+        SAI->overwriteSizeWithStrides(Shape.strides(), Shape.offset(), Shape.hackFAD());
       } else {
         report_fatal_error(
             "SAI has strides, Shape is size based. This should not happen");
       }
     }
     if (SAI->hasStrides()) {
-      SAI->updateStrides(Shape.strides(), Shape.offset());
+      SAI->updateStrides(Shape.strides(), Shape.offset(), Shape.hackFAD());
     } else {
       if (!SAI->updateSizes(Shape.sizes()))
         invalidate(DELINEARIZATION, DebugLoc());
