@@ -1281,11 +1281,12 @@ void IslNodeBuilder::materializeStridedArraySizes() {
 
             assert(Id && "pw_aff is not parametric");
 
-            errs() << "-\n";
-            errs() << "i: " << i << "\n";
-            errs() << "ID: " <<Id << "\n";
+            DEBUG(
+            dbgs() << "-\n";
+            dbgs() << "i: " << i << "\n";
+            dbgs() << "ID: " <<Id << "\n";);
             const SCEV *StrideSCEV = Array->getDimensionStride(i);
-            errs() << "StrideSCEV: " << *StrideSCEV << "\n";
+            // dbgs() << "StrideSCEV: " << *StrideSCEV << "\n";
 
             Value *Stride = nullptr;
             if (FAD) {
@@ -1301,7 +1302,7 @@ void IslNodeBuilder::materializeStridedArraySizes() {
             }
             assert(Stride);
 
-            errs() << "StrideVal: " << *Stride << "\n";
+            // errs() << "StrideVal: " << *Stride << "\n";
             IDToValue[Id] = Stride;
             SCEVToValue[Array->getDimensionStride(i)] = Stride;
             isl_id_free(Id);
@@ -1328,8 +1329,6 @@ Value *IslNodeBuilder::preloadUnconditionally(isl_set *AccessRange,
   isl_ast_expr *Access =
       isl_ast_build_access_from_pw_multi_aff(Build, PWAccRel);
   auto *Address = isl_ast_expr_address_of(Access);
-  errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
-  isl_ast_expr_dump(Address);
   auto *AddressValue = ExprBuilder.create(Address);
   Value *PreloadVal;
 

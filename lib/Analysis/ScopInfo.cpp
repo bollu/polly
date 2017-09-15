@@ -333,10 +333,12 @@ ScopArrayInfo::ScopArrayInfo(Value *BasePtr, Type *ElementType, isl::ctx Ctx,
                                       UseInstructionNames);
   Id = isl::id::alloc(Ctx, BasePtrName, this);
 
+  /*
   errs() << "\n" << __PRETTY_FUNCTION__<< ":" << __LINE__<< "\n";
   if(BasePtr) errs() << "\t-BasePtr: " << *BasePtr << "\n";
   if(BaseName) errs() << "\t-BaseName: " << BaseName << "\n";
   errs() << "\t-ElementType: " << *ElementType << "\n";
+  */
 
   
   // Shape.mapSizes([&] (SmallVector<const SCEV*, 4> &Sizes)  {
@@ -398,10 +400,6 @@ bool ScopArrayInfo::isCompatibleWith(const ScopArrayInfo *Array) const {
 void ScopArrayInfo::updateElementType(Type *NewElementType) {
   if (NewElementType == ElementType)
     return;
-
-  errs() << "\n" <<  __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
-  print(errs(), true);
-  errs() << "\tElementType: " << *ElementType << " | NewElementType: " << *NewElementType << "\n";
 
   auto OldElementSize = DL.getTypeAllocSizeInBits(ElementType);
   auto NewElementSize = DL.getTypeAllocSizeInBits(NewElementType);
@@ -3690,10 +3688,6 @@ void Scop::updateAccessDimensionality() {
       if (Array->hasStrides())
         continue;
 
-      
-      errs() << __PRETTY_FUNCTION__  << ":" << __LINE__ << "\n";
-      Array->print(errs(), true);
-
       if (Array->getNumberOfDimensions() != 1)
         continue;
       unsigned DivisibleSize = Array->getElemSizeInBytes();
@@ -4190,7 +4184,7 @@ ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
     // context to false.
     if (SAI->hasStrides() != Shape.hasStrides()) {
       DEBUG(dbgs() << "SAI and new shape do not agree:\n");
-      DEBUG(dbgs() << "SAI: "; SAI->print(errs(), true); errs() << "\n");
+      DEBUG(dbgs() << "SAI: "; SAI->print(dbgs(), true); dbgs() << "\n");
       DEBUG(dbgs() << "Shape: " << Shape << "\n");
 
       if (Shape.hasStrides()) {

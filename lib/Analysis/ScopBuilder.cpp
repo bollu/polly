@@ -673,7 +673,7 @@ Value *unwrapPossibleBitcast(Value *V) {
 // %2 = load i64, i64* getelementptr inbounds (%"struct.array2_real(kind=4)", %"struct.array2_real(kind=4)"* @__m_MOD_g_arr, i64 0, i32 1), align 8
 // %3 = tail call i64 @_gfortran_polly_array_index_2(i64 %2, i64 %1, i64 1, i64 %indvars.iv, i64 %indvars.iv1) #3
 GlobalValue *getBasePtrForVariableStride(Value *V) {
-  errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
+  if(AbstractMatrixDebug) errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
   LoadInst *LI; 
   LI = dyn_cast<LoadInst>(V);
   if (!LI) return nullptr;
@@ -962,10 +962,11 @@ void ScopBuilder::addArrayAccess(ScopStmt *Stmt, MemAccInst MemAccInst,
                                  ArrayRef<const SCEV *> Subscripts,
                                  ShapeInfo Shape, Value *AccessValue) {
 
-     errs() << "\n" << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
-     errs() << "\t-BaseAddr: " << *BaseAddress << "\n";
-     errs() << "\t-ElemType: " << *ElementType << "\n";
-     errs() << "\t-AccessValue: " << *AccessValue << "\n";
+ //   DEBUG(
+ //    dbgs() << "\n" << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
+ //    dbgs() << "\t-BaseAddr: " << *BaseAddress << "\n";
+ //    dbgs() << "\t-ElemType: " << *ElementType << "\n";
+ //    dbgs() << "\t-AccessValue: " << *AccessValue << "\n";);
   ArrayBasePointers.insert(BaseAddress);
   auto *MemAccess = addMemoryAccess(Stmt, MemAccInst, AccType, BaseAddress,
                                     ElementType, IsAffine, AccessValue,
@@ -1265,10 +1266,6 @@ void ScopBuilder::buildAccessRelations(ScopStmt &Stmt) {
     else
       Ty = MemoryKind::Array;
 
-     errs() << "\n" << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
-     Access->print(errs());
-     errs() << "Base:"  << *Access->getOriginalBaseAddr() << "\n";
-     errs() << "ElemTy: " << *ElementType << "\n";
     // NOTE: This is why We need to teach ScopArrayInfo to accept Shape.
     auto *SAI = scop->getOrCreateScopArrayInfo(Access->getOriginalBaseAddr(),
                                                ElementType, Access->Shape, Ty);
