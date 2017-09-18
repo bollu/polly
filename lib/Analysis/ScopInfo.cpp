@@ -333,13 +333,6 @@ ScopArrayInfo::ScopArrayInfo(Value *BasePtr, Type *ElementType, isl::ctx Ctx,
                                       UseInstructionNames);
   Id = isl::id::alloc(Ctx, BasePtrName, this);
 
-  /*
-  errs() << "\n" << __PRETTY_FUNCTION__<< ":" << __LINE__<< "\n";
-  if(BasePtr) errs() << "\t-BasePtr: " << *BasePtr << "\n";
-  if(BaseName) errs() << "\t-BaseName: " << BaseName << "\n";
-  errs() << "\t-ElementType: " << *ElementType << "\n";
-  */
-
   
   // Shape.mapSizes([&] (SmallVector<const SCEV*, 4> &Sizes)  {
   // this->updateSizes(Sizes); });
@@ -644,6 +637,9 @@ void MemoryAccess::wrapConstantDimensions() {
 
 void MemoryAccess::updateDimensionality() {
   auto *SAI = getScopArrayInfo();
+  //  HACK: check if this makes sense.
+  if(SAI->hasStrides()) return;
+
   isl::space ArraySpace = SAI->getSpace();
 
   isl::space AccessSpace = AccessRelation.get_space().range();
@@ -3695,8 +3691,9 @@ void Scop::updateAccessDimensionality() {
     }
 
   for (auto &Stmt : *this)
-    for (auto &Access : Stmt)
-      Access->updateDimensionality();
+    for (auto &Access : Stmt) {
+        Access->updateDimensionality();
+    }
 }
 
 void Scop::foldAccessRelations() {
@@ -4299,10 +4296,6 @@ isl::space Scop::getFullParamSpace() const {
     Space = Space.set_dim_id(isl::dim::param, PDim++, Id);
   }
 
-  /*
-  errs() << __PRETTY_FUNCTION__ << __LINE__ << " ParamSpace:\n";
-  Space.dump();
-  */
   return Space;
 }
 
