@@ -349,9 +349,9 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
       Offset = expandCodeFor(S, SE, DL, "polly", OffsetSCEV,
                              OffsetSCEV->getType(), &*Builder.GetInsertPoint(),
                              nullptr, StartBlock->getSinglePredecessor());
-      Offset = Builder.CreateIntCast(Offset, IndexOp->getType(), true);
     }
     assert(Offset && "dimsize uninitialized");
+    Offset = Builder.CreateIntCast(Offset, IndexOp->getType(), true);
     IndexOp = createAdd(IndexOp, Offset, "polly.access.offseted." + BaseName);
   } // end hasStride
   else {
