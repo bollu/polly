@@ -1312,8 +1312,8 @@ void GPUNodeBuilder::createKernelCopy(ppcg_kernel_stmt *KernelStmt) {
     errs() << "\t- Read: Store: " << *SI << "\n";
   } else {
      
-    if (DisableKernel2Write && FnName == "FUNC___m_MOD_inv_so_SCOP_0_KERNEL_2") return;
     LoadInst *Load = Builder.CreateLoad(LocalAddr, "shared.write");
+    if (DisableKernel2Write && FnName == "FUNC___m_MOD_inv_so_SCOP_0_KERNEL_2") return;
     StoreInst *SI = Builder.CreateStore(Load, GlobalAddr);
     errs() << "\t-Write: Store: " << *SI << "\n";
   }
@@ -2288,7 +2288,7 @@ void GPUNodeBuilder::createKernelVariables(ppcg_kernel *Kernel, Function *FN) {
 
     Type *ArrayTy = EleTy;
     ShapeInfo NewShape = ShapeInfo::none();
-    if (OriginalSAI->hasStrides()) {
+    if (false && OriginalSAI->hasStrides()) {
       SmallVector<const SCEV *, 4> Strides;
       for (unsigned int j = 0; j < Var.array->n_index; ++j) {
         isl_val *Val = isl_vec_get_element_val(Var.size, j);
