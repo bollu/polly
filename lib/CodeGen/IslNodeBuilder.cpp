@@ -1216,7 +1216,6 @@ bool IslNodeBuilder::materializeFortranArrayOutermostDimension() {
 
 // given a scev of the form baseptr + offset(constant), return baseptr
 Value *getBasePtrFromConstIndexSCEV(const SCEV *S) {
-    errs() << "S:" << *S << "\n";
     const SCEVAddExpr *Add = cast<SCEVAddExpr>(S);
     assert(Add->getNumOperands() == 2);
     if (isa<SCEVUnknown>(Add->getOperand(0)))
