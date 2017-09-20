@@ -1171,6 +1171,8 @@ void MemoryAccess::print(raw_ostream &OS) const {
     OS.indent(12) << "MayWriteAccess :=\t";
     break;
   }
+  if  (this->AccessInstruction)
+      OS << *AccessInstruction << " ";
 
   OS << "[Reduction Type: " << getReductionType() << "] ";
 

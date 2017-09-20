@@ -1359,6 +1359,7 @@ void ScopBuilder::buildScop(Region &R, AssumptionCache &AC,
   buildStmts(R);
   buildAccessFunctions();
 
+
   // In case the region does not have an exiting block we will later (during
   // code generation) split the exit block. This will move potential PHI nodes
   // from the current exit block into the new region exiting block. Hence, PHI
@@ -1435,11 +1436,11 @@ void ScopBuilder::buildScop(Region &R, AssumptionCache &AC,
   }
 
   scop->buildSchedule(LI);
-
   scop->finalizeAccesses();
-
   scop->realignParams();
   scop->addUserContext();
+
+
 
   // After the context was fully constructed, thus all our knowledge about
   // the parameters is in there, we add all recorded assumptions to the

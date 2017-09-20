@@ -60,6 +60,11 @@ using namespace llvm;
 
 #define DEBUG_TYPE "polly-codegen-ppcg"
 
+static cl::opt<bool> DisableKernel2Write("hack-disable-kernel-2-write",
+                                  cl::desc("Dump the computed GPU Schedule"),
+                                  cl::Hidden, cl::init(false), cl::ZeroOrMore,
+                                  cl::cat(PollyCategory));
+
 static cl::opt<bool> DumpSchedule("polly-acc-dump-schedule",
                                   cl::desc("Dump the computed GPU Schedule"),
                                   cl::Hidden, cl::init(false), cl::ZeroOrMore,
@@ -824,16 +829,6 @@ void GPUNodeBuilder::prepareManagedDeviceArrays() {
       HostPtr = ScopArray->getBasePtr();
     HostPtr = getLatestValue(HostPtr);
 
-    /*
-    Value *Offset = getArrayOffset(ScopArray, Array);
-    if (Offset) {
-      HostPtr = Builder.CreatePointerCast(
-          HostPtr, ScopArray->getElementType()->getPointerTo());
-      HostPtr = Builder.CreateGEP(HostPtr, Offset);
-    }
-
-    HostPtr = Builder.CreatePointerCast(HostPtr, Builder.getInt8PtrTy());
-    */
     DeviceAllocations[ScopArray] = HostPtr;
   }
 }
@@ -1175,7 +1170,7 @@ Value *GPUNodeBuilder::getManagedDeviceArray(gpu_array_info *Array,
   it = DeviceAllocations.find(ArrayInfo);
   assert(it != DeviceAllocations.end() &&
          "Device array expected to be available");
-  return it->second;
+  return  it->second;
 }
 
 void GPUNodeBuilder::createDataTransfer(__isl_take isl_ast_node *TransferStmt,
@@ -1301,16 +1296,26 @@ void GPUNodeBuilder::createKernelCopy(ppcg_kernel_stmt *KernelStmt) {
   isl_ast_expr *LocalIndex = isl_ast_expr_copy(KernelStmt->u.c.local_index);
   LocalIndex = isl_ast_expr_address_of(LocalIndex);
   Value *LocalAddr = ExprBuilder.create(LocalIndex);
+  errs() << "---\n";
+  errs() << __PRETTY_FUNCTION__<< "\n";
+  const auto FnName = Builder.GetInsertBlock()->getParent()->getName();
+  errs() << "\t-fn: " << FnName << "\n";
+  errs() << "\t-" << "LoacalAddr: " << *LocalAddr << "\n";
   isl_ast_expr *Index = isl_ast_expr_copy(KernelStmt->u.c.index);
   Index = isl_ast_expr_address_of(Index);
   Value *GlobalAddr = ExprBuilder.create(Index);
+  errs() << "\t-" << "GlobalAddr: " << *GlobalAddr << "\n";
 
   if (KernelStmt->u.c.read) {
-    LoadInst *Load = Builder.CreateLoad(GlobalAddr, "shared.read");
-    Builder.CreateStore(Load, LocalAddr);
+      LoadInst *Load = Builder.CreateLoad(GlobalAddr, "shared.read");
+      StoreInst *SI = Builder.CreateStore(Load, LocalAddr);
+    errs() << "\t- Read: Store: " << *SI << "\n";
   } else {
+     
+    if (DisableKernel2Write && FnName == "FUNC___m_MOD_inv_so_SCOP_0_KERNEL_2") return;
     LoadInst *Load = Builder.CreateLoad(LocalAddr, "shared.write");
-    Builder.CreateStore(Load, GlobalAddr);
+    StoreInst *SI = Builder.CreateStore(Load, GlobalAddr);
+    errs() << "\t-Write: Store: " << *SI << "\n";
   }
 }
 
@@ -1649,6 +1654,8 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
   Instruction *Parameters = new AllocaInst(
       ArrayTy, AddressSpace, Launch + "_params", EntryBlock->getTerminator());
 
+  errs() << __PRETTY_FUNCTION__ << "\n";
+  errs() << "-KernelFunction: " << F->getName() << "\n";
   int Index = 0;
   for (long i = 0; i < Prog->n_array; i++) {
     if (!ppcg_kernel_requires_array_argument(Kernel, i))
@@ -1656,6 +1663,8 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
 
     isl_id *Id = isl_space_get_tuple_id(Prog->array[i].space, isl_dim_set);
     const ScopArrayInfo *SAI = ScopArrayInfo::getFromId(isl::manage(Id));
+    errs() << "\t-i:" << i << "\n";
+    errs() << "\t-SAI: " << SAI->getName() << "\n";
 
     if (Runtime == GPURuntime::OpenCL)
       ArgSizes[Index] = SAI->getElemSizeInBytes();
@@ -1668,17 +1677,16 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
       DevArray = DeviceAllocations[const_cast<ScopArrayInfo *>(SAI)];
       DevArray = createCallGetDevicePtr(DevArray);
     }
+    errs() << "\t-" << __LINE__ << " |DevArray: " << *DevArray << "\n";
+    DevArray = getLatestValue(DevArray);
+    errs() << "\t-" << __LINE__ << " |DevArray: " << *DevArray << "\n";
 
     Value *Offset = getArrayOffset(SAI, &Prog->array[i]);
 
     if (Offset) {
+        assert(!SAI->hasStrides());
       DevArray = Builder.CreatePointerCast(
           DevArray, SAI->getElementType()->getPointerTo());
-
-      // NO NEGATION FOR STRIDES ARRAY.
-      if (SAI->hasStrides())
-        DevArray = Builder.CreateGEP(DevArray, Offset);
-      else
         DevArray = Builder.CreateGEP(DevArray, Builder.CreateNeg(Offset));
       DevArray = Builder.CreatePointerCast(DevArray, Builder.getInt8PtrTy());
     }
@@ -1686,8 +1694,10 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
                                   "initialized");
     Value *Slot = Builder.CreateGEP(
         Parameters, {Builder.getInt64(0), Builder.getInt64(Index)});
+    errs() << "\t-Slot:"  << *Slot << "\n";
 
     if (gpu_array_is_read_only_scalar(&Prog->array[i])) {
+        errs() <<  "\t-read only scalar\n";
       Value *ValPtr = nullptr;
       if (PollyManagedMemory)
         ValPtr = DevArray;
@@ -1697,19 +1707,24 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
       assert(ValPtr != nullptr && "ValPtr that should point to a valid object"
                                   " to be stored into Parameters");
       Value *ValPtrCast =
-          Builder.CreatePointerCast(ValPtr, Builder.getInt8PtrTy());
+          Builder.CreatePointerCast(ValPtr, Builder.getInt8PtrTy(), "ValPtrCast");
       Builder.CreateStore(ValPtrCast, Slot);
     } else {
+        errs() <<  "\t-NOT read only scalar\n";
       Instruction *Param =
           new AllocaInst(Builder.getInt8PtrTy(), AddressSpace,
                          Launch + "_param_" + std::to_string(Index),
                          EntryBlock->getTerminator());
       Value *DevArrayCast =
-          Builder.CreatePointerCast(DevArray, Builder.getInt8PtrTy());
-      Builder.CreateStore(DevArrayCast, Param);
+          Builder.CreatePointerCast(DevArray, Builder.getInt8PtrTy(), "DevArrayCast");
+      errs() << "\t-DevArrayCast: " << *DevArrayCast << "\n";
+      StoreInst *SI = Builder.CreateStore(DevArrayCast, Param);
+      errs() << "\t-StoreIntoParam: " << *SI << "\n";
       Value *ParamTyped =
-          Builder.CreatePointerCast(Param, Builder.getInt8PtrTy());
-      Builder.CreateStore(ParamTyped, Slot);
+          Builder.CreatePointerCast(Param, Builder.getInt8PtrTy(), "ParamTyped");
+      errs() << "\t-ParamTyped: " << *ParamTyped << "\n";
+      SI = Builder.CreateStore(ParamTyped, Slot);
+      errs() << "\t-StoreIntoSlot: " << *SI << "\n";
     }
     Index++;
   }
@@ -2302,7 +2317,6 @@ void GPUNodeBuilder::createKernelVariables(ppcg_kernel *Kernel, Function *FN) {
         Sizes.push_back(S.getSE()->getConstant(Builder.getInt64Ty(), Bound));
       }
 
-      // ASK TOBIAS: what is going on here?
       for (int j = Var.array->n_index - 1; j >= 0; --j) {
         isl_val *Val = isl_vec_get_element_val(Var.size, j);
         long Bound = isl_val_get_num_si(Val);

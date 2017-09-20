@@ -470,6 +470,8 @@ Value *BlockGenerator::getOrCreateAlloca(const MemoryAccess &Access) {
 }
 
 Value *BlockGenerator::getOrCreateAlloca(const ScopArrayInfo *Array) {
+    errs() << __PRETTY_FUNCTION__ << "\n";
+    errs() << Array->getName() << "\n";
   assert(!Array->isArrayKind() && "Trying to get alloca for array kind");
 
   auto &Addr = ScalarMap[Array];
@@ -705,8 +707,14 @@ void BlockGenerator::createScalarInitialization(Scop &S) {
   Builder.SetInsertPoint(&*StartBlock->begin());
 
   for (auto &Array : S.arrays()) {
+      errs() << "\n===\n";
+      errs() << "Array(begin): " << Array->getName() << "\n";
+      Array->dump();
+      errs() << "\n--\n";
     if (Array->getNumberOfDimensions() != 0)
       continue;
+
+    errs() << __LINE__ << "\n";
     if (Array->isPHIKind()) {
       // For PHI nodes, the only values we need to store are the ones that
       // reach the PHI node from outside the region. In general there should
@@ -720,29 +728,38 @@ void BlockGenerator::createScalarInitialization(Scop &S) {
                            "come from PreEntryBB");
 
       int Idx = PHI->getBasicBlockIndex(PreEntryBB);
+      errs() << __LINE__ << "\n";
       if (Idx < 0)
         continue;
 
+      errs() << __LINE__ << "\n";
       Value *ScalarValue = PHI->getIncomingValue(Idx);
 
       Builder.CreateStore(ScalarValue, getOrCreateAlloca(Array));
+      errs() << __LINE__ << "\n";
       continue;
     }
 
     auto *Inst = dyn_cast<Instruction>(Array->getBasePtr());
+    if (Inst) errs() << *Inst << "\n";
 
+    errs() << __LINE__ << "\n";
     if (Inst && S.contains(Inst))
-      continue;
+     continue;
+    errs() << __LINE__ << "\n";
 
     // PHI nodes that are not marked as such in their SAI object are either exit
     // PHI nodes we model as common scalars but without initialization, or
     // incoming phi nodes that need to be initialized. Check if the first is the
     // case for Inst and do not create and initialize memory if so.
+    errs() << __LINE__ << "\n";
     if (auto *PHI = dyn_cast_or_null<PHINode>(Inst))
       if (!S.hasSingleExitEdge() && PHI->getBasicBlockIndex(ExitBB) >= 0)
         continue;
+    errs() << __LINE__ << "\n";
 
     Builder.CreateStore(Array->getBasePtr(), getOrCreateAlloca(Array));
+    errs() << "Array(end): " << Array->getName() << "\n";
   }
 }
 
