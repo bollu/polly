@@ -59,6 +59,9 @@ using namespace polly;
 using namespace llvm;
 
 #define DEBUG_TYPE "polly-codegen-ppcg"
+static cl::list<int> AllowedScops(
+            "polly-acc-hack-allowed-scops",
+            cl::desc("HACK: Scop numbers of allowed scops in PPCGCodeGen."));
 
 
 static cl::opt<bool> DumpSchedule("polly-acc-dump-schedule",
@@ -1231,13 +1234,13 @@ void GPUNodeBuilder::createUser(__isl_take isl_ast_node *UserStmt) {
     return;
   }
   if (!strcmp(Str, "init_device")) {
-    initializeAfterRTH();
+    // initializeAfterRTH();
     isl_ast_node_free(UserStmt);
     isl_ast_expr_free(Expr);
     return;
   }
   if (!strcmp(Str, "clear_device")) {
-    finalize();
+    // finalize();
     isl_ast_node_free(UserStmt);
     isl_ast_expr_free(Expr);
     return;
@@ -3610,7 +3613,9 @@ public:
 
       Builder.SetInsertPoint(&*StartBlock->begin());
 
+      NodeBuilder.initializeAfterRTH();
       NodeBuilder.create(Root);
+      NodeBuilder.finalize();
     }
 
     /// In case a sequential kernel has more surrounding loops as any parallel
@@ -3623,6 +3628,17 @@ public:
       CondBr->setOperand(0, Builder.getFalse());
   }
 
+  bool isAllowedScop(int n) {
+     return true;
+
+	  for (auto i: AllowedScops) 
+		  if (n == i) return true;
+
+	  return false;
+  }
+
+
+
   bool runOnScop(Scop &CurrentScop) override {
     S = &CurrentScop;
     LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
@@ -3631,8 +3647,20 @@ public:
     DL = &S->getRegion().getEntry()->getModule()->getDataLayout();
     RI = &getAnalysis<RegionInfoPass>().getRegionInfo();
 
-    DEBUG(dbgs() << "PPCGCodeGen running on : " << getUniqueScopName(S)
-                 << " | loop depth: " << S->getMaxLoopDepth() << "\n");
+    static int ScopNumber = 0;
+    ScopNumber++;
+
+    errs() << "PPCGCodeGen running on : " << getUniqueScopName(S)
+                 << " | count: " <<ScopNumber << " "
+                 << " | loop depth: " << S->getMaxLoopDepth() << "\n";
+
+    if (!isAllowedScop(ScopNumber)) {
+        errs() << "Scop not allowed (" << getUniqueScopName(S) << "). Skipping!\n";
+        return false;
+    } 
+    else {
+        errs() << "Scop allowed (" << getUniqueScopName(S) << "). Continuing...\n";
+    }
 
     // We currently do not support functions other than intrinsics inside
     // kernels, as code generation will need to offload function calls to the
