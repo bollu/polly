@@ -61,10 +61,6 @@ using namespace llvm;
 #define DEBUG_TYPE "polly-codegen-ppcg"
 
 
-static cl::list<int> AllowedScops(
-    "polly-acc-hack-allowed-scops",
-    cl::desc("HACK: Scop numbers of allowed scops in PPCGCodeGen."));
-
 static cl::opt<bool> DumpSchedule("polly-acc-dump-schedule",
                                   cl::desc("Dump the computed GPU Schedule"),
                                   cl::Hidden, cl::init(false), cl::ZeroOrMore,
@@ -918,9 +914,8 @@ void GPUNodeBuilder::createCallLaunchKernel(Value *GPUKernel, Value *GridDimX,
     F = Function::Create(Ty, Linkage, Name, M);
   }
 
-  errs() << __PRETTY_FUNCTION__ << " Disabling createCallLaunchKernel.\n";
-  // Builder.CreateCall(F, {GPUKernel, GridDimX, GridDimY, BlockDimX, BlockDimY,
-  //                        BlockDimZ, Parameters});
+  Builder.CreateCall(F, {GPUKernel, GridDimX, GridDimY, BlockDimX, BlockDimY,
+                         BlockDimZ, Parameters});
 }
 
 void GPUNodeBuilder::createCallFreeKernel(Value *GPUKernel) {
@@ -3533,9 +3528,6 @@ public:
   /// @param Root An isl_ast_node pointing to the root of the GPU AST.
   /// @param Prog The GPU Program to generate code for.
   void generateCode(__isl_take isl_ast_node *Root, gpu_prog *Prog) {
-     isl_ast_node_free(Root);
-     return;
-
     ScopAnnotator Annotator;
     Annotator.buildAliasScopes(*S);
 
@@ -3618,10 +3610,7 @@ public:
 
       Builder.SetInsertPoint(&*StartBlock->begin());
 
-      errs() << __PRETTY_FUNCTION__ << " Not calling NodeBuilder.create(Root)\n";
-      isl_ast_node_dump(Root);
-      // NodeBuilder.create(Root);
-      isl_ast_node_free(Root);
+      NodeBuilder.create(Root);
     }
 
     /// In case a sequential kernel has more surrounding loops as any parallel
@@ -3634,13 +3623,6 @@ public:
       CondBr->setOperand(0, Builder.getFalse());
   }
 
-  bool isAllowedScop(int n) {
-      for (auto i: AllowedScops) 
-          if (n == i) return true;
-
-      return false;
-  }
-
   bool runOnScop(Scop &CurrentScop) override {
     S = &CurrentScop;
     LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
@@ -3649,20 +3631,8 @@ public:
     DL = &S->getRegion().getEntry()->getModule()->getDataLayout();
     RI = &getAnalysis<RegionInfoPass>().getRegionInfo();
 
-    static int ScopNumber = 0;
-    ScopNumber++;
-
-    errs() << "PPCGCodeGen running on : " << getUniqueScopName(S)
-                 << " | count: " <<ScopNumber << " "
-                 << " | loop depth: " << S->getMaxLoopDepth() << "\n";
-
-    if (!isAllowedScop(ScopNumber)) {
-        errs() << "Scop not allowed (" << getUniqueScopName(S) << "). Skipping!\n";
-        return false;
-    } 
-    else {
-        errs() << "Scop allowed (" << getUniqueScopName(S) << "). Continuing...\n";
-    }
+    DEBUG(dbgs() << "PPCGCodeGen running on : " << getUniqueScopName(S)
+                 << " | loop depth: " << S->getMaxLoopDepth() << "\n");
 
     // We currently do not support functions other than intrinsics inside
     // kernels, as code generation will need to offload function calls to the
