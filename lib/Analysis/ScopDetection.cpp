@@ -701,6 +701,11 @@ bool ScopDetection::isValidCFG(BasicBlock &BB, bool IsLoopBranch,
 
 bool ScopDetection::isValidCallInst(CallInst &CI,
                                     DetectionContext &Context) const {
+  // if(CI.getCalledFunction()->getName().count("break_scop")) {
+  //     errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << ":" << "found break_scop\n";
+  //     return false;
+  // }
+
   if (CI.doesNotReturn())
     return false;
 

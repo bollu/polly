@@ -705,7 +705,6 @@ void BlockGenerator::createScalarInitialization(Scop &S) {
   Builder.SetInsertPoint(&*StartBlock->begin());
 
   for (auto &Array : S.arrays()) {
-      Array->dump();
     if (Array->getNumberOfDimensions() != 0)
       continue;
 
