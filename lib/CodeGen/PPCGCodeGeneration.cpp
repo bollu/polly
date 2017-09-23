@@ -138,6 +138,53 @@ std::string getUniqueScopName(const Scop *S) {
          " | Function: " + std::string(S->getFunction().getName());
 }
 
+
+static void createPollyAbstractIndexFunction(Module &M, PollyIRBuilder &Builder, int NumDims) {
+    // HACK: pick up the name from ScopHelper.
+    const std::string BaseName = "_gfortran_polly_array_index_";
+    DEBUG(dbgs()  << __PRETTY_FUNCTION__ << " | HACK: hardcoded name of: " << BaseName << "Fix this.\n");
+    const std::string Name = BaseName + std::to_string(NumDims);
+
+    Function *F =  [&] () {
+        Function *Existing = nullptr;
+        if((Existing = M.getFunction(Name))) return Existing;
+
+        GlobalValue::LinkageTypes Linkage = Function::ExternalLinkage;
+        IntegerType *I64Ty = Builder.getInt64Ty();
+        std::vector<Type *> ParamTys;
+        // offset(1) + stride(numdims) + ix(numdims) =  2 *numdims + 1)
+        for(int i = 1; i <= 1 + 2*NumDims; i++) {
+            ParamTys.push_back(I64Ty);
+        }
+        auto FnType = FunctionType::get(I64Ty, ParamTys, /*IsVarArg = */false);
+        return Function::Create(FnType, Linkage, Name, &M);
+    }();
+
+
+    BasicBlock *EntryBB = BasicBlock::Create(M.getContext(), "entry", F);
+    Builder.SetInsertPoint(EntryBB);
+
+    std::vector<Argument *> Args;
+    for(Argument &Arg : F->args()) { Args.push_back(&Arg); }
+
+    Args[0]->setName("offset");
+    // Offset
+    Value *TotalIx = Args[0];
+    for(int i = 0; i < NumDims; i++) {
+        const int StrideIx =  1 + i;
+        const int CurIxIx = NumDims + 1 + i;
+        Argument *StrideArg = Args[StrideIx];
+        Argument *CurIxArg = Args[CurIxIx];
+
+        StrideArg->setName("stride" + std::to_string(i));
+        CurIxArg->setName("ix" + std::to_string(i));
+
+        Value *StrideMulIx = Builder.CreateMul(StrideArg, CurIxArg, "Stride_x_ix_" + std::to_string(i));
+        TotalIx = Builder.CreateAdd(TotalIx, StrideMulIx);
+    }
+    Builder.CreateRet(TotalIx);
+}
+
 /// Used to store information PPCG wants for kills. This information is
 /// used by live range reordering.
 ///
@@ -1240,6 +1287,9 @@ void GPUNodeBuilder::createUser(__isl_take isl_ast_node *UserStmt) {
     return;
   }
   if (!strcmp(Str, "clear_device")) {
+    errs() << __PRETTY_FUNCTION__ << " | ClearDevice:\n";
+    isl_ast_node_dump(UserStmt);
+    errs() << "---\n";
     // finalize();
     isl_ast_node_free(UserStmt);
     isl_ast_expr_free(Expr);
@@ -2335,6 +2385,7 @@ void GPUNodeBuilder::createKernelFunction(
   std::string Identifier = getKernelFuncName(Kernel->id);
   GPUModule.reset(new Module(Identifier, Builder.getContext()));
 
+
   switch (Arch) {
   case GPUArch::NVPTX64:
     if (Runtime == GPURuntime::CUDA)
@@ -2503,6 +2554,9 @@ void GPUNodeBuilder::addCUDALibDevice() {
 }
 
 std::string GPUNodeBuilder::finalizeKernelFunction() {
+
+  for(int i = 0;  i <= 4; i++)
+      createPollyAbstractIndexFunction(*GPUModule, Builder, i);
   {
     // NOTE: We currently copy all uses of gfortran_polly_array_index.
     // However, these are unsused, but they refer to host side values
@@ -2669,9 +2723,8 @@ public:
 
     Options->unroll_copy_shared = false;
     Options->unroll_gpu_tile = false;
-    Options->live_range_reordering = true;
+    Options->live_range_reordering = false;
 
-    Options->live_range_reordering = true;
     Options->hybrid = false;
     Options->opencl_compiler_options = nullptr;
     Options->opencl_use_gpu = false;
@@ -2793,7 +2846,7 @@ public:
 
     PPCGScop->options = createPPCGOptions();
     // enable live range reordering
-    PPCGScop->options->live_range_reordering = 1;
+    PPCGScop->options->live_range_reordering = 0;
 
     PPCGScop->start = 0;
     PPCGScop->end = 0;
@@ -3614,6 +3667,8 @@ public:
       Builder.SetInsertPoint(&*StartBlock->begin());
 
       NodeBuilder.initializeAfterRTH();
+      errs() << __PRETTY_FUNCTION__ << " | Root:\n";
+      isl_ast_node_dump(Root);
       NodeBuilder.create(Root);
       NodeBuilder.finalize();
     }
@@ -3629,8 +3684,6 @@ public:
   }
 
   bool isAllowedScop(int n) {
-     return true;
-
 	  for (auto i: AllowedScops) 
 		  if (n == i) return true;
 
@@ -3660,6 +3713,8 @@ public:
     } 
     else {
         errs() << "Scop allowed (" << getUniqueScopName(S) << "). Continuing...\n";
+        errs() << CurrentScop << "\n";
+        errs() << "\n====\n";
     }
 
     // We currently do not support functions other than intrinsics inside
