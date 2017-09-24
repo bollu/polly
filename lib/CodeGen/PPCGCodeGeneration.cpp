@@ -64,6 +64,8 @@ static cl::list<int> AllowedScops(
             cl::desc("HACK: Scop numbers of allowed scops in PPCGCodeGen."));
 
 
+static cl::opt<bool> DumpScop("polly-acc-dump-scop", cl::desc("HACK: dump scop so we can view the output."));
+
 static cl::opt<bool> DumpSchedule("polly-acc-dump-schedule",
                                   cl::desc("Dump the computed GPU Schedule"),
                                   cl::Hidden, cl::init(false), cl::ZeroOrMore,
@@ -1287,9 +1289,6 @@ void GPUNodeBuilder::createUser(__isl_take isl_ast_node *UserStmt) {
     return;
   }
   if (!strcmp(Str, "clear_device")) {
-    errs() << __PRETTY_FUNCTION__ << " | ClearDevice:\n";
-    isl_ast_node_dump(UserStmt);
-    errs() << "---\n";
     // finalize();
     isl_ast_node_free(UserStmt);
     isl_ast_expr_free(Expr);
@@ -1942,6 +1941,20 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
     isl_id_free(Id);
 
   KernelIds.clear();
+
+
+
+  { 
+      size_t ParamsSize = 0;
+      for(Argument &Arg : F->args()) {
+          ParamsSize += DL.getTypeStoreSize(Arg.getType());
+      }
+
+      errs() << "=======================\n";
+      errs() << __PRETTY_FUNCTION__ << "| " << *F->getType() << "\n";
+      errs() << __PRETTY_FUNCTION__ << "| Kernel parameter size: " << ParamsSize << "\n";
+      errs() << "=======================\n";
+  };
 }
 
 /// Compute the DataLayout string for the NVPTX backend.
@@ -2385,6 +2398,9 @@ void GPUNodeBuilder::createKernelFunction(
   std::string Identifier = getKernelFuncName(Kernel->id);
   GPUModule.reset(new Module(Identifier, Builder.getContext()));
 
+  Function *FN = createKernelFunctionDecl(Kernel, SubtreeValues);
+
+
 
   switch (Arch) {
   case GPUArch::NVPTX64:
@@ -2404,7 +2420,6 @@ void GPUNodeBuilder::createKernelFunction(
     break;
   }
 
-  Function *FN = createKernelFunctionDecl(Kernel, SubtreeValues);
 
   BasicBlock *PrevBlock = Builder.GetInsertBlock();
   auto EntryBlock = BasicBlock::Create(Builder.getContext(), "entry", FN);
@@ -3370,6 +3385,7 @@ public:
         isl_schedule_align_params(Schedule, S->getFullParamSpace().release());
     // errs() << S->getFullParamSpace() << "\n";
     // report_fatal_error("see full param space");
+    //
 
     if (!has_permutable || has_permutable < 0) {
       Schedule = isl_schedule_free(Schedule);
@@ -3377,6 +3393,8 @@ public:
                    << " does not have permutable bands. Bailing out\n";);
     } else {
       const bool CreateTransferToFromDevice = !PollyManagedMemory;
+      // errs() << "\n" << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
+      // errs() << "\t-disabled map_to_device.\n";
       Schedule = map_to_device(PPCGGen, Schedule, CreateTransferToFromDevice);
       PPCGGen->tree = generate_code(PPCGGen, isl_schedule_copy(Schedule));
     }
@@ -3667,8 +3685,8 @@ public:
       Builder.SetInsertPoint(&*StartBlock->begin());
 
       NodeBuilder.initializeAfterRTH();
-      errs() << __PRETTY_FUNCTION__ << " | Root:\n";
-      isl_ast_node_dump(Root);
+      // errs() << __PRETTY_FUNCTION__ << " | Root:\n";
+      // isl_ast_node_dump(Root);
       NodeBuilder.create(Root);
       NodeBuilder.finalize();
     }
@@ -3713,9 +3731,12 @@ public:
     } 
     else {
         errs() << "Scop allowed (" << getUniqueScopName(S) << "). Continuing...\n";
-        errs() << CurrentScop << "\n";
-        errs() << "\n====\n";
+        // errs() << CurrentScop << "\n";
+        // errs() << "\n====\n";
     }
+
+    if (DumpScop)
+        errs() << "\n====\n" << CurrentScop << "\n=====\n";
 
     // We currently do not support functions other than intrinsics inside
     // kernels, as code generation will need to offload function calls to the
