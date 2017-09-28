@@ -1487,6 +1487,9 @@ static bool isValidFunctionInKernel(llvm::Function *F, bool AllowLibDevice) {
   if (Name.count("polly_array_index"))
     return true;
 
+  if(Name.count("lifetime"))
+      return true;
+
   return F->isIntrinsic() &&
          (Name.startswith("llvm.sqrt") || Name.startswith("llvm.fabs") ||
           Name.startswith("llvm.copysign"));
@@ -2738,7 +2741,7 @@ public:
 
     Options->unroll_copy_shared = false;
     Options->unroll_gpu_tile = false;
-    Options->live_range_reordering = false;
+    Options->live_range_reordering = 1;
 
     Options->hybrid = false;
     Options->opencl_compiler_options = nullptr;
@@ -2861,7 +2864,7 @@ public:
 
     PPCGScop->options = createPPCGOptions();
     // enable live range reordering
-    PPCGScop->options->live_range_reordering = 0;
+    PPCGScop->options->live_range_reordering = 1;
 
     PPCGScop->start = 0;
     PPCGScop->end = 0;
