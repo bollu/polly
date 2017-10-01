@@ -3648,9 +3648,16 @@ public:
     // preload invariant loads. Note: This should happen before the RTC
     // because the RTC may depend on values that are invariant load hoisted.
     if (!NodeBuilder.preloadInvariantLoads()) {
-      errs() << __PRETTY_FUNCTION__<< "\n" <<  "***** preloading invariant loads failed in function: " +
+      errs() << __PRETTY_FUNCTION__<< "\n" <<  "***** preloading invariant loads failed in function: ";
+      // Patch the introduced branch condition to ensure that we always execute
+      // the original SCoP.
+      auto *FalseI1 = Builder.getFalse();
+      auto *SplitBBTerm = Builder.GetInsertBlock()->getTerminator();
+      SplitBBTerm->setOperand(0, FalseI1);
+
+      DEBUG(dbgs() << "preloading invariant loads failed in function: " +
                           S->getFunction().getName() +
-                          " | Scop Region: " + S->getNameStr() << "*****\n";;
+                          " | Scop Region: " + S->getNameStr() << "*****\n");
 
       //assert(false && " | bailing out.");
 
