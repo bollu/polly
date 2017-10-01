@@ -1645,6 +1645,9 @@ void IslNodeBuilder::allocateNewArrays(BBPair StartExitBlocks) {
 }
 
 bool IslNodeBuilder::preloadInvariantLoads() {
+    errs() << "HACK: " << __PRETTY_FUNCTION__ << " | Immediately bailing out.";
+    return false;
+
   auto &InvariantEquivClasses = S.getInvariantAccesses();
   if (InvariantEquivClasses.empty())
     return true;

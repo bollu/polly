@@ -64,6 +64,8 @@ static cl::list<int> AllowedScops(
             cl::desc("HACK: Scop numbers of allowed scops in PPCGCodeGen."));
 
 
+static cl::opt<bool> HackBailPPCGCodeGenRunOnScop("polly-acc-hack-bail-run-on-scop", cl::desc("HACK: bail out from runOnScop() on PPCGCodeGen"));
+
 static cl::opt<bool> DumpScop("polly-acc-dump-scop", cl::desc("HACK: dump scop so we can view the output."));
 
 static cl::opt<bool> DumpSchedule("polly-acc-dump-schedule",
@@ -3646,9 +3648,12 @@ public:
     // preload invariant loads. Note: This should happen before the RTC
     // because the RTC may depend on values that are invariant load hoisted.
     if (!NodeBuilder.preloadInvariantLoads()) {
-      DEBUG(dbgs() << "preloading invariant loads failed in function: " +
+      errs() << __PRETTY_FUNCTION__<< "\n" <<  "***** preloading invariant loads failed in function: " +
                           S->getFunction().getName() +
-                          " | Scop Region: " + S->getNameStr());
+                          " | Scop Region: " + S->getNameStr() << "*****\n";;
+
+      //assert(false && " | bailing out.");
+
       // adjust the dominator tree accordingly.
       auto *ExitingBlock = StartBlock->getUniqueSuccessor();
       assert(ExitingBlock);
@@ -3714,6 +3719,18 @@ public:
 
 
   bool runOnScop(Scop &CurrentScop) override {
+      static int nscops = 0;
+      if (HackBailPPCGCodeGenRunOnScop) {
+          errs() << __PRETTY_FUNCTION__ << " | bailing out of runOnScop()\n";
+          errs().flush();
+          return true;
+      }
+      else {
+          errs() << __PRETTY_FUNCTION__ << " |**RUNNING** on runOnScop()\n";
+          errs() << __PRETTY_FUNCTION__<< " |NSCOP: " << nscops;
+          nscops++;
+          errs().flush();
+      }
     S = &CurrentScop;
     LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
     DT = &getAnalysis<DominatorTreeWrapperPass>().getDomTree();
