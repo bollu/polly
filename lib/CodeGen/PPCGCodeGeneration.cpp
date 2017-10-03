@@ -875,6 +875,7 @@ void GPUNodeBuilder::prepareManagedDeviceArrays() {
 
     if (gpu_array_is_scalar(Array)) {
       HostPtr = BlockGen.getOrCreateAlloca(ScopArray);
+      HostPtr = getLatestValue(HostPtr);
 
       // auto OldIP = Builder.GetInsertPoint();
       // auto OldBB = Builder.GetInsertBlock();
