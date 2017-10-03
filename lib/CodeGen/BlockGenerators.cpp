@@ -51,6 +51,12 @@ static cl::opt<bool, true> DebugPrintingX(
     cl::location(PollyDebugPrinting), cl::Hidden, cl::init(false),
     cl::ZeroOrMore, cl::cat(PollyCategory));
 
+static Value *getLatestValue(ValueMapT &GlobalMap, Value *V) {
+    auto It = GlobalMap.find(V);
+    if (It == GlobalMap.end()) return V;
+    return It->second;
+}
+
 BlockGenerator::BlockGenerator(
     PollyIRBuilder &B, LoopInfo &LI, ScalarEvolution &SE, DominatorTree &DT,
     AllocaMapTy &ScalarMap, EscapeUsersAllocaMapTy &EscapeMap,
@@ -516,6 +522,7 @@ Value *BlockGenerator::getOrCreateAlloca(const ScopArrayInfo *Array) {
   return Addr;
 }
 
+
 void BlockGenerator::handleOutsideUsers(const Scop &S, ScopArrayInfo *Array) {
   Instruction *Inst = cast<Instruction>(Array->getBasePtr());
 
@@ -544,7 +551,9 @@ void BlockGenerator::handleOutsideUsers(const Scop &S, ScopArrayInfo *Array) {
     return;
 
   // Get or create an escape alloca for this instruction.
+  errs() << __PRETTY_FUNCTION__<< "Escaping: " << *Array->getBasePtr() << "\n";
   auto *ScalarAddr = getOrCreateAlloca(Array);
+  ScalarAddr = getLatestValue(GlobalMap, ScalarAddr);
 
   // Remember that this instruction has escape uses and the escape alloca.
   EscapeMap[Inst] = std::make_pair(ScalarAddr, std::move(EscapeUsers));
@@ -732,8 +741,10 @@ void BlockGenerator::createScalarInitialization(Scop &S) {
 
     auto *Inst = dyn_cast<Instruction>(Array->getBasePtr());
 
-    if (Inst && S.contains(Inst))
-     continue;
+   //  if (Inst && S.contains(Inst)) {
+   //   errs() << "Not creating store for inst: " << *Inst << " | Array: " << Array->getBasePtr() << "\n";
+   //   continue;
+   //  }
 
     // PHI nodes that are not marked as such in their SAI object are either exit
     // PHI nodes we model as common scalars but without initialization, or
@@ -743,7 +754,17 @@ void BlockGenerator::createScalarInitialization(Scop &S) {
       if (!S.hasSingleExitEdge() && PHI->getBasicBlockIndex(ExitBB) >= 0)
         continue;
 
-    Builder.CreateStore(Array->getBasePtr(), getOrCreateAlloca(Array));
+    auto *OldBB = Builder.GetInsertBlock();
+    auto OldIP = Builder.GetInsertPoint();
+
+    Instruction *NewestBasePtr = cast<Instruction>(getLatestValue(GlobalMap, Array->getBasePtr()));
+    Value *NewestAlloca = getLatestValue(GlobalMap, getOrCreateAlloca(Array));
+
+    Builder.SetInsertPoint(NewestBasePtr->getNextNode());
+    Builder.CreateStore(NewestBasePtr, NewestAlloca);
+
+    // reset builder.
+    Builder.SetInsertPoint(OldBB, OldIP);
   }
 }
 
@@ -767,6 +788,14 @@ void BlockGenerator::createScalarFinalization(Scop &S) {
     const EscapeUserVectorTy &EscapeUsers = EscapeMappingValue.second;
     Value *ScalarAddr = EscapeMappingValue.first;
 
+
+    errs() << __PRETTY_FUNCTION__<< " |ScalarAddr: " << *ScalarAddr << "\n";
+    auto It = GlobalMap.find(ScalarAddr);
+    if (It != GlobalMap.end()) {
+        errs() << __PRETTY_FUNCTION__ << " | Found new value for ScalarAddr: " << *ScalarAddr << " | " << *It->second << "\n";
+        ScalarAddr = It -> second;
+    };
+
     // Reload the demoted instruction in the optimized version of the SCoP.
     Value *EscapeInstReload =
         Builder.CreateLoad(ScalarAddr, EscapeInst->getName() + ".final_reload");
@@ -788,8 +817,17 @@ void BlockGenerator::createScalarFinalization(Scop &S) {
       SE.forgetValue(EscapeInst);
 
     // Replace all uses of the demoted instruction with the merge PHI.
-    for (Instruction *EUser : EscapeUsers)
-      EUser->replaceUsesOfWith(EscapeInst, MergePHI);
+    for (Instruction *EUser : EscapeUsers) {
+        // If the merge PHI dominates the user, replace it.
+        if (DT.dominates(MergePHI->getParent(), EUser->getParent())) {
+            EUser->replaceUsesOfWith(EscapeInst, MergePHI);
+        }
+        else {
+            assert(false);
+            errs() << __PRETTY_FUNCTION__<< "Elimiating value not dominated.\n";
+            EUser->replaceUsesOfWith(EscapeInst, MergePHI);
+        }
+    }
   }
 }
 
