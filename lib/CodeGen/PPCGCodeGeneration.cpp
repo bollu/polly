@@ -1292,7 +1292,7 @@ void GPUNodeBuilder::createUser(__isl_take isl_ast_node *UserStmt) {
   }
   if (!strcmp(Str, "clear_device")) {
     // finalize();
-    isl_ast_node_free(UserStmt);
+     isl_ast_node_free(UserStmt);
     isl_ast_expr_free(Expr);
     return;
   }
@@ -3649,6 +3649,7 @@ public:
     // because the RTC may depend on values that are invariant load hoisted.
     if (!NodeBuilder.preloadInvariantLoads()) {
       errs() << __PRETTY_FUNCTION__<< "\n" <<  "***** preloading invariant loads failed in function: ";
+      assert(false);
       // Patch the introduced branch condition to ensure that we always execute
       // the original SCoP.
       auto *FalseI1 = Builder.getFalse();
@@ -3700,8 +3701,8 @@ public:
       Builder.SetInsertPoint(&*StartBlock->begin());
 
       NodeBuilder.initializeAfterRTH();
-      // errs() << __PRETTY_FUNCTION__ << " | Root:\n";
-      // isl_ast_node_dump(Root);
+      errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "| Root:\n";
+      isl_ast_node_dump(Root);
       NodeBuilder.create(Root);
       NodeBuilder.finalize();
     }

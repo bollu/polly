@@ -290,7 +290,7 @@ static void getAllocasToBeManaged(Function &F,
         continue;
       DEBUG(dbgs() << "Checking if (" << *Alloca << ") may be captured: ");
 
-      if (PointerMayBeCaptured(Alloca, /* ReturnCaptures */ false,
+      if (true || PointerMayBeCaptured(Alloca, /* ReturnCaptures */ false,
                                /* StoreCaptures */ true)) {
         Allocas.insert(Alloca);
         DEBUG(dbgs() << "YES (captured).\n");
