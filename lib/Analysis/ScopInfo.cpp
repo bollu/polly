@@ -1171,9 +1171,6 @@ void MemoryAccess::print(raw_ostream &OS) const {
     OS.indent(12) << "MayWriteAccess :=\t";
     break;
   }
-  if  (this->AccessInstruction)
-      OS << *AccessInstruction << " ";
-
   OS << "[Reduction Type: " << getReductionType() << "] ";
 
   if (FAD) {
@@ -4160,14 +4157,42 @@ void Scop::canonicalizeDynamicBasePtrs() {
   }
 }
 
+Value *getPointerFromLoadOrStore(Value *V) {
+    if (LoadInst *LI = dyn_cast<LoadInst>(V))
+        return LI->getPointerOperand();
+
+    if (StoreInst *SI = dyn_cast<StoreInst>(V))
+        return SI->getPointerOperand();
+    return nullptr;
+}
+
 ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
                                               ShapeInfo Shape, MemoryKind Kind,
                                               const char *BaseName) {
   assert((BasePtr || BaseName) &&
          "BasePtr and BaseName can not be nullptr at the same time.");
   assert(!(BasePtr && BaseName) && "BaseName is redundant.");
+
+  auto getCommonBasePtr = [&]() -> Value * {
+      Value *CurBase = getPointerFromLoadOrStore(BasePtr);
+      if (!CurBase) return BasePtr;
+
+      for(ScopArrayInfo *SAI : arrays()) {
+        Value *SAIBase = getPointerFromLoadOrStore(SAI->getBasePtr());
+        if (!SAIBase) continue;
+
+        if (SAIBase == CurBase) return SAI->getBasePtr();
+      }
+      return BasePtr;
+  };
+
+  BasePtr = getCommonBasePtr();
+
+
   auto &SAI = BasePtr ? ScopArrayInfoMap[std::make_pair(BasePtr, Kind)]
                       : ScopArrayNameMap[BaseName];
+
+
   if (!SAI) {
     auto &DL = getFunction().getParent()->getDataLayout();
     SAI.reset(new ScopArrayInfo(BasePtr, ElementType, getIslCtx(), Shape, Kind,
@@ -4191,6 +4216,7 @@ ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
             "SAI has strides, Shape is size based. This should not happen");
       }
     }
+
     if (SAI->hasStrides()) {
       SAI->updateStrides(Shape.strides(), Shape.offset(), Shape.hackFAD());
     } else {
@@ -4198,6 +4224,7 @@ ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
         invalidate(DELINEARIZATION, DebugLoc());
     }
   }
+
   return SAI.get();
 }
 
