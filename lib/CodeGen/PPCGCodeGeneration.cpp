@@ -1889,6 +1889,8 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
   ValueMapT HostValueMap = ValueMap;
   BlockGenerator::AllocaMapTy HostScalarMap = ScalarMap;
   ScalarMap.clear();
+  BlockGenerator::EscapeUsersAllocaMapTy HostEscapeMap = EscapeMap;
+  EscapeMap.clear();
 
   // Create for all loops we depend on values that contain the current loop
   // iteration. These values are necessary to generate code for SCEVs that
@@ -1919,7 +1921,7 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
 
   ValueMap = std::move(HostValueMap);
   ScalarMap = std::move(HostScalarMap);
-  EscapeMap.clear();
+  EscapeMap = std::move(HostEscapeMap);
   IDToSAI.clear();
   Annotator.resetAlternativeAliasBases();
   for (auto &BasePtr : LocalArrays)
