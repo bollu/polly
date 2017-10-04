@@ -873,25 +873,11 @@ void GPUNodeBuilder::prepareManagedDeviceArrays() {
     ScopArrayInfo *ScopArray = (ScopArrayInfo *)Array->user;
     Value *HostPtr;
 
-    if (gpu_array_is_scalar(Array)) {
+    if (gpu_array_is_scalar(Array))
       HostPtr = BlockGen.getOrCreateAlloca(ScopArray);
-      HostPtr = getLatestValue(HostPtr);
-
-      // auto OldIP = Builder.GetInsertPoint();
-      // auto OldBB = Builder.GetInsertBlock();
-      // Builder.SetInsertPoint(HostPtrI->getNextNode());
-      // Value *BaseVal = ScopArray->getBasePtr();
-      // BaseVal = getLatestValue(BaseVal);
-      // errs() << "BaseVal: " << *BaseVal << "\n";
-      // // Value *V = Builder.CreateLoad(BasePtr, ScopArray->getName() + "_scalar_hack_load");
-      // Builder.CreateStore(BaseVal, HostPtr); 
-      // Builder.SetInsertPoint(OldBB, OldIP);
-
-      
-    } else {
+    else
       HostPtr = ScopArray->getBasePtr();
-      HostPtr = getLatestValue(HostPtr);
-    }
+    HostPtr = getLatestValue(HostPtr);
 
     DeviceAllocations[ScopArray] = HostPtr;
   }
