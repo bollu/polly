@@ -11,9 +11,6 @@
 ; CHECK-NEXT:         ReadAccess :=    [Reduction Type: NONE] [Scalar: 0]
 ; CHECK-NEXT:             { Stmt_for_body[i0] -> MemRef_U[0] };
 ; CHECK-NEXT:         Execution Context: {  :  }
-; CHECK-NEXT:         ReadAccess :=    [Reduction Type: NONE] [Scalar: 0]
-; CHECK-NEXT:             { Stmt_for_body[i0] -> MemRef_U[0] };
-; CHECK-NEXT:         Execution Context: {  :  }
 ; CHECK-NEXT: }
 ;
 ; CHECK:      Statements {

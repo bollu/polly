@@ -327,8 +327,8 @@ protected:
 
   /// Set to remember materialized invariant loads.
   ///
-  /// An invariant load is identified by its pointer (the SCEV) and its type.
-  SmallSet<std::pair<const SCEV *, Type *>, 16> PreloadedPtrs;
+  /// An invariant load is identified by its pointer (the SCEV) and its size.
+  SmallSet<std::pair<const SCEV *,  const size_t>, 16> PreloadedPtrs;
 
   /// Preload the memory access at @p AccessRange with @p Build.
   ///

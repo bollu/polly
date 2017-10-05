@@ -368,7 +368,8 @@ bool ScopArrayInfo::isReadOnly() {
 }
 
 bool ScopArrayInfo::isCompatibleWith(const ScopArrayInfo *Array) const {
-  if (Array->getElementType() != getElementType())
+  if (DL.getTypeSizeInBits(Array->getElementType()) !=
+      DL.getTypeSizeInBits(getElementType()))
     return false;
 
   if (Array->getNumberOfDimensions() != getNumberOfDimensions())
@@ -2272,8 +2273,10 @@ void Scop::buildInvariantEquivalenceClasses() {
     }
 
     ClassRep = LInst;
-    InvariantEquivClasses.emplace_back(
-        InvariantEquivClassTy{PointerSCEV, MemoryAccessList(), nullptr, Ty});
+    const DataLayout &DL = this->getFunction().getParent()->getDataLayout();
+    const size_t ElementSize = DL.getTypeSizeInBits(Ty);
+    InvariantEquivClasses.emplace_back(InvariantEquivClassTy{
+        PointerSCEV, MemoryAccessList(), nullptr, ElementSize});
   }
 }
 
@@ -3783,9 +3786,12 @@ InvariantEquivClassTy *Scop::lookupInvariantEquivClass(Value *Val) {
     LInst = cast<LoadInst>(Rep);
 
   Type *Ty = LInst->getType();
+  const size_t ElementSize =
+      this->getFunction().getParent()->getDataLayout().getTypeSizeInBits(Ty);
   const SCEV *PointerSCEV = SE->getSCEV(LInst->getPointerOperand());
   for (auto &IAClass : InvariantEquivClasses) {
-    if (PointerSCEV != IAClass.IdentifyingPointer || Ty != IAClass.AccessType)
+    if (PointerSCEV != IAClass.IdentifyingPointer ||
+        ElementSize != IAClass.ElementSize)
       continue;
 
     auto &MAs = IAClass.InvariantAccesses;
@@ -3886,12 +3892,13 @@ void Scop::addInvariantLoads(ScopStmt &Stmt, InvariantAccessesTy &InvMAs) {
   for (auto &InvMA : InvMAs) {
     auto *MA = InvMA.MA;
     isl::set NHCtx = InvMA.NonHoistableCtx;
-
     // Check for another invariant access that accesses the same location as
     // MA and if found consolidate them. Otherwise create a new equivalence
     // class at the end of InvariantEquivClasses.
     LoadInst *LInst = cast<LoadInst>(MA->getAccessInstruction());
     Type *Ty = LInst->getType();
+    const size_t ElementSize =
+        this->getFunction().getParent()->getDataLayout().getTypeSizeInBits(Ty);
     const SCEV *PointerSCEV = SE->getSCEV(LInst->getPointerOperand());
 
     isl::set MAInvalidCtx = MA->getInvalidContext();
@@ -3911,7 +3918,8 @@ void Scop::addInvariantLoads(ScopStmt &Stmt, InvariantAccessesTy &InvMAs) {
 
     bool Consolidated = false;
     for (auto &IAClass : InvariantEquivClasses) {
-      if (PointerSCEV != IAClass.IdentifyingPointer || Ty != IAClass.AccessType)
+      if (PointerSCEV != IAClass.IdentifyingPointer ||
+          ElementSize != IAClass.ElementSize)
         continue;
 
       // If the pointer and the type is equal check if the access function wrt.
@@ -3952,7 +3960,7 @@ void Scop::addInvariantLoads(ScopStmt &Stmt, InvariantAccessesTy &InvMAs) {
     // If we did not consolidate MA, thus did not find an equivalence class
     // for it, we create a new one.
     InvariantEquivClasses.emplace_back(InvariantEquivClassTy{
-        PointerSCEV, MemoryAccessList{MA}, MACtx.release(), Ty});
+        PointerSCEV, MemoryAccessList{MA}, MACtx.release(), ElementSize});
   }
 }
 
@@ -4119,7 +4127,6 @@ static void replaceBasePtrArrays(Scop *S, const ScopArrayInfo *Old,
     for (MemoryAccess *Access : Stmt) {
       if (Access->getLatestScopArrayInfo() != Old)
         continue;
-
       isl::id Id = New->getBasePtrId();
       isl::map Map = Access->getAccessRelation();
       Map = Map.set_tuple_id(isl::dim::out, Id);
@@ -4128,8 +4135,21 @@ static void replaceBasePtrArrays(Scop *S, const ScopArrayInfo *Old,
 }
 
 void Scop::canonicalizeDynamicBasePtrs() {
+
   for (InvariantEquivClassTy &EqClass : InvariantEquivClasses) {
     MemoryAccessList &BasePtrAccesses = EqClass.InvariantAccesses;
+    /*
+    errs() << "-\n";
+    errs() << "IdentifyingPointer: " << *EqClass.IdentifyingPointer << "\n";
+    errs() << "ExecutionContext: ";
+    isl_set_dump(EqClass.ExecutionContext);
+    errs() << "ElementSize: " << EqClass.ElementSize << "\n";
+
+    for (MemoryAccess *Acc : BasePtrAccesses) {
+      errs() << " Acc: ";
+      Acc->print(errs());
+    }
+    */
 
     const ScopArrayInfo *CanonicalBasePtrSAI =
         findCanonicalArray(this, BasePtrAccesses);
@@ -4140,18 +4160,25 @@ void Scop::canonicalizeDynamicBasePtrs() {
     for (MemoryAccess *BasePtrAccess : BasePtrAccesses) {
       const ScopArrayInfo *BasePtrSAI = getScopArrayInfoOrNull(
           BasePtrAccess->getAccessInstruction(), MemoryKind::Array);
-      if (!BasePtrSAI || BasePtrSAI == CanonicalBasePtrSAI ||
-          !BasePtrSAI->isCompatibleWith(CanonicalBasePtrSAI))
+
+      if (!BasePtrSAI)
         continue;
+
+      if (!BasePtrSAI->isCompatibleWith(CanonicalBasePtrSAI))
+        continue;
+
+      if (BasePtrSAI == CanonicalBasePtrSAI) {
+        continue;
+      }
 
       // we currently do not canonicalize arrays where some accesses are
       // hoisted as invariant loads. If we would, we need to update the access
       // function of the invariant loads as well. However, as this is not a
       // very common situation, we leave this for now to avoid further
       // complexity increases.
-      if (isUsedForIndirectHoistedLoad(this, BasePtrSAI))
+      if (isUsedForIndirectHoistedLoad(this, BasePtrSAI)) {
         continue;
-
+      }
       replaceBasePtrArrays(this, BasePtrSAI, CanonicalBasePtrSAI);
     }
   }
