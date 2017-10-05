@@ -368,32 +368,19 @@ bool ScopArrayInfo::isReadOnly() {
 }
 
 bool ScopArrayInfo::isCompatibleWith(const ScopArrayInfo *Array) const {
-
-    errs() << "This: "; this->print(errs(), true);
-    errs() << "Array: "; Array->print(errs(), true);
-
-  if (DL.getTypeSizeInBits(Array->getElementType()) != DL.getTypeSizeInBits(getElementType()))
+  if (Array->getElementType() != getElementType())
     return false;
 
   if (Array->getNumberOfDimensions() != getNumberOfDimensions())
     return false;
 
-  errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
   if (this->hasStrides() != Array->hasStrides())
     return false;
 
   if (this->hasStrides()) {
-      // If they both are strided representations, then them having
-      // the same base pointer means that the stride info will be the same.
-      // NOTE: we need the BasePtrOrigin because for our strided arrays, they
-      // have the same basePtrOrigin.
-      // NOTE, HACK: Actually, we don't even need to do this beacuse the callee
-      // does this for us. Ideally, we should fix the callee so that they do this
-      // themselves.
-      if (this->getBasePtrOriginSAI() != Array->getBasePtrOriginSAI()) return false;
-    // for (unsigned i = 0; i < getNumberOfDimensions(); i++)
-    //   if (Array->getDimensionStride(i) != getDimensionStride(i))
-    //     return false;
+    for (unsigned i = 0; i < getNumberOfDimensions(); i++)
+      if (Array->getDimensionStride(i) != getDimensionStride(i))
+        return false;
   } else {
     for (unsigned i = 0; i < getNumberOfDimensions(); i++)
       if (Array->getDimensionSize(i) != getDimensionSize(i))
@@ -4144,40 +4131,27 @@ void Scop::canonicalizeDynamicBasePtrs() {
   for (InvariantEquivClassTy &EqClass : InvariantEquivClasses) {
     MemoryAccessList &BasePtrAccesses = EqClass.InvariantAccesses;
 
-    errs() << "--------\n";
-    errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
     const ScopArrayInfo *CanonicalBasePtrSAI =
         findCanonicalArray(this, BasePtrAccesses);
 
     if (!CanonicalBasePtrSAI)
       continue;
 
-
-    errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
-    errs() << "CanonicalaBasePtrSAI: "; CanonicalBasePtrSAI->print(errs(), true);  errs() << "\n";
-
     for (MemoryAccess *BasePtrAccess : BasePtrAccesses) {
       const ScopArrayInfo *BasePtrSAI = getScopArrayInfoOrNull(
           BasePtrAccess->getAccessInstruction(), MemoryKind::Array);
-
       if (!BasePtrSAI || BasePtrSAI == CanonicalBasePtrSAI ||
-          !BasePtrSAI->isCompatibleWith(CanonicalBasePtrSAI)) {
-          if (BasePtrSAI)
-              errs() << "BasePtrSAI: "; BasePtrSAI->print(errs(), true); errs() << "\n";
+          !BasePtrSAI->isCompatibleWith(CanonicalBasePtrSAI))
         continue;
-      }
 
       // we currently do not canonicalize arrays where some accesses are
       // hoisted as invariant loads. If we would, we need to update the access
       // function of the invariant loads as well. However, as this is not a
       // very common situation, we leave this for now to avoid further
       // complexity increases.
-      if (isUsedForIndirectHoistedLoad(this, BasePtrSAI)) {
-        errs() << "isUsedForIndirectHoistedLoad = true\n";
+      if (isUsedForIndirectHoistedLoad(this, BasePtrSAI))
         continue;
-      }
 
-      errs() << "replaceBasePtrArrays: " << BasePtrSAI->getBasePtr() << " | " << CanonicalBasePtrSAI->getBasePtr();
       replaceBasePtrArrays(this, BasePtrSAI, CanonicalBasePtrSAI);
     }
   }
@@ -4212,9 +4186,7 @@ ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
       return BasePtr;
   };
 
-  // HACK: disabled getCommonBasePtr, fixed isCompatibleWith so that
-  // we don't need do this anymore.
-  // BasePtr = getCommonBasePtr();
+  BasePtr = getCommonBasePtr();
 
 
   auto &SAI = BasePtr ? ScopArrayInfoMap[std::make_pair(BasePtr, Kind)]
