@@ -1687,7 +1687,6 @@ void polly_launchKernel(PollyGPUFunction *Kernel, unsigned int GridDimX,
                         unsigned int BlockDimY, unsigned int BlockDimZ,
                         void **Parameters) {
   dump_function();
-  fprintf(stderr, "%s\n", __PRETTY_FUNCTION__);
 
   /*
   for(int i = 0; i < 17; i++) {
