@@ -1350,7 +1350,7 @@ bool IslNodeBuilder::preloadInvariantEquivClass(
   // Check for recursion which can be caused by additional constraints, e.g.,
   // non-finite loop constraints. In such a case we have to bail out and insert
   // a "false" runtime check that will cause the original code to be executed.
-  auto PtrId = std::make_pair(IAClass.IdentifyingPointer, IAClass.AccessType);
+  auto PtrId = std::make_pair(IAClass.IdentifyingPointer, IAClass.ElementSize);
   if (!PreloadedPtrs.insert(PtrId).second)
     return false;
 

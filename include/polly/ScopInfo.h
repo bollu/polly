@@ -1176,11 +1176,11 @@ struct InvariantEquivClassTy {
   /// InvariantAccesses list.
   isl_set *ExecutionContext;
 
-  /// The type of the invariant access
+  /// The element size of this invariant access.
   ///
-  /// It is used to differentiate between differently typed invariant loads from
+  /// It is used to differentiate between differently sized invariant loads from
   /// the same location.
-  Type *AccessType;
+ const size_t ElementSize;
 };
 
 /// Type for invariant accesses equivalence classes.
