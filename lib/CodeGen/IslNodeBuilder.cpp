@@ -1524,6 +1524,9 @@ bool IslNodeBuilder::preloadInvariantEquivClass(
 
   for (const MemoryAccess *MA : MAs) {
     Instruction *MAAccInst = MA->getAccessInstruction();
+    assert(DL.getTypeSizeInBits(PreloadVal->getType()) == DL.getTypeSizeInBits(MAAccInst->getType()));
+    PreloadVal = Builder.CreateBitCast(PreloadVal, MAAccInst->getType(), PreloadVal->getName() + ".preload_type_adjusted");
+
     assert(PreloadVal->getType() == MAAccInst->getType());
     ValueMap[MAAccInst] = PreloadVal;
   }
@@ -1539,6 +1542,7 @@ bool IslNodeBuilder::preloadInvariantEquivClass(
   auto *Alloca = new AllocaInst(AccInstTy, DL.getAllocaAddrSpace(),
                                 AccInst->getName() + ".preload.s2a");
   Alloca->insertBefore(&*EntryBB->getFirstInsertionPt());
+  PreloadVal = Builder.CreateBitCast(PreloadVal, AccInstTy, PreloadVal->getName() + ".preload_type_adjusted");
   Builder.CreateStore(PreloadVal, Alloca);
   ValueMapT PreloadedPointer;
   PreloadedPointer[PreloadVal] = AccInst;
