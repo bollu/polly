@@ -4213,7 +4213,7 @@ ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
       return BasePtr;
   };
 
-  BasePtr = getCommonBasePtr();
+  // BasePtr = getCommonBasePtr();
 
 
   auto &SAI = BasePtr ? ScopArrayInfoMap[std::make_pair(BasePtr, Kind)]
