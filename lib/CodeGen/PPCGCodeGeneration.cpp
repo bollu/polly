@@ -118,6 +118,14 @@ static cl::opt<bool>
                               cl::Hidden, cl::init(false), cl::ZeroOrMore,
                               cl::cat(PollyCategory));
 
+static cl::opt<bool>
+    FailOnHostVerifyModuleFailure("polly-acc-fail-on-host-verify-module-failure",
+                              cl::desc("Fail and generate a backtrace if"
+                                       " verifyModule fails on the GPU "
+                                       " kernel module."),
+                              cl::Hidden, cl::init(false), cl::ZeroOrMore,
+                              cl::cat(PollyCategory));
+
 static cl::opt<std::string> CUDALibDevice(
     "polly-acc-libdevice", cl::desc("Path to CUDA libdevice"), cl::Hidden,
     cl::init("/usr/local/cuda/nvvm/libdevice/libdevice.compute_20.10.ll"),
@@ -2608,6 +2616,20 @@ std::string GPUNodeBuilder::finalizeKernelFunction() {
     return "";
   }
 
+  { 
+      Module *Host = S.getFunction().getParent();
+      if (verifyModule(*Host) == 1) {
+          //     DEBUG(dbgs() << "verifyModule for host failed on function:\n";
+          //             S.getRegion().print(dbgs()); dbgs() << "\n";);
+          DEBUG(dbgs() << "verifyModule Error on host side:\n";
+                   verifyModule(*Host, &dbgs()));
+          S.getRegion().print(errs(), true, 0, Region::PrintRN);
+          if (FailOnHostVerifyModuleFailure) {
+              llvm_unreachable("VerifyModule on host side failed.");
+          }
+      }
+  };
+
   addCUDALibDevice();
 
   if (DumpKernelIR)
@@ -3722,6 +3744,7 @@ public:
   bool isAllowedScop(int n) {
 	  for (auto i: AllowedScops) 
 		  if (n == i) return true;
+      if (AllowedScops.size() == 0) return true;
 
 	  return false;
   }
@@ -3729,7 +3752,6 @@ public:
 
 
   bool runOnScop(Scop &CurrentScop) override {
-      static int nscops = 0;
       if (HackBailPPCGCodeGenRunOnScop) {
           errs() << __PRETTY_FUNCTION__ << " | bailing out of runOnScop()\n";
           errs().flush();
@@ -3737,8 +3759,6 @@ public:
       }
       else {
           errs() << __PRETTY_FUNCTION__ << " |**RUNNING** on runOnScop()\n";
-          errs() << __PRETTY_FUNCTION__<< " |NSCOP: " << nscops;
-          nscops++;
           errs().flush();
       }
     S = &CurrentScop;
