@@ -2638,19 +2638,19 @@ std::string GPUNodeBuilder::finalizeKernelFunction() {
     return "";
   }
 
-  { 
-      Module *Host = S.getFunction().getParent();
-      if (verifyModule(*Host) == 1) {
-          //     DEBUG(dbgs() << "verifyModule for host failed on function:\n";
-          //             S.getRegion().print(dbgs()); dbgs() << "\n";);
-          DEBUG(dbgs() << "verifyModule Error on host side:\n";
-                   verifyModule(*Host, &dbgs()));
-          S.getRegion().print(errs(), true, 0, Region::PrintRN);
-          if (FailOnHostVerifyModuleFailure) {
-              llvm_unreachable("VerifyModule on host side failed.");
-          }
-      }
-  };
+  // { 
+  //     Module *Host = S.getFunction().getParent();
+  //     if (verifyModule(*Host) == 1) {
+  //         //     DEBUG(dbgs() << "verifyModule for host failed on function:\n";
+  //         //             S.getRegion().print(dbgs()); dbgs() << "\n";);
+  //         DEBUG(dbgs() << "verifyModule Error on host side:\n";
+  //                  verifyModule(*Host, &dbgs()));
+  //         S.getRegion().print(errs(), true, 0, Region::PrintRN);
+  //         if (FailOnHostVerifyModuleFailure) {
+  //             llvm_unreachable("VerifyModule on host side failed.");
+  //         }
+  //     }
+  // };
 
   addCUDALibDevice();
 
