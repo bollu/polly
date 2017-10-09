@@ -1362,11 +1362,11 @@ void GPUNodeBuilder::createKernelCopy(ppcg_kernel_stmt *KernelStmt) {
 
   if (KernelStmt->u.c.read) {
       LoadInst *Load = Builder.CreateLoad(GlobalAddr, "shared.read");
-      StoreInst *SI = Builder.CreateStore(Load, LocalAddr);
+      Builder.CreateStore(Load, LocalAddr);
   } else {
      
     LoadInst *Load = Builder.CreateLoad(LocalAddr, "shared.write");
-    StoreInst *SI = Builder.CreateStore(Load, GlobalAddr);
+    Builder.CreateStore(Load, GlobalAddr);
   }
 }
 
