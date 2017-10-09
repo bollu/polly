@@ -1987,6 +1987,7 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
       size_t ParamsSize = 0;
       for(Argument &Arg : F->args()) {
           ParamsSize += DL.getTypeStoreSize(Arg.getType());
+          if (ParamsSize > 4096) { BuildSuccessful = 0; report_fatal_error("size of parameters is > 4K. quitting."); }
       }
 
       errs() << "=======================\n";
