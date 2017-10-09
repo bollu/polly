@@ -541,7 +541,7 @@ bool isSCEVCallToPollyAbstractIndex(const SCEV *S) {
   if (isa<SCEVUnknown>(S)) {
     Value *V = cast<SCEVUnknown>(S)->getValue();
     CallInst *Call = dyn_cast<CallInst>(V);
-    if (Call && Call->getCalledFunction()->getName().count(
+    if (Call && Call->getCalledFunction() && Call->getCalledFunction()->getName().count(
                     POLLY_ABSTRACT_INDEX_BASENAME))
       return true;
   }
