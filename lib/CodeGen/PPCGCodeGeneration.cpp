@@ -154,7 +154,7 @@ static Function* createPollyAbstractIndexFunction(Module &M, PollyIRBuilder Buil
 
     // HACK: pick up the name from ScopHelper.
     const std::string BaseName = "_gfortran_polly_array_index_";
-    DEBUG(dbgs()  << __PRETTY_FUNCTION__ << " | HACK: hardcoded name of: " << BaseName << "Fix this.\n");
+    // DEBUG(dbgs()  << __PRETTY_FUNCTION__ << " | HACK: hardcoded name of: " << BaseName << "Fix this.\n");
     const std::string Name = BaseName + std::to_string(NumDims);
 
     Function *F =  [&] () {
@@ -1987,13 +1987,9 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
       size_t ParamsSize = 0;
       for(Argument &Arg : F->args()) {
           ParamsSize += DL.getTypeStoreSize(Arg.getType());
-          if (ParamsSize > 4096) { BuildSuccessful = 0; report_fatal_error("size of parameters is > 4K. quitting."); }
+          if (ParamsSize >= 4096) { BuildSuccessful = 0; report_fatal_error("size of parameters is > 4K. quitting."); }
       }
 
-      errs() << "=======================\n";
-      errs() << __PRETTY_FUNCTION__ << "| " << *F->getType() << "\n";
-      errs() << __PRETTY_FUNCTION__ << "| Kernel parameter size: " << ParamsSize << "\n";
-      errs() << "=======================\n";
   };
 }
 
