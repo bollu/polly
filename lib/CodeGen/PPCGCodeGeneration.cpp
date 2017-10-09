@@ -150,8 +150,8 @@ std::string getUniqueScopName(const Scop *S) {
          " | Function: " + std::string(S->getFunction().getName());
 }
 
+static Function* createPollyAbstractIndexFunction(Module &M, PollyIRBuilder Builder, int NumDims) {
 
-static void createPollyAbstractIndexFunction(Module &M, PollyIRBuilder &Builder, int NumDims) {
     // HACK: pick up the name from ScopHelper.
     const std::string BaseName = "_gfortran_polly_array_index_";
     DEBUG(dbgs()  << __PRETTY_FUNCTION__ << " | HACK: hardcoded name of: " << BaseName << "Fix this.\n");
@@ -159,7 +159,7 @@ static void createPollyAbstractIndexFunction(Module &M, PollyIRBuilder &Builder,
 
     Function *F =  [&] () {
         Function *Existing = nullptr;
-        if((Existing = M.getFunction(Name))) return Existing;
+        if((Existing = M.getFunction(Name))) { assert(false);  return Existing; };
 
         GlobalValue::LinkageTypes Linkage = Function::ExternalLinkage;
         IntegerType *I64Ty = Builder.getInt64Ty();
@@ -195,6 +195,7 @@ static void createPollyAbstractIndexFunction(Module &M, PollyIRBuilder &Builder,
         TotalIx = Builder.CreateAdd(TotalIx, StrideMulIx);
     }
     Builder.CreateRet(TotalIx);
+    return F;
 }
 
 /// Used to store information PPCG wants for kills. This information is
@@ -1511,7 +1512,15 @@ static bool isValidFunctionInKernel(llvm::Function *F, bool AllowLibDevice) {
 /// to the kernel from the host. Taking an address of any function and
 /// trying to pass along is nonsensical. Only allow `Value`s that are not
 /// `Function`s.
-static bool isValidSubtreeValue(llvm::Value *V) { return !isa<Function>(V); }
+static bool isValidSubtreeValue(llvm::Value *V) {  
+    if (isa<Function>(V)) return false; 
+    if (CallInst *I = dyn_cast<CallInst>(V)) {
+        if (I->getCalledFunction()->getName().count("polly_array_index"))
+            return false;
+    }
+
+    return true;
+}
 
 /// Return `Function`s from `RawSubtreeValues`.
 static SetVector<Function *>
@@ -1525,6 +1534,8 @@ getFunctionsFromRawSubtreeValues(SetVector<Value *> RawSubtreeValues,
              "Code should have bailed out by "
              "this point if an invalid function "
              "were present in a kernel.");
+
+      if (F->getName().count("polly_array_index")) continue;
       SubtreeFunctions.insert(F);
     }
   }
@@ -1859,7 +1870,20 @@ void GPUNodeBuilder::setupKernelSubtreeFunctions(
     assert(ValueMap.find(Fn) == ValueMap.end() &&
            "Fn already present in ValueMap");
     ValueMap[Fn] = Clone;
+
   }
+
+
+    Module *Host = S.getFunction().getParent();
+    for(int i = 0;  i <= 4; i++) {
+        const std::string BaseName = "_gfortran_polly_array_index_";
+        Function *HostFn = Host->getFunction(BaseName + std::to_string(i));
+        Function *GPUFn = createPollyAbstractIndexFunction(*GPUModule, Builder, i);
+        if (HostFn) {
+            assert(ValueMap.find(HostFn) == ValueMap.end());
+            ValueMap[HostFn] = GPUFn;
+        }
+    }
 }
 void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
   isl_id *Id = isl_ast_node_get_annotation(KernelStmt);
@@ -2585,8 +2609,6 @@ void GPUNodeBuilder::addCUDALibDevice() {
 
 std::string GPUNodeBuilder::finalizeKernelFunction() {
 
-  for(int i = 0;  i <= 4; i++)
-      createPollyAbstractIndexFunction(*GPUModule, Builder, i);
   {
     // NOTE: We currently copy all uses of gfortran_polly_array_index.
     // However, these are unsused, but they refer to host side values
