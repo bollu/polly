@@ -112,6 +112,10 @@ void polly_launchKernel(PollyGPUFunction *Kernel, unsigned int GridDimX,
 void polly_freeDeviceMemory(PollyGPUDevicePtr *Allocation);
 void polly_freeContext(PollyGPUContext *Context);
 
+int polly_startManagedStackFrame(size_t stackFrameSize);
+void *polly_allocaManaged(int stackid, size_t size);
+void polly_dropManagedStackFrame(int stackid);
+
 // Note that polly_{malloc/free}Managed are currently not used by Polly.
 // We use them in COSMO by replacing all malloc with polly_mallocManaged and all
 // frees with cudaFree, so we can get managed memory "automatically".
