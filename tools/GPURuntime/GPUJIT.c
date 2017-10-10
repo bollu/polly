@@ -1436,11 +1436,8 @@ __attribute__((constructor)) static void initManagedPtrsBuffer() {
 }
 
 
-#define MAXSTACKS 10
-char *g_virtual_managedmem_stack[MAXSTACKS];
-char *g_virtual_managedmem_sp[MAXSTACKS];
-size_t g_virtual_managedmem_stacksize[MAXSTACKS];
-int g_nstacks = 0;
+char *g_virtual_managedmem_stack = NULL;
+char *g_virtual_managedmem_sp = NULL;
 #define  KB 1024
 #define  MB 1024 * KB
 #define  GB 1024 * MB
@@ -1449,22 +1446,17 @@ int g_nstacks = 0;
 
 __attribute__((constructor)) static void initVirtualManagedMemStack() {
 
-  polly_initContextCUDA();
-  g_nstacks = 0;
+  PollyGPUContext *_ = polly_initContextCUDA();
+  assert(_ && "polly_initContextCUDA failed");
+                
+  const CUresult Res = CuMemAllocManagedFcnPtr((CUdeviceptr *)&g_virtual_managedmem_stack, STACK_SIZE,
+                                               CU_MEM_ATTACH_GLOBAL);
+  g_virtual_managedmem_sp = g_virtual_managedmem_stack;
 
-  for(int i = 0; i <  MAXSTACKS; i++) {
-      g_virtual_managedmem_stack[i] = g_virtual_managedmem_sp[i] = NULL;
+  if (Res != CUDA_SUCCESS) {
+    fprintf(stderr, "cudaMallocManaged failed for stack of size: %zu\n", STACK_SIZE);
+    exit(-1);
   }
-  //assert(_ && "polly_initContextCUDA failed");
-  //              
-  //const CUresult Res = CuMemAllocManagedFcnPtr((CUdeviceptr *)&g_virtual_managedmem_stack, STACK_SIZE,
-  //                                             CU_MEM_ATTACH_GLOBAL);
-  //g_virtual_managedmem_sp = g_virtual_managedmem_stack;
-
-  //if (Res != CUDA_SUCCESS) {
-  //  fprintf(stderr, "cudaMallocManaged failed for stack of size: %zu\n", STACK_SIZE);
-  //  exit(-1);
-  //}
 }
 
 // Add a pointer as being allocated by cuMallocManaged
@@ -1488,31 +1480,6 @@ int isManagedPtr(void *mem) {
   return 0;
 }
 
-
-int polly_startManagedStackFrame(size_t stackFrameSize) {
-    int n = g_nstacks;
-    g_nstacks++;
-    g_virtual_managedmem_stack[n] = polly_mallocManaged(stackFrameSize);
-    g_virtual_managedmem_sp[n] = g_virtual_managedmem_stack[n];
-    g_virtual_managedmem_stacksize[n] = stackFrameSize;
-    return n;
-
-}
-
-void* polly_allocaManaged(int n, size_t size) {
-    char *mem = g_virtual_managedmem_sp[n]; 
-    g_virtual_managedmem_sp[n] += (size / 32 + 1) * 32;
-    #define SAFETY 1024 * KB // 1 M
-    assert(g_virtual_managedmem_sp[n] - g_virtual_managedmem_stack[n] <= (ssize_t)g_virtual_managedmem_stacksize[n] - SAFETY && "stack was blown");
-     #undef SAFETY
-    return (void *)mem;
-}
-void polly_dropManagedStackFrame(int n) {
-    assert(n == g_nstacks && "popping a stack frame that is not on top!");
-    polly_freeManaged(g_virtual_managedmem_stack[n]);
-    g_nstacks--;
-}
-
 void freeManagedCUDA(void *mem) {
     // TODO: implement free(...) `:)`
     // g_virtual_managedmem_sp -= 
@@ -1527,46 +1494,46 @@ void freeManagedCUDA(void *mem) {
   // // pointer. If it is, we call `cudaFree`.
   // // If not, we pass it along to the underlying allocator.
   // // This is a hack, and can be removed if the underlying issue is fixed.
-  if (isManagedPtr(mem)) {
-    if (CuMemFreeFcnPtr((size_t)mem) != CUDA_SUCCESS) {
-      fprintf(stderr, "cudaFree failed.\n");
-      exit(-1);
-    }
-    return;
-  } else {
-    free(mem);
-  }
+  // if (isManagedPtr(mem)) {
+  //   if (CuMemFreeFcnPtr((size_t)mem) != CUDA_SUCCESS) {
+  //     fprintf(stderr, "cudaFree failed.\n");
+  //     exit(-1);
+  //   }
+  //   return;
+  // } else {
+  //   free(mem);
+  // }
 }
 
 void *mallocManagedCUDA(size_t size) {
-    // char *mem = g_virtual_managedmem_sp; 
-    // g_virtual_managedmem_sp += (size / 32 + 1) * 32;
+    char *mem = g_virtual_managedmem_sp; 
+    g_virtual_managedmem_sp += (size / 32 + 1) * 32;
 
-    // #define SAFETY 1024 * KB // 1 M
-    // assert(g_virtual_managedmem_sp - g_virtual_managedmem_stack <= STACK_SIZE - SAFETY && "stack was blown");
-    // #undef SAFETY
-    // return mem;
+    #define SAFETY 1024 * KB // 1 M
+    assert(g_virtual_managedmem_sp - g_virtual_managedmem_stack <= STACK_SIZE - SAFETY && "stack was blown");
+    #undef SAFETY
+    return mem;
   // Note: [Size 0 allocations]
   // Sometimes, some runtime computation of size could create a size of 0
   // for an allocation. In these cases, we do not wish to fail.
   // The CUDA API fails on size 0 allocations.
   // So, we allocate size a minimum of size 1.
-  if (!size && DebugMode)
-    fprintf(stderr, "cudaMallocManaged called with size 0. "
-                    "Promoting to size 1");
-  size = max(size, 1);
-  PollyGPUContext *_ = polly_initContextCUDA();
-  assert(_ && "polly_initContextCUDA failed");
+  // if (!size && DebugMode)
+  //   fprintf(stderr, "cudaMallocManaged called with size 0. "
+  //                   "Promoting to size 1");
+  // size = max(size, 1);
+  // PollyGPUContext *_ = polly_initContextCUDA();
+  // assert(_ && "polly_initContextCUDA failed");
 
-  void *newMemPtr;
-  const CUresult Res = CuMemAllocManagedFcnPtr((CUdeviceptr *)&newMemPtr, size,
-                                               CU_MEM_ATTACH_GLOBAL);
-  if (Res != CUDA_SUCCESS) {
-    fprintf(stderr, "cudaMallocManaged failed for size: %zu\n", size);
-    exit(-1);
-  }
-  addManagedPtr(newMemPtr);
-  return newMemPtr;
+  // void *newMemPtr;
+  // const CUresult Res = CuMemAllocManagedFcnPtr((CUdeviceptr *)&newMemPtr, size,
+  //                                              CU_MEM_ATTACH_GLOBAL);
+  // if (Res != CUDA_SUCCESS) {
+  //   fprintf(stderr, "cudaMallocManaged failed for size: %zu\n", size);
+  //   exit(-1);
+  // }
+  // addManagedPtr(newMemPtr);
+  // return newMemPtr;
 }
 
 
@@ -1900,8 +1867,6 @@ void polly_freeManaged(void *mem) {
   exit(-1);
 #endif
 }
-
-
 
 void *polly_mallocManaged(size_t size) {
   dump_function();
