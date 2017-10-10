@@ -3753,8 +3753,11 @@ public:
     /// In case a sequential kernel has more surrounding loops as any parallel
     /// kernel, the SCoP is probably mostly sequential. Hence, there is no
     /// point in running it on a GPU.
-    if (NodeBuilder.DeepestSequential > NodeBuilder.DeepestParallel)
-      CondBr->setOperand(0, Builder.getFalse());
+    if (NodeBuilder.DeepestSequential > NodeBuilder.DeepestParallel) {
+        errs() << "HACK: NOT DOING: NodeBuilder.DeepestSequential > NodeBuilder.DeepestParallel. Setting build success to 0";
+        // report_fatal_error("dying because branch set to 0");
+      // CondBr->setOperand(0, Builder.getFalse());
+    }
 
     if (!NodeBuilder.BuildSuccessful)
       CondBr->setOperand(0, Builder.getFalse());
