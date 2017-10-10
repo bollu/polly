@@ -546,8 +546,8 @@ private:
   ///
   /// @returns A stack allocated array with pointers to the parameter
   ///          values that are passed to the kernel.
-  Value *createLaunchParameters(ppcg_kernel *Kernel, Function *F,
-                                SetVector<Value *> SubtreeValues);
+Value * createLaunchParameters(ppcg_kernel *Kernel, Function *F,
+                                SetVector<Value *> SubtreeValues, PerfMonitor *P);
 
   /// Create declarations for kernel variable.
   ///
@@ -1697,7 +1697,7 @@ void GPUNodeBuilder::insertStoreParameter(Instruction *Parameters,
 
 Value *
 GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
-                                       SetVector<Value *> SubtreeValues) {
+                                       SetVector<Value *> SubtreeValues, PerfMonitor *P) {
   const int NumArgs = F->arg_size();
   std::vector<int> ArgSizes(NumArgs);
 
@@ -1713,6 +1713,12 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
 
   BasicBlock *EntryBlock =
       &Builder.GetInsertBlock()->getParent()->getEntryBlock();
+
+  if (polly::PerfMonitoring) {
+      assert(P && "if perf monitoring is enabled, expect P to be initialized");
+      P->insertRegionStart(Builder.GetInsertBlock()->getFirstNonPHI());
+  };
+
   auto AddressSpace = F->getParent()->getDataLayout().getAllocaAddrSpace();
   std::string Launch = "polly_launch_" + std::to_string(Kernel->id);
   Instruction *Parameters = new AllocaInst(
@@ -1849,6 +1855,7 @@ GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
   auto Location = EntryBlock->getTerminator();
   return new BitCastInst(Parameters, Builder.getInt8PtrTy(),
                          Launch + "_params_i8ptr", Location);
+
 }
 
 void GPUNodeBuilder::setupKernelSubtreeFunctions(
@@ -1962,19 +1969,48 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
 
   std::string ASMString = finalizeKernelFunction();
   Builder.SetInsertPoint(&HostInsertPoint);
-  Value *Parameters = createLaunchParameters(Kernel, F, SubtreeValues);
+  Value *Parameters;
+
+  PerfMonitor *P = nullptr;
+  if (polly::PerfMonitoring) {
+      P = new PerfMonitor(S, S.getFunction().getParent());
+      P->initialize();
+  }
+
+  Parameters = createLaunchParameters(Kernel, F, SubtreeValues, P);
+
+  // We see ~7% keping this here.
+  //if (polly::PerfMonitoring)  {
+  //    assert(P && "if perf monitoring is enabled, expect P to be initialized");
+  //    P->insertRegionEnd(Builder.GetInsertBlock()->getTerminator());
+  //    delete P;
+  //}
 
   std::string Name = getKernelFuncName(Kernel->id);
   Value *KernelString = Builder.CreateGlobalStringPtr(ASMString, Name);
   Value *NameString = Builder.CreateGlobalStringPtr(Name, Name + "_name");
   Value *GPUKernel = createCallGetKernel(KernelString, NameString);
 
+  // We see ~11% keping this here.
+  // if (polly::PerfMonitoring)  {
+  //     assert(P && "if perf monitoring is enabled, expect P to be initialized");
+  //     P->insertRegionEnd(Builder.GetInsertBlock()->getTerminator());
+  //     delete P;
+  // }
+
   Value *GridDimX, *GridDimY;
   std::tie(GridDimX, GridDimY) = getGridSizes(Kernel);
 
+
   createCallLaunchKernel(GPUKernel, GridDimX, GridDimY, BlockDimX, BlockDimY,
                          BlockDimZ, Parameters);
+
   createCallFreeKernel(GPUKernel);
+  if (polly::PerfMonitoring)  {
+      assert(P && "if perf monitoring is enabled, expect P to be initialized");
+      P->insertRegionEnd(Builder.GetInsertBlock()->getTerminator());
+      delete P;
+  }
 
   for (auto Id : KernelIds)
     isl_id_free(Id);
@@ -2609,6 +2645,23 @@ void GPUNodeBuilder::addCUDALibDevice() {
   }
 }
 
+void countNumUnusedParamsInFunction(Function *F) {
+    static unsigned numUnusedParams = 0;
+    errs() << "*****" << __PRETTY_FUNCTION__ << "numUnusedParams(before): " << numUnusedParams << "\n";
+    if (!F->getName().startswith("FUNC_")) return;
+
+    assert(!F->isDeclaration() && "kernel function should be a definition");
+    errs() << __PRETTY_FUNCTION__ << ":" <<__LINE__ << "- " << F->getName() << "\n";
+    for(Argument &A : F->args()) {
+        errs() << __PRETTY_FUNCTION__ << ":" <<__LINE__ << "\t-Arg: " << A.getName() << "\n";
+        if (A.user_empty()) {
+            errs() << "\t\tunused.\n";
+            numUnusedParams++;
+        }
+    }
+    errs() << "*****" << __PRETTY_FUNCTION__ << "numUnusedParams(after): " << numUnusedParams << "\n";
+}
+
 std::string GPUNodeBuilder::finalizeKernelFunction() {
 
   {
@@ -2668,6 +2721,11 @@ std::string GPUNodeBuilder::finalizeKernelFunction() {
     PassBuilder.populateModulePassManager(OptPasses);
     OptPasses.run(*GPUModule);
   }
+   
+
+  for (Function &F : *GPUModule) {
+      countNumUnusedParamsInFunction(&F);
+  };
 
   std::string Assembly = createKernelASM();
 
@@ -3725,22 +3783,6 @@ public:
       isl_ast_expr_free(Condition);
       isl_ast_node_free(Root);
     } else {
-
-      if (polly::PerfMonitoring) {
-        PerfMonitor P(*S, EnteringBB->getParent()->getParent());
-        P.initialize();
-        P.insertRegionStart(SplitBlock->getTerminator());
-
-        // TODO: actually think if this is the correct exiting block to place
-        // the `end` performance marker. Invariant load hoisting changes
-        // the CFG in a way that I do not precisely understand, so I
-        // (Siddharth<siddu.druid@gmail.com>) should come back to this and
-        // think about which exiting block to use.
-        auto *ExitingBlock = StartBlock->getUniqueSuccessor();
-        assert(ExitingBlock);
-        BasicBlock *MergeBlock = ExitingBlock->getUniqueSuccessor();
-        P.insertRegionEnd(MergeBlock->getTerminator());
-      }
 
       NodeBuilder.addParameters(S->getContext().release());
       Value *RTC = NodeBuilder.createRTC(Condition);
