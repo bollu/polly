@@ -51,7 +51,7 @@ static void debug_print(const char *format, ...) {
 }
 #define dump_function() debug_print("-> %s\n", __func__)
 
-#define KERNEL_CACHE_SIZE 50
+#define KERNEL_CACHE_SIZE 50l
 
 static void err_runtime() __attribute__((noreturn));
 static void err_runtime() {
@@ -1438,10 +1438,10 @@ __attribute__((constructor)) static void initManagedPtrsBuffer() {
 
 char *g_virtual_managedmem_stack = NULL;
 char *g_virtual_managedmem_sp = NULL;
-#define  KB 1024
-#define  MB 1024 * KB
-#define  GB 1024 * MB
-#define  STACK_SIZE 5 * GB
+#define  KB 1024l
+#define  MB 1024l * KB
+#define  GB 1024l * MB
+#define  STACK_SIZE 5l * GB
 
 
 __attribute__((constructor)) static void initVirtualManagedMemStack() {
