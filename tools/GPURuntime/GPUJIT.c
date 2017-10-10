@@ -51,7 +51,7 @@ static void debug_print(const char *format, ...) {
 }
 #define dump_function() debug_print("-> %s\n", __func__)
 
-#define KERNEL_CACHE_SIZE 10
+#define KERNEL_CACHE_SIZE 50
 
 static void err_runtime() __attribute__((noreturn));
 static void err_runtime() {
