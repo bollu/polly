@@ -77,7 +77,7 @@ static cl::opt<bool> DumpSchedule("polly-acc-dump-schedule",
                                   cl::cat(PollyCategory));
 
 static cl::opt<bool>
-    BoolRemoveDeadSubtreeValues("pollly-acc-hack-prune-dead-subtree-values",
+    BoolRemoveDeadSubtreeValues("polly-acc-hack-prune-dead-subtree-values",
                                 cl::desc("Dump the computed GPU Schedule"),
                                 cl::Hidden, cl::init(false), cl::ZeroOrMore,
                                 cl::cat(PollyCategory));
@@ -250,6 +250,7 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
   // SmallVector<unsigned, 4> LiveSubtreeIndeces;
   std::map<unsigned, unsigned> OldToNewIndex;
   SetVector<Value *> NewSubtreeValues;
+  LiveVarIdxsTy LiveVarIdxs(NumVars, true);
   // Scope to contain oldidx, newidx
   {
     unsigned oldidx = 0, newidx = 0;
@@ -274,8 +275,8 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
       OldToNewIndex[oldidx] = newidx++;
     }
 
-    LiveVarIdxsTy LiveVarIdxs(NumVars, true);
     for (int i = 0; i < NumVars; i++, oldidx++) {
+      Argument *A = OldArgs[oldidx];
       if (A->user_empty()) {
         LiveVarIdxs[i] = false;
       } else {
@@ -2002,6 +2003,7 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
   int NumVars = isl_space_dim(Kernel->space, isl_dim_param);
 
   for (long i = 0; i < NumVars; i++) {
+      if (!LiveVarIdxs[i]) continue;
     isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_param, i);
     Value *Val = IDToValue[Id];
     if (ValueMap.count(Val))
