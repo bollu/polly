@@ -60,16 +60,13 @@ using namespace llvm;
 
 #define DEBUG_TYPE "polly-codegen-ppcg"
 static cl::list<int> AllowedScops(
-    "polly-acc-hack-allowed-scops",
-    cl::desc("HACK: Scop numbers of allowed scops in PPCGCodeGen."));
+            "polly-acc-hack-allowed-scops",
+            cl::desc("HACK: Scop numbers of allowed scops in PPCGCodeGen."));
 
-static cl::opt<bool> HackBailPPCGCodeGenRunOnScop(
-    "polly-acc-hack-bail-run-on-scop",
-    cl::desc("HACK: bail out from runOnScop() on PPCGCodeGen"));
 
-static cl::opt<bool>
-    DumpScop("polly-acc-dump-scop",
-             cl::desc("HACK: dump scop so we can view the output."));
+static cl::opt<bool> HackBailPPCGCodeGenRunOnScop("polly-acc-hack-bail-run-on-scop", cl::desc("HACK: bail out from runOnScop() on PPCGCodeGen"));
+
+static cl::opt<bool> DumpScop("polly-acc-dump-scop", cl::desc("HACK: dump scop so we can view the output."));
 
 static cl::opt<bool> DumpSchedule("polly-acc-dump-schedule",
                                   cl::desc("Dump the computed GPU Schedule"),
@@ -121,12 +118,13 @@ static cl::opt<bool>
                               cl::Hidden, cl::init(false), cl::ZeroOrMore,
                               cl::cat(PollyCategory));
 
-static cl::opt<bool> FailOnHostVerifyModuleFailure(
-    "polly-acc-fail-on-host-verify-module-failure",
-    cl::desc("Fail and generate a backtrace if"
-             " verifyModule fails on the GPU "
-             " kernel module."),
-    cl::Hidden, cl::init(false), cl::ZeroOrMore, cl::cat(PollyCategory));
+static cl::opt<bool>
+    FailOnHostVerifyModuleFailure("polly-acc-fail-on-host-verify-module-failure",
+                              cl::desc("Fail and generate a backtrace if"
+                                       " verifyModule fails on the GPU "
+                                       " kernel module."),
+                              cl::Hidden, cl::init(false), cl::ZeroOrMore,
+                              cl::cat(PollyCategory));
 
 static cl::opt<std::string> CUDALibDevice(
     "polly-acc-libdevice", cl::desc("Path to CUDA libdevice"), cl::Hidden,
@@ -152,208 +150,52 @@ std::string getUniqueScopName(const Scop *S) {
          " | Function: " + std::string(S->getFunction().getName());
 }
 
-static Function *createPollyAbstractIndexFunction(Module &M,
-                                                  PollyIRBuilder Builder,
-                                                  int NumDims) {
+static Function* createPollyAbstractIndexFunction(Module &M, PollyIRBuilder Builder, int NumDims) {
 
-  // HACK: pick up the name from ScopHelper.
-  const std::string BaseName = "_gfortran_polly_array_index_";
-  // DEBUG(dbgs()  << __PRETTY_FUNCTION__ << " | HACK: hardcoded name of: " <<
-  // BaseName << "Fix this.\n");
-  const std::string Name = BaseName + std::to_string(NumDims);
+    // HACK: pick up the name from ScopHelper.
+    const std::string BaseName = "_gfortran_polly_array_index_";
+    // DEBUG(dbgs()  << __PRETTY_FUNCTION__ << " | HACK: hardcoded name of: " << BaseName << "Fix this.\n");
+    const std::string Name = BaseName + std::to_string(NumDims);
 
-  Function *F = [&]() {
-    Function *Existing = nullptr;
-    if ((Existing = M.getFunction(Name))) {
-      assert(false);
-      return Existing;
-    };
+    Function *F =  [&] () {
+        Function *Existing = nullptr;
+        if((Existing = M.getFunction(Name))) { assert(false);  return Existing; };
 
-    GlobalValue::LinkageTypes Linkage = Function::ExternalLinkage;
-    IntegerType *I64Ty = Builder.getInt64Ty();
-    std::vector<Type *> ParamTys;
-    // offset(1) + stride(numdims) + ix(numdims) =  2 *numdims + 1)
-    for (int i = 1; i <= 1 + 2 * NumDims; i++) {
-      ParamTys.push_back(I64Ty);
+        GlobalValue::LinkageTypes Linkage = Function::ExternalLinkage;
+        IntegerType *I64Ty = Builder.getInt64Ty();
+        std::vector<Type *> ParamTys;
+        // offset(1) + stride(numdims) + ix(numdims) =  2 *numdims + 1)
+        for(int i = 1; i <= 1 + 2*NumDims; i++) {
+            ParamTys.push_back(I64Ty);
+        }
+        auto FnType = FunctionType::get(I64Ty, ParamTys, /*IsVarArg = */false);
+        return Function::Create(FnType, Linkage, Name, &M);
+    }();
+
+
+    BasicBlock *EntryBB = BasicBlock::Create(M.getContext(), "entry", F);
+    Builder.SetInsertPoint(EntryBB);
+
+    std::vector<Argument *> Args;
+    for(Argument &Arg : F->args()) { Args.push_back(&Arg); }
+
+    Args[0]->setName("offset");
+    // Offset
+    Value *TotalIx = Args[0];
+    for(int i = 0; i < NumDims; i++) {
+        const int StrideIx =  1 + i;
+        const int CurIxIx = NumDims + 1 + i;
+        Argument *StrideArg = Args[StrideIx];
+        Argument *CurIxArg = Args[CurIxIx];
+
+        StrideArg->setName("stride" + std::to_string(i));
+        CurIxArg->setName("ix" + std::to_string(i));
+
+        Value *StrideMulIx = Builder.CreateMul(StrideArg, CurIxArg, "Stride_x_ix_" + std::to_string(i));
+        TotalIx = Builder.CreateAdd(TotalIx, StrideMulIx);
     }
-    auto FnType = FunctionType::get(I64Ty, ParamTys, /*IsVarArg = */ false);
-    return Function::Create(FnType, Linkage, Name, &M);
-  }();
-
-  BasicBlock *EntryBB = BasicBlock::Create(M.getContext(), "entry", F);
-  Builder.SetInsertPoint(EntryBB);
-
-  std::vector<Argument *> Args;
-  for (Argument &Arg : F->args()) {
-    Args.push_back(&Arg);
-  }
-
-  Args[0]->setName("offset");
-  // Offset
-  Value *TotalIx = Args[0];
-  for (int i = 0; i < NumDims; i++) {
-    const int StrideIx = 1 + i;
-    const int CurIxIx = NumDims + 1 + i;
-    Argument *StrideArg = Args[StrideIx];
-    Argument *CurIxArg = Args[CurIxIx];
-
-    StrideArg->setName("stride" + std::to_string(i));
-    CurIxArg->setName("ix" + std::to_string(i));
-
-    Value *StrideMulIx = Builder.CreateMul(StrideArg, CurIxArg,
-                                           "Stride_x_ix_" + std::to_string(i));
-    TotalIx = Builder.CreateAdd(TotalIx, StrideMulIx);
-  }
-  Builder.CreateRet(TotalIx);
-  return F;
-}
-
-// Large parts stolen from DeadArgumentElimination
-using LiveArrayIdxsTy = std::vector<bool>;
-std::tuple<Function *, SetVector<Value *>, LiveArrayIdxsTy>
-removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
-                        SetVector<Value *> SubtreeValues) {
-  // Run -O3 against F so we can check which parameters are unused.
-  llvm::legacy::PassManager OptPasses;
-  PassManagerBuilder PassBuilder;
-  PassBuilder.OptLevel = 3;
-  PassBuilder.SizeLevel = 0;
-  PassBuilder.populateModulePassManager(OptPasses);
-  OptPasses.run(*F->getParent());
-
-  const unsigned NumUsedArrays = [&] {
-    unsigned n = 0;
-    for (int i = 0; i < Prog->n_array; i++) {
-      if (ppcg_kernel_requires_array_argument(Kernel, i)) {
-        n++;
-      }
-    };
-    return n;
-  }();
-  LiveArrayIdxsTy liveArrayIdxs(NumUsedArrays, true);
-  const unsigned NumHostIters = isl_space_dim(Kernel->space, isl_dim_set);
-  const unsigned NumVars = isl_space_dim(Kernel->space, isl_dim_param);
-
-  const unsigned NParamsTillSubtreeVals =
-      NumHostIters + NumVars + NumUsedArrays;
-
-  std::vector<Argument *> OldArgs;
-  for (Argument &A : F->args()) {
-    OldArgs.push_back(&A);
-  }
-
-  const unsigned NOldParams = NParamsTillSubtreeVals + SubtreeValues.size();
-
-  // SmallVector<Argument *, 4> LiveSubtreeArgs;
-  // SmallVector<unsigned, 4> LiveSubtreeIndeces;
-  std::map<unsigned, unsigned> OldToNewIndex;
-  SetVector<Value *> NewSubtreeValues;
-  // Scope to contain oldidx, newidx
-  {
-    unsigned oldidx = 0, newidx = 0;
-
-    for (; oldidx < NumUsedArrays; oldidx++) {
-      Argument *A = OldArgs[oldidx];
-      errs() << "Array: " << *A << "\n";
-      if (A->user_empty())  {
-        errs() << __FUNCTION__ << "|Skipping array: " << oldidx << " |"<< *A << "\n";
-        liveArrayIdxs[oldidx] = false;
-      } else {
-        liveArrayIdxs[oldidx] = true;
-        OldToNewIndex[oldidx] = newidx++;
-      }
-    }
-
-    // Step 1. Setup a 1:1 mapping between old to new indeces.
-    // If an old index does not exist as a key, then this means that
-    // it is no longer required (is dead)
-    for (; oldidx < NParamsTillSubtreeVals; oldidx++) {
-      OldToNewIndex[oldidx] = newidx++;
-    }
-
-    for (; oldidx < NOldParams; oldidx++) {
-      assert(oldidx < OldArgs.size() && "invalid index");
-      assert(oldidx >= 0 && "invalid index");
-
-      Argument *A = OldArgs[oldidx];
-      if (!A->user_empty()) {
-        NewSubtreeValues.insert(SubtreeValues[oldidx - NParamsTillSubtreeVals]);
-        OldToNewIndex[oldidx] = newidx++;
-      } else {
-        errs() << "-" << *A << " is empty!\n";
-      }
-    }
-  };
-
-  errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
-  const int NNewArgs = OldToNewIndex.size();
-  errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
-
-  // Step 2. create the new function.
-  std::vector<Type *> NewFArgTys;
-  NewFArgTys.resize(NNewArgs);
-  for (auto It : OldToNewIndex) {
-    const unsigned oldidxcur = It.first;
-    const unsigned newidxcur = It.second;
-    NewFArgTys[newidxcur] = OldArgs[oldidxcur]->getType();
-  }
-  errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
-
-  // TODO: figure out correct assert.assert(NewSubtreeValues.size() == newidx);
-
-  FunctionType *FNewTy = FunctionType::get(F->getReturnType(), NewFArgTys,
-                                           /*variadic=*/false);
-  Function *FNew = Function::Create(FNewTy, F->getLinkage());
-  FNew->copyAttributesFrom(F);
-  FNew->setComdat(F->getComdat());
-
-  // Set up to build a new list of parameter attributes.
-  errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
-  SmallVector<AttributeSet, 8> ArgAttrVec;
-  ArgAttrVec.resize(NNewArgs);
-
-  const AttributeList &FAttrList = F->getAttributes();
-  for (auto It : OldToNewIndex) {
-    const unsigned oldidx = It.first;
-    const unsigned newidx = It.second;
-    assert(newidx < OldToNewIndex.size());
-    assert(newidx >= 0);
-    ArgAttrVec[newidx] = FAttrList.getParamAttributes(oldidx);
-  }
-  errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
-
-  assert(ArgAttrVec.size() == FNew->getFunctionType()->getNumParams());
-  AttributeList FNewAttrList =
-      AttributeList::get(F->getContext(), FAttrList.getFnAttributes(),
-                         FAttrList.getRetAttributes(), ArgAttrVec);
-  FNew->setAttributes(FNewAttrList);
-
-  F->getParent()->getFunctionList().insert(F->getIterator(), FNew);
-  FNew->takeName(F);
-  errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
-
-  // Since we have now created the new function, splice the body of the old
-  // function right into the new function, leaving the old rotting hulk of the
-  // function empty.
-  FNew->getBasicBlockList().splice(FNew->begin(), F->getBasicBlockList());
-
-  // Loop over the argument list, transferring uses of the old arguments over to
-  // the new arguments, also transferring over the names as well.
-  for (auto It : OldToNewIndex) {
-    const unsigned oldidx = It.first;
-    const unsigned newidx = It.second;
-
-    auto IOld = F->arg_begin() + oldidx;
-    auto INew = FNew->arg_begin() + newidx;
-    IOld->replaceAllUsesWith(&*INew);
-    INew->takeName(&*IOld);
-  }
-  errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
-
-  FNew->setSubprogram(F->getSubprogram());
-  F->eraseFromParent();
-
-  return std::make_tuple(FNew, NewSubtreeValues, liveArrayIdxs);
+    Builder.CreateRet(TotalIx);
+    return F;
 }
 
 /// Used to store information PPCG wants for kills. This information is
@@ -429,8 +271,8 @@ static MustKillsInfo computeMustKillsInfo(const Scop &S) {
   Info.TaggedMustKills = isl::union_map::empty(ParamSpace);
   Info.MustKills = isl::union_map::empty(ParamSpace);
 
-  // Initialising KillsSchedule to `isl_set_empty` creates an empty node in
-  // the schedule:
+  // Initialising KillsSchedule to `isl_set_empty` creates an empty node in the
+  // schedule:
   //     - filter: "[control] -> { }"
   // So, we choose to not create this to keep the output a little nicer,
   // at the cost of some code complexity.
@@ -443,8 +285,7 @@ static MustKillsInfo computeMustKillsInfo(const Scop &S) {
 
     // NOTE: construction of tagged_must_kill:
     // 2. We need to construct a map:
-    //     [param] -> { [Stmt_phantom[] -> ref_phantom[]] -> scalar_to_kill[]
-    //     }
+    //     [param] -> { [Stmt_phantom[] -> ref_phantom[]] -> scalar_to_kill[] }
     // To construct this, we use `isl_map_domain_product` on 2 maps`:
     // 2a. StmtToScalar:
     //         [param] -> { Stmt_phantom[] -> scalar_to_kill[] }
@@ -585,11 +426,10 @@ public:
   std::string getKernelFuncName(int Kernel_id);
 
 private:
-  /// A vector of array base pointers for which a new ScopArrayInfo was
-  /// created.
+  /// A vector of array base pointers for which a new ScopArrayInfo was created.
   ///
-  /// This vector is used to delete the ScopArrayInfo when it is not needed
-  /// any more.
+  /// This vector is used to delete the ScopArrayInfo when it is not needed any
+  /// more.
   std::vector<Value *> LocalArrays;
 
   /// A map from ScopArrays to their corresponding device allocations.
@@ -657,8 +497,7 @@ private:
   /// @returns A tuple, whose:
   ///          - First element contains the set of values referenced by the
   ///            kernel
-  ///          - Second element contains the set of functions referenced by
-  ///          the
+  ///          - Second element contains the set of functions referenced by the
   ///             kernel. All functions in the set satisfy
   ///             `isValidFunctionInKernel`.
   ///          - Third element contains loops that have induction variables
@@ -707,10 +546,8 @@ private:
   ///
   /// @returns A stack allocated array with pointers to the parameter
   ///          values that are passed to the kernel.
-  Value *createLaunchParameters(ppcg_kernel *Kernel, Function *F,
-                                LiveArrayIdxsTy LiveArrayIdxs,
-                                SetVector<Value *> SubtreeValues,
-                                PerfMonitor *P);
+Value * createLaunchParameters(ppcg_kernel *Kernel, Function *F,
+                                SetVector<Value *> SubtreeValues, PerfMonitor *P);
 
   /// Create declarations for kernel variable.
   ///
@@ -747,8 +584,7 @@ private:
   /// @param Array The array for which to compute a size.
   Value *getArraySize(gpu_array_info *Array);
 
-  /// Generate code to compute the minimal offset at which an array is
-  /// accessed.
+  /// Generate code to compute the minimal offset at which an array is accessed.
   ///
   /// The offset of an array is the minimal array location accessed in a scop.
   ///
@@ -771,9 +607,9 @@ private:
 
   /// Create kernel function.
   ///
-  /// Create a kernel function located in a newly created module that can
-  /// serve as target for device code generation. Set the Builder to point to
-  /// the start block of this newly created function.
+  /// Create a kernel function located in a newly created module that can serve
+  /// as target for device code generation. Set the Builder to point to the
+  /// start block of this newly created function.
   ///
   /// @param Kernel The kernel to generate code for.
   /// @param SubtreeValues The set of llvm::Values referenced by this kernel.
@@ -870,8 +706,8 @@ private:
 
   /// Finalize the generation of the kernel function.
   ///
-  /// Free the LLVM-IR module corresponding to the kernel and -- if requested
-  /// -- dump its IR to stderr.
+  /// Free the LLVM-IR module corresponding to the kernel and -- if requested --
+  /// dump its IR to stderr.
   ///
   /// @returns The Assembly string of the kernel.
   std::string finalizeKernelFunction();
@@ -1350,7 +1186,7 @@ Value *GPUNodeBuilder::getArrayOffset(const ScopArrayInfo *SAI,
     return nullptr;
 
   if (SAI->hasStrides()) {
-    return nullptr;
+      return nullptr;
     // return generateSCEV(SAI->getStrideOffset());
   }
 
@@ -1393,7 +1229,7 @@ Value *GPUNodeBuilder::getManagedDeviceArray(gpu_array_info *Array,
   it = DeviceAllocations.find(ArrayInfo);
   assert(it != DeviceAllocations.end() &&
          "Device array expected to be available");
-  return it->second;
+  return  it->second;
 }
 
 void GPUNodeBuilder::createDataTransfer(__isl_take isl_ast_node *TransferStmt,
@@ -1465,7 +1301,7 @@ void GPUNodeBuilder::createUser(__isl_take isl_ast_node *UserStmt) {
   }
   if (!strcmp(Str, "clear_device")) {
     // finalize();
-    isl_ast_node_free(UserStmt);
+     isl_ast_node_free(UserStmt);
     isl_ast_expr_free(Expr);
     return;
   }
@@ -1525,10 +1361,10 @@ void GPUNodeBuilder::createKernelCopy(ppcg_kernel_stmt *KernelStmt) {
   Value *GlobalAddr = ExprBuilder.create(Index);
 
   if (KernelStmt->u.c.read) {
-    LoadInst *Load = Builder.CreateLoad(GlobalAddr, "shared.read");
-    Builder.CreateStore(Load, LocalAddr);
+      LoadInst *Load = Builder.CreateLoad(GlobalAddr, "shared.read");
+      Builder.CreateStore(Load, LocalAddr);
   } else {
-
+     
     LoadInst *Load = Builder.CreateLoad(LocalAddr, "shared.write");
     Builder.CreateStore(Load, GlobalAddr);
   }
@@ -1662,8 +1498,8 @@ static bool isValidFunctionInKernel(llvm::Function *F, bool AllowLibDevice) {
   if (Name.count("polly_array_index"))
     return true;
 
-  if (Name.count("lifetime"))
-    return true;
+  if(Name.count("lifetime"))
+      return true;
 
   return F->isIntrinsic() &&
          (Name.startswith("llvm.sqrt") || Name.startswith("llvm.fabs") ||
@@ -1676,15 +1512,14 @@ static bool isValidFunctionInKernel(llvm::Function *F, bool AllowLibDevice) {
 /// to the kernel from the host. Taking an address of any function and
 /// trying to pass along is nonsensical. Only allow `Value`s that are not
 /// `Function`s.
-static bool isValidSubtreeValue(llvm::Value *V) {
-  if (isa<Function>(V))
-    return false;
-  if (CallInst *I = dyn_cast<CallInst>(V)) {
-    if (I->getCalledFunction()->getName().count("polly_array_index"))
-      return false;
-  }
+static bool isValidSubtreeValue(llvm::Value *V) {  
+    if (isa<Function>(V)) return false; 
+    if (CallInst *I = dyn_cast<CallInst>(V)) {
+        if (I->getCalledFunction()->getName().count("polly_array_index"))
+            return false;
+    }
 
-  return true;
+    return true;
 }
 
 /// Return `Function`s from `RawSubtreeValues`.
@@ -1700,8 +1535,7 @@ getFunctionsFromRawSubtreeValues(SetVector<Value *> RawSubtreeValues,
              "this point if an invalid function "
              "were present in a kernel.");
 
-      if (F->getName().count("polly_array_index"))
-        continue;
+      if (F->getName().count("polly_array_index")) continue;
       SubtreeFunctions.insert(F);
     }
   }
@@ -1861,10 +1695,9 @@ void GPUNodeBuilder::insertStoreParameter(Instruction *Parameters,
   Builder.CreateStore(ParamTyped, Slot);
 }
 
-Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
-                                              LiveArrayIdxsTy LiveArrayIdxs,
-                                              SetVector<Value *> SubtreeValues,
-                                              PerfMonitor *P) {
+Value *
+GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
+                                       SetVector<Value *> SubtreeValues, PerfMonitor *P) {
   const int NumArgs = F->arg_size();
   std::vector<int> ArgSizes(NumArgs);
 
@@ -1882,8 +1715,8 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
       &Builder.GetInsertBlock()->getParent()->getEntryBlock();
 
   if (polly::PerfMonitoring) {
-    assert(P && "if perf monitoring is enabled, expect P to be initialized");
-    P->insertRegionStart(Builder.GetInsertBlock()->getFirstNonPHI());
+      assert(P && "if perf monitoring is enabled, expect P to be initialized");
+      P->insertRegionStart(Builder.GetInsertBlock()->getFirstNonPHI());
   };
 
   auto AddressSpace = F->getParent()->getDataLayout().getAllocaAddrSpace();
@@ -1892,18 +1725,9 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
       ArrayTy, AddressSpace, Launch + "_params", EntryBlock->getTerminator());
 
   int Index = 0;
-  int IndexUsedArray = 0;
   for (long i = 0; i < Prog->n_array; i++) {
     if (!ppcg_kernel_requires_array_argument(Kernel, i))
       continue;
-    // if (!LiveArrayIdxs[IndexUsedArray]) {
-    if (false) {
-      errs() << __PRETTY_FUNCTION__ << " |Skipping array : " << IndexUsedArray
-             << "\n";
-      IndexUsedArray++;
-      continue;
-    }
-    IndexUsedArray++;
 
     isl_id *Id = isl_space_get_tuple_id(Prog->array[i].space, isl_dim_set);
     const ScopArrayInfo *SAI = ScopArrayInfo::getFromId(isl::manage(Id));
@@ -1924,10 +1748,10 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     Value *Offset = getArrayOffset(SAI, &Prog->array[i]);
 
     if (Offset) {
-      assert(!SAI->hasStrides());
+        assert(!SAI->hasStrides());
       DevArray = Builder.CreatePointerCast(
           DevArray, SAI->getElementType()->getPointerTo());
-      DevArray = Builder.CreateGEP(DevArray, Builder.CreateNeg(Offset));
+        DevArray = Builder.CreateGEP(DevArray, Builder.CreateNeg(Offset));
       DevArray = Builder.CreatePointerCast(DevArray, Builder.getInt8PtrTy());
     }
     assert(DevArray != nullptr && "Array to be offloaded to device not "
@@ -1944,19 +1768,19 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
 
       assert(ValPtr != nullptr && "ValPtr that should point to a valid object"
                                   " to be stored into Parameters");
-      Value *ValPtrCast = Builder.CreatePointerCast(
-          ValPtr, Builder.getInt8PtrTy(), "ValPtrCast");
+      Value *ValPtrCast =
+          Builder.CreatePointerCast(ValPtr, Builder.getInt8PtrTy(), "ValPtrCast");
       Builder.CreateStore(ValPtrCast, Slot);
     } else {
       Instruction *Param =
           new AllocaInst(Builder.getInt8PtrTy(), AddressSpace,
                          Launch + "_param_" + std::to_string(Index),
                          EntryBlock->getTerminator());
-      Value *DevArrayCast = Builder.CreatePointerCast(
-          DevArray, Builder.getInt8PtrTy(), "DevArrayCast");
+      Value *DevArrayCast =
+          Builder.CreatePointerCast(DevArray, Builder.getInt8PtrTy(), "DevArrayCast");
       StoreInst *SI = Builder.CreateStore(DevArrayCast, Param);
-      Value *ParamTyped = Builder.CreatePointerCast(
-          Param, Builder.getInt8PtrTy(), "ParamTyped");
+      Value *ParamTyped =
+          Builder.CreatePointerCast(Param, Builder.getInt8PtrTy(), "ParamTyped");
       SI = Builder.CreateStore(ParamTyped, Slot);
     }
     Index++;
@@ -2014,7 +1838,6 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     insertStoreParameter(Parameters, Param, Index);
     Index++;
   }
-  assert(Index == NumArgs && "created incorrect number of launch parameters!");
 
   if (Runtime == GPURuntime::OpenCL) {
     for (int i = 0; i < NumArgs; i++) {
@@ -2032,6 +1855,7 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
   auto Location = EntryBlock->getTerminator();
   return new BitCastInst(Parameters, Builder.getInt8PtrTy(),
                          Launch + "_params_i8ptr", Location);
+
 }
 
 void GPUNodeBuilder::setupKernelSubtreeFunctions(
@@ -2053,18 +1877,20 @@ void GPUNodeBuilder::setupKernelSubtreeFunctions(
     assert(ValueMap.find(Fn) == ValueMap.end() &&
            "Fn already present in ValueMap");
     ValueMap[Fn] = Clone;
+
   }
 
-  Module *Host = S.getFunction().getParent();
-  for (int i = 0; i <= 4; i++) {
-    const std::string BaseName = "_gfortran_polly_array_index_";
-    Function *HostFn = Host->getFunction(BaseName + std::to_string(i));
-    Function *GPUFn = createPollyAbstractIndexFunction(*GPUModule, Builder, i);
-    if (HostFn) {
-      assert(ValueMap.find(HostFn) == ValueMap.end());
-      ValueMap[HostFn] = GPUFn;
+
+    Module *Host = S.getFunction().getParent();
+    for(int i = 0;  i <= 4; i++) {
+        const std::string BaseName = "_gfortran_polly_array_index_";
+        Function *HostFn = Host->getFunction(BaseName + std::to_string(i));
+        Function *GPUFn = createPollyAbstractIndexFunction(*GPUModule, Builder, i);
+        if (HostFn) {
+            assert(ValueMap.find(HostFn) == ValueMap.end());
+            ValueMap[HostFn] = GPUFn;
+        }
     }
-  }
 }
 void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
   isl_id *Id = isl_ast_node_get_annotation(KernelStmt);
@@ -2107,8 +1933,7 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
 
   // Create for all loops we depend on values that contain the current loop
   // iteration. These values are necessary to generate code for SCEVs that
-  // depend on such loops. As a result we need to pass them to the
-  // subfunction.
+  // depend on such loops. As a result we need to pass them to the subfunction.
   for (const Loop *L : Loops) {
     const SCEV *OuterLIV = SE.getAddRecExpr(SE.getUnknown(Builder.getInt64(0)),
                                             SE.getUnknown(Builder.getInt64(1)),
@@ -2142,42 +1967,21 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
     S.invalidateScopArrayInfo(BasePtr, MemoryKind::Array);
   LocalArrays.clear();
 
-
-  errs() << "ORIGINAL SUBTREE VALUES:\n";
-  for (auto V : SubtreeValues) {
-      errs() << "\t-" << *V << "\n";
-  }
-  errs() << "===\n";
-
-  // Look for dead parameters and prune them among SubtreeValues
-  LiveArrayIdxsTy LiveArrayIdxs;
-  // std::tie(F, SubtreeValues, LiveArrayIdxs) =
-  //     removeDeadSubtreeValues(F, Prog, Kernel, SubtreeValues);
-
-  errs() << "NEW SUBTREE VALUES:\n";
-  for (auto V : SubtreeValues) {
-      errs() << "\t-" << *V << "\n";
-  }
-  errs() << "===\n";
-
   std::string ASMString = finalizeKernelFunction();
   Builder.SetInsertPoint(&HostInsertPoint);
   Value *Parameters;
 
   PerfMonitor *P = nullptr;
   if (polly::PerfMonitoring) {
-    P = new PerfMonitor(S, S.getFunction().getParent());
-    P->initialize();
+      P = new PerfMonitor(S, S.getFunction().getParent());
+      P->initialize();
   }
 
-
-  Parameters =
-      createLaunchParameters(Kernel, F, LiveArrayIdxs, SubtreeValues, P);
+  Parameters = createLaunchParameters(Kernel, F, SubtreeValues, P);
 
   // We see ~7% keping this here.
-  // if (polly::PerfMonitoring)  {
-  //    assert(P && "if perf monitoring is enabled, expect P to be
-  //    initialized");
+  //if (polly::PerfMonitoring)  {
+  //    assert(P && "if perf monitoring is enabled, expect P to be initialized");
   //    P->insertRegionEnd(Builder.GetInsertBlock()->getTerminator());
   //    delete P;
   //}
@@ -2189,8 +1993,7 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
 
   // We see ~11% keping this here.
   // if (polly::PerfMonitoring)  {
-  //     assert(P && "if perf monitoring is enabled, expect P to be
-  //     initialized");
+  //     assert(P && "if perf monitoring is enabled, expect P to be initialized");
   //     P->insertRegionEnd(Builder.GetInsertBlock()->getTerminator());
   //     delete P;
   // }
@@ -2198,14 +2001,15 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
   Value *GridDimX, *GridDimY;
   std::tie(GridDimX, GridDimY) = getGridSizes(Kernel);
 
+
   createCallLaunchKernel(GPUKernel, GridDimX, GridDimY, BlockDimX, BlockDimY,
                          BlockDimZ, Parameters);
 
   createCallFreeKernel(GPUKernel);
-  if (polly::PerfMonitoring) {
-    assert(P && "if perf monitoring is enabled, expect P to be initialized");
-    P->insertRegionEnd(Builder.GetInsertBlock()->getTerminator());
-    delete P;
+  if (polly::PerfMonitoring)  {
+      assert(P && "if perf monitoring is enabled, expect P to be initialized");
+      P->insertRegionEnd(Builder.GetInsertBlock()->getTerminator());
+      delete P;
   }
 
   for (auto Id : KernelIds)
@@ -2213,18 +2017,20 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
 
   KernelIds.clear();
 
-  {
-    size_t ParamsSize = 0;
-    for (Argument &Arg : F->args()) {
-      ParamsSize += DL.getTypeStoreSize(Arg.getType());
-      if (ParamsSize >= 4096) {
-        BuildSuccessful = 0;
-        errs().changeColor(raw_ostream::RED)
-            << "*** Bailing out: size of parameters is > 4K.\n";
-        errs().resetColor();
-        break;
+
+
+  { 
+      size_t ParamsSize = 0;
+      for(Argument &Arg : F->args()) {
+          ParamsSize += DL.getTypeStoreSize(Arg.getType());
+          if (ParamsSize >= 4096) { 
+              BuildSuccessful = 0; 
+              errs().changeColor(raw_ostream::RED) << "*** Bailing out: size of parameters is > 4K.\n";
+              errs().resetColor();
+              break;
+          }
       }
-    }
+
   };
 }
 
@@ -2577,13 +2383,11 @@ void GPUNodeBuilder::finalizeKernelArguments(ppcg_kernel *Kernel) {
     /// memory store or at least before each kernel barrier.
     if (Kernel->n_block != 0 || Kernel->n_grid != 0) {
       // BuildSuccessful = 0;
-      DEBUG(dbgs() << __PRETTY_FUNCTION__
-                   << "HACK: disabling bailout on StoredScalar\n";);
-      // DEBUG(
+      DEBUG(dbgs() << __PRETTY_FUNCTION__ << "HACK: disabling bailout on StoredScalar\n";);
+      //DEBUG(
       //    dbgs() << getUniqueScopName(&S)
       //           << " has a store to a scalar value that"
-      //              " would be undefined to run in parallel. Bailing
-      //              out.\n";);
+      //              " would be undefined to run in parallel. Bailing out.\n";);
     }
   }
 }
@@ -2673,6 +2477,8 @@ void GPUNodeBuilder::createKernelFunction(
 
   Function *FN = createKernelFunctionDecl(Kernel, SubtreeValues);
 
+
+
   switch (Arch) {
   case GPUArch::NVPTX64:
     if (Runtime == GPURuntime::CUDA)
@@ -2690,6 +2496,7 @@ void GPUNodeBuilder::createKernelFunction(
     GPUModule->setDataLayout(computeSPIRDataLayout(true /* is64Bit */));
     break;
   }
+
 
   BasicBlock *PrevBlock = Builder.GetInsertBlock();
   auto EntryBlock = BasicBlock::Create(Builder.getContext(), "entry", FN);
@@ -2839,18 +2646,20 @@ void GPUNodeBuilder::addCUDALibDevice() {
 }
 
 void countNumUnusedParamsInFunction(Function *F) {
-  static unsigned numUnusedParams = 0;
-  if (!F->getName().startswith("FUNC_"))
-    return;
+    static unsigned numUnusedParams = 0;
+    errs() << "*****" << __PRETTY_FUNCTION__ << "numUnusedParams(before): " << numUnusedParams << "\n";
+    if (!F->getName().startswith("FUNC_")) return;
 
-  assert(!F->isDeclaration() && "kernel function should be a definition");
-  for (Argument &A : F->args()) {
-    if (A.user_empty()) {
-      numUnusedParams++;
+    assert(!F->isDeclaration() && "kernel function should be a definition");
+    errs() << __PRETTY_FUNCTION__ << ":" <<__LINE__ << "- " << F->getName() << "\n";
+    for(Argument &A : F->args()) {
+        errs() << __PRETTY_FUNCTION__ << ":" <<__LINE__ << "\t-Arg: " << A.getName() << "\n";
+        if (A.user_empty()) {
+            errs() << "\t\tunused.\n";
+            numUnusedParams++;
+        }
     }
-  }
-  errs() <<__PRETTY_FUNCTION__
-         << "numUnusedParams(after): " << numUnusedParams << "\n";
+    errs() << "*****" << __PRETTY_FUNCTION__ << "numUnusedParams(after): " << numUnusedParams << "\n";
 }
 
 std::string GPUNodeBuilder::finalizeKernelFunction() {
@@ -2884,6 +2693,20 @@ std::string GPUNodeBuilder::finalizeKernelFunction() {
     return "";
   }
 
+  // { 
+  //     Module *Host = S.getFunction().getParent();
+  //     if (verifyModule(*Host) == 1) {
+  //         //     DEBUG(dbgs() << "verifyModule for host failed on function:\n";
+  //         //             S.getRegion().print(dbgs()); dbgs() << "\n";);
+  //         DEBUG(dbgs() << "verifyModule Error on host side:\n";
+  //                  verifyModule(*Host, &dbgs()));
+  //         S.getRegion().print(errs(), true, 0, Region::PrintRN);
+  //         if (FailOnHostVerifyModuleFailure) {
+  //             llvm_unreachable("VerifyModule on host side failed.");
+  //         }
+  //     }
+  // };
+
   addCUDALibDevice();
 
   if (DumpKernelIR)
@@ -2898,9 +2721,10 @@ std::string GPUNodeBuilder::finalizeKernelFunction() {
     PassBuilder.populateModulePassManager(OptPasses);
     OptPasses.run(*GPUModule);
   }
+   
 
   for (Function &F : *GPUModule) {
-    countNumUnusedParamsInFunction(&F);
+      countNumUnusedParamsInFunction(&F);
   };
 
   std::string Assembly = createKernelASM();
@@ -3041,8 +2865,7 @@ public:
     return Options;
   }
 
-  /// Get a tagged access relation containing all accesses of type @p
-  /// AccessTy.
+  /// Get a tagged access relation containing all accesses of type @p AccessTy.
   ///
   /// Instead of a normal access of the form:
   ///
@@ -3136,10 +2959,10 @@ public:
 
   /// Create a new PPCG scop from the current scop.
   ///
-  /// The PPCG scop is initialized with data from the current polly::Scop.
-  /// From this initial data, the data-dependences in the PPCG scop are
-  /// initialized. We do not use Polly's dependence analysis for now, to
-  /// ensure we match the PPCG default behaviour more closely.
+  /// The PPCG scop is initialized with data from the current polly::Scop. From
+  /// this initial data, the data-dependences in the PPCG scop are initialized.
+  /// We do not use Polly's dependence analysis for now, to ensure we match
+  /// the PPCG default behaviour more closely.
   ///
   /// @returns A new ppcg scop.
   ppcg_scop *createPPCGScop() {
@@ -3260,8 +3083,8 @@ public:
   /// The extent of an array is the set of elements that are within the
   /// accessed array. For the inner dimensions, the extent constraints are
   /// 0 and the size of the corresponding array dimension. For the first
-  /// (outermost) dimension, the extent constraints are the minimal and
-  /// maximal subscript value for the first dimension.
+  /// (outermost) dimension, the extent constraints are the minimal and maximal
+  /// subscript value for the first dimension.
   ///
   /// @param Array The array to derive the extent for.
   ///
@@ -3329,8 +3152,8 @@ public:
   /// Derive the bounds of an array.
   ///
   /// For the first dimension we derive the bound of the array from the extent
-  /// of this dimension. For inner dimensions we obtain their size directly
-  /// from ScopArrayInfo.
+  /// of this dimension. For inner dimensions we obtain their size directly from
+  /// ScopArrayInfo.
   ///
   /// @param PPCGArray The array to compute bounds for.
   /// @param Array The polly array from which to take the information.
@@ -3404,8 +3227,7 @@ public:
     /// Scop::Context is _not_ an appropriate space, because when we have
     /// `-polly-ignore-parameter-bounds` enabled, the Scop::Context does not
     /// contain all parameter dimensions.
-    /// So, use the helper `alignPwAffs` to align all the `isl_pw_aff`
-    /// together.
+    /// So, use the helper `alignPwAffs` to align all the `isl_pw_aff` together.
     isl_space *SeedAlignSpace = S->getFullParamSpace().release();
     SeedAlignSpace = isl_space_add_dims(SeedAlignSpace, isl_dim_set, 1);
     SeedAlignSpace = isl_space_align_params(
@@ -3742,8 +3564,7 @@ public:
   /// Approximate the number of points in the set.
   ///
   /// This function returns an ast expression that overapproximates the number
-  /// of points in an isl set through the rectangular hull surrounding this
-  /// set.
+  /// of points in an isl set through the rectangular hull surrounding this set.
   ///
   /// @param Set   The set to count.
   /// @param Build The isl ast build object to use for creating the ast
@@ -3869,8 +3690,7 @@ public:
     return false;
   }
 
-  /// Return whether the Scop S uses functions in a way that we do not
-  /// support.
+  /// Return whether the Scop S uses functions in a way that we do not support.
   bool containsInvalidKernelFunction(const Scop &S, bool AllowCUDALibDevice) {
     for (auto &Stmt : S) {
       if (Stmt.isBlockStmt()) {
@@ -3934,21 +3754,19 @@ public:
     // preload invariant loads. Note: This should happen before the RTC
     // because the RTC may depend on values that are invariant load hoisted.
     if (!NodeBuilder.preloadInvariantLoads()) {
-      errs() << __PRETTY_FUNCTION__ << "\n"
-             << "***** preloading invariant loads failed in function: ";
+      errs() << __PRETTY_FUNCTION__<< "\n" <<  "***** preloading invariant loads failed in function: ";
       assert(false);
-      // Patch the introduced branch condition to ensure that we always
-      // execute the original SCoP.
+      // Patch the introduced branch condition to ensure that we always execute
+      // the original SCoP.
       auto *FalseI1 = Builder.getFalse();
       auto *SplitBBTerm = Builder.GetInsertBlock()->getTerminator();
       SplitBBTerm->setOperand(0, FalseI1);
 
       DEBUG(dbgs() << "preloading invariant loads failed in function: " +
                           S->getFunction().getName() +
-                          " | Scop Region: " + S->getNameStr()
-                   << "*****\n");
+                          " | Scop Region: " + S->getNameStr() << "*****\n");
 
-      // assert(false && " | bailing out.");
+      //assert(false && " | bailing out.");
 
       // adjust the dominator tree accordingly.
       auto *ExitingBlock = StartBlock->getUniqueSuccessor();
@@ -3983,9 +3801,8 @@ public:
     /// kernel, the SCoP is probably mostly sequential. Hence, there is no
     /// point in running it on a GPU.
     if (NodeBuilder.DeepestSequential > NodeBuilder.DeepestParallel) {
-      errs() << "HACK: NOT DOING: NodeBuilder.DeepestSequential > "
-                "NodeBuilder.DeepestParallel. Setting build success to 0";
-      // report_fatal_error("dying because branch set to 0");
+        errs() << "HACK: NOT DOING: NodeBuilder.DeepestSequential > NodeBuilder.DeepestParallel. Setting build success to 0";
+        // report_fatal_error("dying because branch set to 0");
       // CondBr->setOperand(0, Builder.getFalse());
     }
 
@@ -3994,24 +3811,25 @@ public:
   }
 
   bool isAllowedScop(int n) {
-    for (auto i : AllowedScops)
-      if (n == i)
-        return true;
-    if (AllowedScops.size() == 0)
-      return true;
+	  for (auto i: AllowedScops) 
+		  if (n == i) return true;
+      if (AllowedScops.size() == 0) return true;
 
-    return false;
+	  return false;
   }
 
+
+
   bool runOnScop(Scop &CurrentScop) override {
-    if (HackBailPPCGCodeGenRunOnScop) {
-      errs() << __PRETTY_FUNCTION__ << " | bailing out of runOnScop()\n";
-      errs().flush();
-      return true;
-    } else {
-      errs() << __PRETTY_FUNCTION__ << " |**RUNNING** on runOnScop()\n";
-      errs().flush();
-    }
+      if (HackBailPPCGCodeGenRunOnScop) {
+          errs() << __PRETTY_FUNCTION__ << " | bailing out of runOnScop()\n";
+          errs().flush();
+          return true;
+      }
+      else {
+          errs() << __PRETTY_FUNCTION__ << " |**RUNNING** on runOnScop()\n";
+          errs().flush();
+      }
     S = &CurrentScop;
     LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
     DT = &getAnalysis<DominatorTreeWrapperPass>().getDomTree();
@@ -4023,27 +3841,26 @@ public:
     ScopNumber++;
 
     errs() << "PPCGCodeGen running on : " << getUniqueScopName(S)
-           << " | count: " << ScopNumber << " "
-           << " | loop depth: " << S->getMaxLoopDepth() << "\n";
+                 << " | count: " <<ScopNumber << " "
+                 << " | loop depth: " << S->getMaxLoopDepth() << "\n";
 
     if (!isAllowedScop(ScopNumber)) {
-      errs() << "Scop not allowed (" << getUniqueScopName(S)
-             << "). Skipping!\n";
-      return false;
-    } else {
-      errs() << "Scop allowed (" << getUniqueScopName(S)
-             << "). Continuing...\n";
-      // errs() << CurrentScop << "\n";
-      // errs() << "\n====\n";
+        errs() << "Scop not allowed (" << getUniqueScopName(S) << "). Skipping!\n";
+        return false;
+    } 
+    else {
+        errs() << "Scop allowed (" << getUniqueScopName(S) << "). Continuing...\n";
+        // errs() << CurrentScop << "\n";
+        // errs() << "\n====\n";
     }
 
     if (DumpScop)
-      errs() << "\n====\n" << CurrentScop << "\n=====\n";
+        errs() << "\n====\n" << CurrentScop << "\n=====\n";
 
     // We currently do not support functions other than intrinsics inside
     // kernels, as code generation will need to offload function calls to the
-    // kernel. This may lead to a kernel trying to call a function on the
-    // host. This also allows us to prevent codegen from trying to take the
+    // kernel. This may lead to a kernel trying to call a function on the host.
+    // This also allows us to prevent codegen from trying to take the
     // address of an intrinsic function to send to the kernel.
     if (containsInvalidKernelFunction(CurrentScop,
                                       Architecture == GPUArch::NVPTX64)) {
