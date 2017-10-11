@@ -2003,7 +2003,7 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
   int NumVars = isl_space_dim(Kernel->space, isl_dim_param);
 
   for (long i = 0; i < NumVars; i++) {
-      if (!LiveVarIdxs[i]) continue;
+      if (BoolRemoveDeadSubtreeValues && !LiveVarIdxs[i]) continue;
     isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_param, i);
     Value *Val = IDToValue[Id];
     if (ValueMap.count(Val))
