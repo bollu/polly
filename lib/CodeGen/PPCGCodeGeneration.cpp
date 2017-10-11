@@ -76,10 +76,11 @@ static cl::opt<bool> DumpSchedule("polly-acc-dump-schedule",
                                   cl::Hidden, cl::init(false), cl::ZeroOrMore,
                                   cl::cat(PollyCategory));
 
-static cl::opt<bool> BoolRemoveDeadSubtreeValues("pollly-acc-hack-prune-dead-subtree-values",
-                                  cl::desc("Dump the computed GPU Schedule"),
-                                  cl::Hidden, cl::init(false), cl::ZeroOrMore,
-                                  cl::cat(PollyCategory));
+static cl::opt<bool>
+    BoolRemoveDeadSubtreeValues("pollly-acc-hack-prune-dead-subtree-values",
+                                cl::desc("Dump the computed GPU Schedule"),
+                                cl::Hidden, cl::init(false), cl::ZeroOrMore,
+                                cl::cat(PollyCategory));
 
 static cl::opt<bool>
     DumpCode("polly-acc-dump-code",
@@ -215,7 +216,8 @@ static Function *createPollyAbstractIndexFunction(Module &M,
 
 // Large parts stolen from DeadArgumentElimination
 using LiveArrayIdxsTy = std::vector<bool>;
-std::tuple<Function *, SetVector<Value *>, LiveArrayIdxsTy>
+using LiveVarIdxsTy = std::vector<bool>;
+std::tuple<Function *, SetVector<Value *>, LiveArrayIdxsTy, LiveVarIdxsTy>
 removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
                         SetVector<Value *> SubtreeValues) {
   // Run -O3 against F so we can check which parameters are unused.
@@ -239,12 +241,10 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
   const unsigned NumHostIters = isl_space_dim(Kernel->space, isl_dim_set);
   const unsigned NumVars = isl_space_dim(Kernel->space, isl_dim_param);
 
-
   std::vector<Argument *> OldArgs;
   for (Argument &A : F->args()) {
     OldArgs.push_back(&A);
   }
-
 
   // SmallVector<Argument *, 4> LiveSubtreeArgs;
   // SmallVector<unsigned, 4> LiveSubtreeIndeces;
@@ -257,8 +257,9 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
     for (int i = 0; i < NumUsedArrays; i++, oldidx++) {
       Argument *A = OldArgs[oldidx];
       errs() << "Array: " << *A << "\n";
-      if (A->user_empty())  {
-        errs() << __FUNCTION__ << "|Skipping array: " << oldidx << " |"<< *A << "\n";
+      if (A->user_empty()) {
+        errs() << __FUNCTION__ << "|Skipping array: " << oldidx << " |" << *A
+               << "\n";
         liveArrayIdxs[oldidx] = false;
       } else {
         liveArrayIdxs[oldidx] = true;
@@ -269,11 +270,21 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
     // Step 1. Setup a 1:1 mapping between old to new indeces.
     // If an old index does not exist as a key, then this means that
     // it is no longer required (is dead)
-    for (int i = 0; i < NumHostIters + NumVars; i++, oldidx++) {
+    for (int i = 0; i < NumHostIters; i++, oldidx++) {
       OldToNewIndex[oldidx] = newidx++;
     }
 
-    for (int i = 0; i < SubtreeValues.size(); oldidx++,i++) {
+    LiveVarIdxsTy LiveVarIdxs(NumVars, true);
+    for (int i = 0; i < NumVars; i++, oldidx++) {
+      if (A->user_empty()) {
+        LiveVarIdxs[i] = false;
+      } else {
+          LiveVarIdxs[i] = true;
+          OldToNewIndex[oldidx] = newidx++;
+        }
+      }
+
+    for (int i = 0; i < SubtreeValues.size(); oldidx++, i++) {
       assert(oldidx < OldArgs.size() && "invalid index");
       assert(oldidx >= 0 && "invalid index");
 
@@ -304,7 +315,8 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
   }
   errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
 
-  // TODO: figure out correct assert.assert(NewSubtreeValues.size() == newidx);
+  // TODO: figure out correct assert.assert(NewSubtreeValues.size() ==
+  // newidx);
 
   FunctionType *FNewTy = FunctionType::get(F->getReturnType(), NewFArgTys,
                                            /*variadic=*/false);
@@ -342,8 +354,8 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
   // function empty.
   FNew->getBasicBlockList().splice(FNew->begin(), F->getBasicBlockList());
 
-  // Loop over the argument list, transferring uses of the old arguments over to
-  // the new arguments, also transferring over the names as well.
+  // Loop over the argument list, transferring uses of the old arguments over
+  // to the new arguments, also transferring over the names as well.
   for (auto It : OldToNewIndex) {
     const unsigned oldidx = It.first;
     const unsigned newidx = It.second;
@@ -358,7 +370,7 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
   FNew->setSubprogram(F->getSubprogram());
   F->eraseFromParent();
 
-  return std::make_tuple(FNew, NewSubtreeValues, liveArrayIdxs);
+  return std::make_tuple(FNew, NewSubtreeValues, liveArrayIdxs, LiveVarIdxs);
 }
 
 /// Used to store information PPCG wants for kills. This information is
@@ -714,6 +726,7 @@ private:
   ///          values that are passed to the kernel.
   Value *createLaunchParameters(ppcg_kernel *Kernel, Function *F,
                                 LiveArrayIdxsTy LiveArrayIdxs,
+                                LiveVarIdxsTy LiveVarIdxs,
                                 SetVector<Value *> SubtreeValues,
                                 PerfMonitor *P);
 
@@ -1868,6 +1881,7 @@ void GPUNodeBuilder::insertStoreParameter(Instruction *Parameters,
 
 Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
                                               LiveArrayIdxsTy LiveArrayIdxs,
+                                              LiveVarIdxsTy LiveVarIdxs,
                                               SetVector<Value *> SubtreeValues,
                                               PerfMonitor *P) {
   const int NumArgs = F->arg_size();
@@ -2146,23 +2160,23 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
     S.invalidateScopArrayInfo(BasePtr, MemoryKind::Array);
   LocalArrays.clear();
 
-
   errs() << "ORIGINAL SUBTREE VALUES:\n";
   for (auto V : SubtreeValues) {
-      errs() << "\t-" << *V << "\n";
+    errs() << "\t-" << *V << "\n";
   }
   errs() << "===\n";
 
   // Look for dead parameters and prune them among SubtreeValues
   LiveArrayIdxsTy LiveArrayIdxs;
+  LiveVarIdxsTy LiveVarIdxs;
   if (BoolRemoveDeadSubtreeValues) {
-      std::tie(F, SubtreeValues, LiveArrayIdxs) =
-          removeDeadSubtreeValues(F, Prog, Kernel, SubtreeValues);
+    std::tie(F, SubtreeValues, LiveArrayIdxs, LiveVarIdxs) =
+        removeDeadSubtreeValues(F, Prog, Kernel, SubtreeValues);
   };
 
   errs() << "NEW SUBTREE VALUES:\n";
   for (auto V : SubtreeValues) {
-      errs() << "\t-" << *V << "\n";
+    errs() << "\t-" << *V << "\n";
   }
   errs() << "===\n";
 
@@ -2176,9 +2190,8 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
     P->initialize();
   }
 
-
-  Parameters =
-      createLaunchParameters(Kernel, F, LiveArrayIdxs, SubtreeValues, P);
+  Parameters = createLaunchParameters(Kernel, F, LiveArrayIdxs, LiveVarIdxs,
+                                      SubtreeValues, P);
 
   // We see ~7% keping this here.
   // if (polly::PerfMonitoring)  {
@@ -2855,8 +2868,8 @@ void countNumUnusedParamsInFunction(Function *F) {
       numUnusedParams++;
     }
   }
-  errs() <<__PRETTY_FUNCTION__
-         << "numUnusedParams(after): " << numUnusedParams << "\n";
+  errs() << __PRETTY_FUNCTION__ << "numUnusedParams(after): " << numUnusedParams
+         << "\n";
 }
 
 std::string GPUNodeBuilder::finalizeKernelFunction() {
