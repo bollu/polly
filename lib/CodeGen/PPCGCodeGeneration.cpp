@@ -2647,15 +2647,11 @@ void GPUNodeBuilder::addCUDALibDevice() {
 
 void countNumUnusedParamsInFunction(Function *F) {
     static unsigned numUnusedParams = 0;
-    errs() << "*****" << __PRETTY_FUNCTION__ << "numUnusedParams(before): " << numUnusedParams << "\n";
     if (!F->getName().startswith("FUNC_")) return;
 
     assert(!F->isDeclaration() && "kernel function should be a definition");
-    errs() << __PRETTY_FUNCTION__ << ":" <<__LINE__ << "- " << F->getName() << "\n";
     for(Argument &A : F->args()) {
-        errs() << __PRETTY_FUNCTION__ << ":" <<__LINE__ << "\t-Arg: " << A.getName() << "\n";
         if (A.user_empty()) {
-            errs() << "\t\tunused.\n";
             numUnusedParams++;
         }
     }
