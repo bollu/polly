@@ -239,15 +239,12 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
   const unsigned NumHostIters = isl_space_dim(Kernel->space, isl_dim_set);
   const unsigned NumVars = isl_space_dim(Kernel->space, isl_dim_param);
 
-  const unsigned NParamsTillSubtreeVals =
-      NumHostIters + NumVars + NumUsedArrays;
 
   std::vector<Argument *> OldArgs;
   for (Argument &A : F->args()) {
     OldArgs.push_back(&A);
   }
 
-  const unsigned NOldParams = NParamsTillSubtreeVals + SubtreeValues.size();
 
   // SmallVector<Argument *, 4> LiveSubtreeArgs;
   // SmallVector<unsigned, 4> LiveSubtreeIndeces;
@@ -257,7 +254,7 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
   {
     unsigned oldidx = 0, newidx = 0;
 
-    for (; oldidx < NumUsedArrays; oldidx++) {
+    for (int i = 0; i < NumUsedArrays; i++, oldidx++) {
       Argument *A = OldArgs[oldidx];
       errs() << "Array: " << *A << "\n";
       if (A->user_empty())  {
@@ -272,22 +269,25 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
     // Step 1. Setup a 1:1 mapping between old to new indeces.
     // If an old index does not exist as a key, then this means that
     // it is no longer required (is dead)
-    for (; oldidx < NParamsTillSubtreeVals; oldidx++) {
+    for (int i = 0; i < NumHostIters + NumVars; i++, oldidx++) {
       OldToNewIndex[oldidx] = newidx++;
     }
 
-    for (; oldidx < NOldParams; oldidx++) {
+    for (int i = 0; i < SubtreeValues.size(); oldidx++,i++) {
       assert(oldidx < OldArgs.size() && "invalid index");
       assert(oldidx >= 0 && "invalid index");
 
       Argument *A = OldArgs[oldidx];
       if (!A->user_empty()) {
-        NewSubtreeValues.insert(SubtreeValues[oldidx - NParamsTillSubtreeVals]);
+        NewSubtreeValues.insert(SubtreeValues[i]);
         OldToNewIndex[oldidx] = newidx++;
       } else {
         errs() << "-" << *A << " is empty!\n";
       }
     }
+
+    assert(oldidx == OldArgs.size());
+    assert(newidx <= OldArgs.size());
   };
 
   errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
