@@ -76,6 +76,11 @@ static cl::opt<bool> DumpSchedule("polly-acc-dump-schedule",
                                   cl::Hidden, cl::init(false), cl::ZeroOrMore,
                                   cl::cat(PollyCategory));
 
+static cl::opt<bool> BoolRemoveDeadSubtreeValues("pollly-acc-hack-prune-dead-subtree-values",
+                                  cl::desc("Dump the computed GPU Schedule"),
+                                  cl::Hidden, cl::init(false), cl::ZeroOrMore,
+                                  cl::cat(PollyCategory));
+
 static cl::opt<bool>
     DumpCode("polly-acc-dump-code",
              cl::desc("Dump C code describing the GPU mapping"), cl::Hidden,
@@ -1896,8 +1901,7 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
   for (long i = 0; i < Prog->n_array; i++) {
     if (!ppcg_kernel_requires_array_argument(Kernel, i))
       continue;
-    // if (!LiveArrayIdxs[IndexUsedArray]) {
-    if (false) {
+    if (BoolRemoveDeadSubtreeValues && !LiveArrayIdxs[IndexUsedArray]) {
       errs() << __PRETTY_FUNCTION__ << " |Skipping array : " << IndexUsedArray
              << "\n";
       IndexUsedArray++;
@@ -2151,8 +2155,10 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
 
   // Look for dead parameters and prune them among SubtreeValues
   LiveArrayIdxsTy LiveArrayIdxs;
-  // std::tie(F, SubtreeValues, LiveArrayIdxs) =
-  //     removeDeadSubtreeValues(F, Prog, Kernel, SubtreeValues);
+  if (BoolRemoveDeadSubtreeValues) {
+      std::tie(F, SubtreeValues, LiveArrayIdxs) =
+          removeDeadSubtreeValues(F, Prog, Kernel, SubtreeValues);
+  };
 
   errs() << "NEW SUBTREE VALUES:\n";
   for (auto V : SubtreeValues) {
