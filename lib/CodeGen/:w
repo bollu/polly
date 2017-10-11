@@ -2211,7 +2211,7 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
 
   {
       PassManagerBuilder PassBuilder;
-      PassBuilder.OptLevel = 3;
+      PassBuilder.OptLevel = 1;
       PassBuilder.SizeLevel = 3;
       PassBuilder.LoopVectorize = false;
       PassBuilder.SLPVectorize = false;
@@ -2419,12 +2419,6 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
   auto *FT = FunctionType::get(Builder.getVoidTy(), Args, false);
   auto *FN = Function::Create(FT, Function::ExternalLinkage, Identifier,
                               GPUModule.get());
-
-  for(unsigned i = 0; i < FT->getNumParams(); i++) {
-      if (!isa<PointerType>(FT->getParamType(i))) continue;
-      FN->addParamAttr(i, llvm::Attribute::NonNull);
-      FN->addParamAttr(i, llvm::Attribute::NoCapture);
-  }
 
   std::vector<Metadata *> EmptyStrings;
 
@@ -2972,8 +2966,8 @@ std::string GPUNodeBuilder::createKernelASM() {
     PassManagerBuilder PassBuilder;
     TargetM->adjustPassManager(PassBuilder);
 
-    PassBuilder.OptLevel = 3;
-    PassBuilder.SizeLevel = 3;
+    PassBuilder.OptLevel = 0;
+    PassBuilder.SizeLevel = 0;
     PassBuilder.LoopVectorize = false;
     PassBuilder.SLPVectorize = false;
 
