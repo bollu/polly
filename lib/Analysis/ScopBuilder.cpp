@@ -720,11 +720,18 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
 
   std::vector<const SCEV *> Subscripts;
   std::vector<const SCEV *> Strides;
+  Loop *SurroundingLoop = Stmt->getSurroundingLoop();
+  InvariantLoadsSetTy AccessILS;
 
   if (isa<UndefValue>(Call->getArgOperand(0)))
     return false;
 
   const SCEV *Offset = SE.getSCEV(Call->getArgOperand(0));
+  if (!isAffineExpr(&scop->getRegion(), SurroundingLoop, Offset, SE,
+                    &AccessILS)) {
+    return false;
+  }
+
   if (AbstractMatrixDebug)
     errs() << "Offset: " << *Offset << "\n";
 
@@ -734,6 +741,13 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
   GlobalValue *FAD = nullptr;
   for (int i = 0; i < NArrayDims; i++) {
     Value *Ix = Call->getArgOperand(1 + NArrayDims + i);
+    const SCEV *IxSCEV = SE.getSCEV(Ix);
+
+    if (!isAffineExpr(&scop->getRegion(), SurroundingLoop, IxSCEV, SE,
+                      &AccessILS)) {
+      return false;
+    }
+
     Value *Stride = Call->getArgOperand(1 + i);
     if (isa<UndefValue>(Ix) || isa<UndefValue>(Stride))
       return false;
@@ -742,6 +756,10 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
       errs() << i << " |Raw Ix: " << *Ix << " |Raw Stride: " << *Stride << "\n";
     Subscripts.push_back(SE.getSCEV(Ix));
     const SCEV *StrideSCEV = SE.getSCEV(Stride);
+    if (!isAffineExpr(&scop->getRegion(), SurroundingLoop, StrideSCEV, SE,
+                      &AccessILS)) {
+      return false;
+    }
 
     // Try to get an FAD from a stride.
     if (!isa<SCEVConstant>(StrideSCEV) && FAD == nullptr) {
