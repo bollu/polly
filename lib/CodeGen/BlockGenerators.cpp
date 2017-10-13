@@ -130,6 +130,7 @@ Value *BlockGenerator::getNewValue(ScopStmt &Stmt, Value *Old, ValueMapT &BBMap,
     break;
 
   case VirtualUse::Constant:
+    errs() << "VirtualUse::Constant\n";
     // Used by:
     // * Isl/CodeGen/OpenMP/reference-argument-from-non-affine-region.ll
     // Constants should not be redefined. In this case, the GlobalMap just
@@ -143,6 +144,7 @@ Value *BlockGenerator::getNewValue(ScopStmt &Stmt, Value *Old, ValueMapT &BBMap,
     break;
 
   case VirtualUse::ReadOnly:
+    errs() << "VirtualUse::ReadOnly\n";
     assert(!GlobalMap.count(Old));
 
     // Required for:
@@ -163,6 +165,7 @@ Value *BlockGenerator::getNewValue(ScopStmt &Stmt, Value *Old, ValueMapT &BBMap,
     break;
 
   case VirtualUse::Synthesizable:
+    errs() << "VirtualUse::Synthesizable\n";
     // Used by:
     // * Isl/CodeGen/OpenMP/loop-body-references-outer-values-3.ll
     // * Isl/CodeGen/OpenMP/recomputed-srem.ll
@@ -172,8 +175,11 @@ Value *BlockGenerator::getNewValue(ScopStmt &Stmt, Value *Old, ValueMapT &BBMap,
     // are the same as trySynthesizeNewValue would return. The legacy
     // implementation prioritized GlobalMap, so this is what we do here as well.
     // Ideally, synthesizable values should not end up in GlobalMap.
-    if ((New = lookupGlobally(Old)))
+    if ((New = lookupGlobally(Old))) {
+      errs() << "\t\tfound New in GlobalMap!" << " | Old: " << *Old << "|New: " << *New << "\n";
       break;
+    }
+      errs() << "\t\tdid *not* New in GlobalMap!" << " | Old: " << *Old << "|New: EMPTY\n";
 
     // Required for:
     // * Isl/CodeGen/RuntimeDebugBuilder/combine_different_values.ll
@@ -191,6 +197,7 @@ Value *BlockGenerator::getNewValue(ScopStmt &Stmt, Value *Old, ValueMapT &BBMap,
     break;
 
   case VirtualUse::Hoisted:
+    errs() << "VirtualUse::Hoisted\n";
     // TODO: Hoisted invariant loads should be found in GlobalMap only, but not
     // redefined locally (which will be ignored anyway). That is, the following
     // assertion should apply: assert(!BBMap.count(Old))
@@ -200,6 +207,7 @@ Value *BlockGenerator::getNewValue(ScopStmt &Stmt, Value *Old, ValueMapT &BBMap,
 
   case VirtualUse::Intra:
   case VirtualUse::Inter:
+    errs() << "VirtualUse::Intra | Inter\n";
     assert(!GlobalMap.count(Old) &&
            "Intra and inter-stmt values are never global");
     New = BBMap.lookup(Old);
@@ -218,11 +226,16 @@ void BlockGenerator::copyInstScalar(ScopStmt &Stmt, Instruction *Inst,
     return;
 
   Instruction *NewInst = Inst->clone();
+  errs() << "===\n";
+  errs() << "* Copying: " << *NewInst << "\n";
 
   // Replace old operands with the new ones.
   for (Value *OldOperand : Inst->operands()) {
     Value *NewOperand =
         getNewValue(Stmt, OldOperand, BBMap, LTS, getLoopForStmt(Stmt));
+
+    errs() << "-\n";
+    errs() << "\tOld: " << *OldOperand << "\n\tNew: " << *NewOperand << "\n";
 
     if (!NewOperand) {
       assert(!isa<StoreInst>(NewInst) &&
@@ -733,7 +746,7 @@ void BlockGenerator::createScalarInitialization(Scop &S) {
     auto *Inst = dyn_cast<Instruction>(Array->getBasePtr());
 
     if (Inst && S.contains(Inst))
-     continue;
+      continue;
 
     // PHI nodes that are not marked as such in their SAI object are either exit
     // PHI nodes we model as common scalars but without initialization, or

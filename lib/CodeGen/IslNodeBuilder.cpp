@@ -961,6 +961,7 @@ void IslNodeBuilder::createSubstitutionsVector(
 
 void IslNodeBuilder::generateCopyStmt(
     ScopStmt *Stmt, __isl_keep isl_id_to_ast_expr *NewAccesses) {
+    errs() << __PRETTY_FUNCTION__ << "\n";
   assert(Stmt->size() == 2);
   auto ReadAccess = Stmt->begin();
   auto WriteAccess = ReadAccess++;
@@ -1054,6 +1055,7 @@ void IslNodeBuilder::create(__isl_take isl_ast_node *Node) {
 }
 
 bool IslNodeBuilder::materializeValue(isl_id *Id) {
+    errs() << __FUNCTION__; isl_id_dump(Id); errs() << "\n";
   // If the Id is already mapped, skip it.
   if (!IDToValue.count(Id)) {
     auto *ParamSCEV = (const SCEV *)isl_id_get_user(Id);
