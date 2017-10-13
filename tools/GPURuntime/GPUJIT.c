@@ -986,6 +986,16 @@ static CuCtxGetCurrentFcnTy *CuCtxGetCurrentFcnPtr;
 typedef CUresult CUDAAPI CuDeviceGetFcnTy(CUdevice *, int);
 static CuDeviceGetFcnTy *CuDeviceGetFcnPtr;
 
+typedef CUresult CUDAAPI CuMemPrefetchAsyncTy(CUdevice *, uint64_t, CUdevice, CUstream);
+static CuMemPrefetchAsyncTy *CuMemPrefetchAsyncFcnPtr;
+
+
+#define CUmem_advise unsigned
+#define CU_MEM_ADVISE_SET_READ_MOSTLY  1
+#define CU_MEM_ADVISE_SET_PREFERRED_LOCATION  3
+#define CU_MEM_ADVISE_SET_ACCESSED_BY 5
+typedef CUresult CUDAAPI CuMemAdviseTy(CUdevice *, size_t, CUmem_advise, CUdevice);
+static CuMemAdviseTy *CuMemAdviseFcnPtr;
 typedef CUresult CUDAAPI CuModuleLoadDataExFcnTy(CUmodule *, const void *,
                                                  unsigned int, CUjit_option *,
                                                  void **);
@@ -1114,6 +1124,12 @@ static int initialDeviceAPIsCUDA() {
 
   CuDeviceGetFcnPtr =
       (CuDeviceGetFcnTy *)getAPIHandleCUDA(HandleCuda, "cuDeviceGet");
+
+  CuMemPrefetchAsyncFcnPtr =
+      (CuMemPrefetchAsyncTy *)getAPIHandleCUDA(HandleCuda, "cuMemPrefetchAsync");
+
+  CuMemAdviseFcnPtr =
+      (CuMemAdviseTy *)getAPIHandleCUDA(HandleCuda, "cuMemAdvise");
 
   CuCtxCreateFcnPtr =
       (CuCtxCreateFcnTy *)getAPIHandleCUDA(HandleCuda, "cuCtxCreate_v2");
@@ -1441,7 +1457,7 @@ char *g_virtual_managedmem_sp = NULL;
 #define  KB 1024l
 #define  MB 1024l * KB
 #define  GB 1024l * MB
-#define  STACK_SIZE 5l * GB
+#define  STACK_SIZE 15l * GB
 
 
 __attribute__((constructor)) static void initVirtualManagedMemStack() {
@@ -1873,6 +1889,17 @@ void *polly_mallocManaged(size_t size) {
 
 #ifdef HAS_LIBCUDART
   void *mem =  mallocManagedCUDA(size);
+  // size = (size / 32 + 1) * 32;
+  // if (size <= 16) {
+  //     CuMemAdviseFcnPtr(mem, size, CU_MEM_ADVISE_SET_READ_MOSTLY , -1); 
+  //     CuMemAdviseFcnPtr(mem, size, CU_MEM_ADVISE_SET_ACCESSED_BY, -1);
+  //     CuMemAdviseFcnPtr(mem, size, CU_MEM_ADVISE_SET_PREFERRED_LOCATION, -1);
+  // }
+  // 
+  //  if (size >= 1024) { 
+  //     // cumemadvisefcnptr(mem, size, cu_mem_advise_set_accessed_by, -1);
+  //      CuMemAdviseFcnPtr(mem, size, CU_MEM_ADVISE_SET_PREFERRED_LOCATION, -1);
+  // }
   /* fprintf(stderr, "\tMallocManaged: %zu | %p \n", size, mem); */
  return mem;
 #else

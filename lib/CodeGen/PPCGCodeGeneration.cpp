@@ -1978,6 +1978,7 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
   }
 
   Parameters = createLaunchParameters(Kernel, F, SubtreeValues, P);
+  //createDataTransferHints();
 
   // We see ~7% keping this here.
   //if (polly::PerfMonitoring)  {
@@ -3486,7 +3487,7 @@ public:
 
     isl_schedule *Schedule = get_schedule(PPCGGen);
 
-    int has_permutable = has_any_permutable_node(Schedule);
+    int has_permutable = has_any_permutable_node(Schedule) || 1;
 
     Schedule =
         isl_schedule_align_params(Schedule, S->getFullParamSpace().release());
@@ -3494,7 +3495,7 @@ public:
     // report_fatal_error("see full param space");
     //
 
-    if (!has_permutable || has_permutable < 0) {
+    if (!has_permutable || has_permutable < 0 ) {
       Schedule = isl_schedule_free(Schedule);
       DEBUG(dbgs() << getUniqueScopName(S)
                    << " does not have permutable bands. Bailing out\n";);

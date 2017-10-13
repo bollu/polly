@@ -255,8 +255,16 @@ private:
     if (!Inst || !R.contains(Inst))
       return E;
 
-    assert(!Inst->mayThrow() && !Inst->mayReadOrWriteMemory() &&
-           !isa<PHINode>(Inst));
+    const bool Valid = !Inst->mayThrow() && !Inst->mayReadOrWriteMemory() &&
+                       !isa<PHINode>(Inst);
+
+    if (!Valid) {
+      errs() << __PRETTY_FUNCTION__ << ":" << __LINE__
+             << ":: "
+                "Inst: "
+             << *Inst << "\n";
+    }
+    assert(Valid);
 
     auto *InstClone = Inst->clone();
     for (auto &Op : Inst->operands()) {

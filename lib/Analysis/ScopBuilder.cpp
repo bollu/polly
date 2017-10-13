@@ -547,12 +547,11 @@ bool ScopBuilder::buildAccessCallInst(MemAccInst Inst, ScopStmt *Stmt) {
   if (CI->doesNotAccessMemory() || isIgnoredIntrinsic(CI))
     return true;
 
-
   bool ReadOnly = false;
   auto *AF = SE.getConstant(IntegerType::getInt64Ty(CI->getContext()), 0);
   auto *CalledFunction = CI->getCalledFunction();
-  if (CalledFunction->getName().count(POLLY_ABSTRACT_INDEX_BASENAME)) 
-      return true;
+  if (CalledFunction->getName().count(POLLY_ABSTRACT_INDEX_BASENAME))
+    return true;
 
   switch (AA.getModRefBehavior(CalledFunction)) {
   case FMRB_UnknownModRefBehavior:
@@ -661,33 +660,44 @@ static const bool AbstractMatrixDebug = false;
 // %v = %w
 // return %w in both cases.
 Value *unwrapPossibleBitcast(Value *V) {
-    if (isa<BitCastOperator>(V))
-        return cast<BitCastOperator>(V)->getOperand(0);
-    return V;
+  if (isa<BitCastOperator>(V))
+    return cast<BitCastOperator>(V)->getOperand(0);
+  return V;
 }
 
-//Return @__data_radiation_MOD_cobi from stride %7
+// Return @__data_radiation_MOD_cobi from stride %7
 // %indvars.iv = phi i64 [ %indvars.iv.next, %"4" ], [ -10, %"3" ]
-// %0 = load float*, float** bitcast (%"struct.array2_real(kind=4)"* @__m_MOD_g_arr to float**), align 32
-// %1 = load i64, i64* getelementptr inbounds (%"struct.array2_real(kind=4)", %"struct.array2_real(kind=4)"* @__m_MOD_g_arr, i64 0, i32 3, i64 1, i32 0), align 8
-// %2 = load i64, i64* getelementptr inbounds (%"struct.array2_real(kind=4)", %"struct.array2_real(kind=4)"* @__m_MOD_g_arr, i64 0, i32 1), align 8
-// %3 = tail call i64 @_gfortran_polly_array_index_2(i64 %2, i64 %1, i64 1, i64 %indvars.iv, i64 %indvars.iv1) #3
+// %0 = load float*, float** bitcast (%"struct.array2_real(kind=4)"*
+// @__m_MOD_g_arr to float**), align 32 %1 = load i64, i64* getelementptr
+// inbounds (%"struct.array2_real(kind=4)", %"struct.array2_real(kind=4)"*
+// @__m_MOD_g_arr, i64 0, i32 3, i64 1, i32 0), align 8 %2 = load i64, i64*
+// getelementptr inbounds (%"struct.array2_real(kind=4)",
+// %"struct.array2_real(kind=4)"* @__m_MOD_g_arr, i64 0, i32 1), align 8 %3 =
+// tail call i64 @_gfortran_polly_array_index_2(i64 %2, i64 %1, i64 1, i64
+// %indvars.iv, i64 %indvars.iv1) #3
 GlobalValue *getBasePtrForVariableStride(Value *V) {
-  if(AbstractMatrixDebug) errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
-  LoadInst *LI; 
+  if (AbstractMatrixDebug)
+    errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
+  LoadInst *LI;
   LI = dyn_cast<LoadInst>(V);
-  if (!LI) return nullptr;
+  if (!LI)
+    return nullptr;
 
-  if(AbstractMatrixDebug) errs() << "LoadInst: " << *LI << "\n";
+  if (AbstractMatrixDebug)
+    errs() << "LoadInst: " << *LI << "\n";
   Value *LoadBase = LI->getOperand(0);
-  if(AbstractMatrixDebug) errs() << "LoadBase: " << *LI << "\n";
+  if (AbstractMatrixDebug)
+    errs() << "LoadBase: " << *LI << "\n";
   Value *CleanedLoadBase = unwrapPossibleBitcast(LoadBase);
-  if(AbstractMatrixDebug) errs() << "CleanedLoadBase: " << *CleanedLoadBase << "\n";
+  if (AbstractMatrixDebug)
+    errs() << "CleanedLoadBase: " << *CleanedLoadBase << "\n";
 
   GEPOperator *GEP = nullptr;
   GEP = dyn_cast<GEPOperator>(CleanedLoadBase);
-  if (!GEP) return nullptr;
-  if(AbstractMatrixDebug) errs() << "GEP: " << *GEP << "\n";
+  if (!GEP)
+    return nullptr;
+  if (AbstractMatrixDebug)
+    errs() << "GEP: " << *GEP << "\n";
 
   return dyn_cast<GlobalValue>(GEP->getPointerOperand());
 }
@@ -703,9 +713,9 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
   std::tie(Call, GEP) = *optionalCallGEP;
 
   if (AbstractMatrixDebug) {
-      errs() << "MemAccInst: " << *Inst << "\n";
-      errs() << "Call: " << *Call << "\n";
-      errs() << "GEP: " << *GEP << "\n";
+    errs() << "MemAccInst: " << *Inst << "\n";
+    errs() << "Call: " << *Call << "\n";
+    errs() << "GEP: " << *GEP << "\n";
   }
 
   assert(Call->getNumArgOperands() % 2 == 1 &&
@@ -714,23 +724,43 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
   if (AbstractMatrixDebug)
     errs() << "Num array dims: " << NArrayDims << "\n";
 
-  // F(stride1, stride2, .., strideN, ix1, ix2, ..., ixN)
-
   Value *BasePtr = GEP->getPointerOperand();
 
   std::vector<const SCEV *> Subscripts;
   std::vector<const SCEV *> Strides;
   Loop *SurroundingLoop = Stmt->getSurroundingLoop();
+  const InvariantLoadsSetTy &ScopRIL = scop->getRequiredInvariantLoads();
+  errs() << "** ScopRIL:\n";
+  for(LoadInst *LI : ScopRIL) {
+      errs() << *LI << "\n";
+  }
+  errs() << "===\n";
+
   InvariantLoadsSetTy AccessILS;
 
   if (isa<UndefValue>(Call->getArgOperand(0)))
     return false;
 
+  errs() << "\n\n\n"
+         << __FUNCTION__ << " : MemAccInst: " << *Inst << " | Call: " << *Call
+         << "\n";
   const SCEV *Offset = SE.getSCEV(Call->getArgOperand(0));
+
   if (!isAffineExpr(&scop->getRegion(), SurroundingLoop, Offset, SE,
                     &AccessILS)) {
     return false;
   }
+
+  //// Offsets are always loaded from the array, they will get invariant 
+  //load hoisted correctly later.
+  //for (LoadInst *LInst : AccessILS) {
+  //    if (!ScopRIL.count(LInst)) {
+  //        errs() << "\t" << __FUNCTION__ << "|" << __LINE__ << "|found load that is not part of scop: " << *LInst << "\n";
+  //        return false;
+  //    }
+  //}
+  AccessILS.clear();
+
 
   if (AbstractMatrixDebug)
     errs() << "Offset: " << *Offset << "\n";
@@ -747,6 +777,19 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
                       &AccessILS)) {
       return false;
     }
+    errs() << "\n**AccessILS:" << __LINE__ << "\n";
+    for(LoadInst *LInst : AccessILS) {
+        errs() << "\t" << *LInst << "\n";
+    };
+    errs() << "===\n";
+    for (LoadInst *LInst : AccessILS) {
+        if (!ScopRIL.count(LInst)) {
+            errs() << "\t" << __FUNCTION__ << "|" << __LINE__ << "|found load that is not part of scop: " << *LInst << "\n";
+            return false;
+        }
+    }
+    AccessILS.clear();
+
 
     Value *Stride = Call->getArgOperand(1 + i);
     if (isa<UndefValue>(Ix) || isa<UndefValue>(Stride))
@@ -756,17 +799,37 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
       errs() << i << " |Raw Ix: " << *Ix << " |Raw Stride: " << *Stride << "\n";
     Subscripts.push_back(SE.getSCEV(Ix));
     const SCEV *StrideSCEV = SE.getSCEV(Stride);
+
     if (!isAffineExpr(&scop->getRegion(), SurroundingLoop, StrideSCEV, SE,
                       &AccessILS)) {
       return false;
     }
+    AccessILS.clear();
+    // strides are always loaded from the array, they will be invariant load
+    // hoisted later on.
+    //errs() << "===\n";
+    //for (LoadInst *LInst : AccessILS) {
+    //    if (!ScopRIL.count(LInst)) {
+    //        errs() << "\t" << __FUNCTION__ << "|" << __LINE__ << "|found load that is not part of scop: " << *LInst << "\n";
+    //        return false;
+    //    }
+    //}
+    //AccessILS.clear();
 
     // Try to get an FAD from a stride.
     if (!isa<SCEVConstant>(StrideSCEV) && FAD == nullptr) {
-        FAD = getBasePtrForVariableStride(Stride);
-        // assert(FAD && "need legal FAD");
+      FAD = getBasePtrForVariableStride(Stride);
+      // assert(FAD && "need legal FAD");
     }
     Strides.push_back(StrideSCEV);
+  }
+
+  // If all loads in our acceses are not part of the scop, bail out
+  for (LoadInst *LInst : AccessILS) {
+    if (!ScopRIL.count(LInst)) {
+      errs() << "\t" << __FUNCTION__ << "|" << __LINE__ << "|found load that is not part of scop: " << *LInst << "\n";
+      return false;
+    }
   }
 
   for (unsigned i = 0; i < Subscripts.size(); ++i) {
@@ -775,7 +838,6 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
              << " Sub: " << *Subscripts[i] << " |Stride: " << *Strides[i]
              << "\n";
   }
-
 
   Value *Val = Inst.getValueOperand();
   Type *ElementType = Val->getType();
@@ -792,7 +854,6 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
 
   enum MemoryAccess::AccessType AccType =
       isa<LoadInst>(Inst) ? MemoryAccess::READ : MemoryAccess::MUST_WRITE;
-
 
   if (AbstractMatrixDebug) {
     errs() << "AccType: ";
@@ -980,11 +1041,11 @@ void ScopBuilder::addArrayAccess(ScopStmt *Stmt, MemAccInst MemAccInst,
                                  ArrayRef<const SCEV *> Subscripts,
                                  ShapeInfo Shape, Value *AccessValue) {
 
- //   DEBUG(
- //    dbgs() << "\n" << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
- //    dbgs() << "\t-BaseAddr: " << *BaseAddress << "\n";
- //    dbgs() << "\t-ElemType: " << *ElementType << "\n";
- //    dbgs() << "\t-AccessValue: " << *AccessValue << "\n";);
+  //   DEBUG(
+  //    dbgs() << "\n" << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
+  //    dbgs() << "\t-BaseAddr: " << *BaseAddress << "\n";
+  //    dbgs() << "\t-ElemType: " << *ElementType << "\n";
+  //    dbgs() << "\t-AccessValue: " << *AccessValue << "\n";);
   ArrayBasePointers.insert(BaseAddress);
   auto *MemAccess = addMemoryAccess(Stmt, MemAccInst, AccType, BaseAddress,
                                     ElementType, IsAffine, AccessValue,
@@ -1377,7 +1438,6 @@ void ScopBuilder::buildScop(Region &R, AssumptionCache &AC,
   buildStmts(R);
   buildAccessFunctions();
 
-
   // In case the region does not have an exiting block we will later (during
   // code generation) split the exit block. This will move potential PHI nodes
   // from the current exit block into the new region exiting block. Hence, PHI
@@ -1457,8 +1517,6 @@ void ScopBuilder::buildScop(Region &R, AssumptionCache &AC,
   scop->finalizeAccesses();
   scop->realignParams();
   scop->addUserContext();
-
-
 
   // After the context was fully constructed, thus all our knowledge about
   // the parameters is in there, we add all recorded assumptions to the
