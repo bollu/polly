@@ -228,17 +228,46 @@ static Type *copyAddressSpace(Type *NewType, Type *AddrSpaceType) {
 static Instruction *fixupAddressSpace(Instruction *New) {
 
     errs() << __FUNCTION__ << "\n";
+  if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(New)) {
+      // int AddrSpace = GEP->getAddressSpace();
+      Type *SrcTy = GEP->getOperand(0)->getType();
+      errs() << "SrcTy: " << *SrcTy << "\n";
+
+      errs() << "GEP->type: " << *GEP->getType() << "\n";
+
+      Type *DestElemTy = cast<PointerType>(GEP->getType())->getElementType();
+      errs() << "DestElemTy: " << *DestElemTy << "\n";
+
+      Type *FixedUpDestTy = PointerType::get(DestElemTy, SrcTy->getPointerAddressSpace());
+      errs() << "FixedUpDestTy: " << *FixedUpDestTy << "\n";
+
+      SmallVector<Value *, 4> Idxs(GEP->indices());
+      Value *Ptr = GEP->getPointerOperand();
+      errs() << "Ptr: " << *Ptr;
+      return GetElementPtrInst::Create(FixedUpDestTy, Ptr, Idxs);
+  }
   if (BitCastInst *BC = dyn_cast<BitCastInst>(New)) {
     Value *V = New->getOperand(0);
+
+    int AddrSpace = [&]() { 
+        if (auto *GEP = dyn_cast<GetElementPtrInst>(V)) {
+            return GEP->getAddressSpace();
+        }
+        else {
+            report_fatal_error("unimplemented addrspace inspection of bitcast(V to ...)\n");
+        }
+    }();
+
     errs() << " -V: " << *V << "\n";
-    int AddrSpace = V->getType()->getPointerAddressSpace();
     errs() << " -Addrspace: " << AddrSpace << "\n";
     Type *NewElemTy = cast<PointerType>(BC->getDestTy())->getElementType();
     errs() << " -NewElemTy: " << *NewElemTy << "\n";
-    Type *NewTy = PointerType::get(NewElemTy, AddrSpace);
+    // Type *NewTy = PointerType::get(NewElemTy, AddrSpace);
+    Type *NewTy = BC->getDestTy(); 
     errs() << " -NewTy: " << *NewTy << "\n";
 
-    BitCastInst *NewBC = new BitCastInst(V, NewTy, New->getName());
+    auto NewBC = new BitCastInst(V, BC->getDestTy(), New->getName());
+    errs() << "NewBC: " << *NewBC << "\n";
     return NewBC;
   }
   return New;
