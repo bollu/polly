@@ -374,9 +374,12 @@ static __isl_give isl_id_to_ast_expr *pollyBuildAstExprForStmt(
       errs() << __PRETTY_FUNCTION__
              << "skipping materializing the stmt's memory access because it's "
                 "nonaffine\n";
-      errs() << "Acc: "; Acc->dump();
+      errs() << "Acc: ";
+      Acc->dump();
       isl::id RefId = Acc->getId();
-      errs() << "RefID: "; RefId.dump(); errs() << "\n";
+      errs() << "RefID: ";
+      RefId.dump();
+      errs() << "\n";
       continue;
     }
     isl::map AddrFunc = Acc->getAddressFunction();
@@ -2189,6 +2192,7 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     isl_id *Id = isl_space_get_tuple_id(Prog->array[i].space, isl_dim_set);
     const ScopArrayInfo *SAI =
         ScopArrayInfo::getFromId(isl::manage(isl_id_copy(Id)));
+
     Type *EleTy = SAI->getElementType();
     Value *Val = &*Arg;
     SmallVector<const SCEV *, 4> Sizes;
@@ -2340,6 +2344,19 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
         ScopArrayInfo::getFromId(isl::manage(isl_id_copy(Id)));
     isl_id_free(Id);
 
+    Value *NewBasePtr = Arg;
+    if (PointerType *OriginalTy =
+            dyn_cast<PointerType>(SAI->getBasePtr()->getType())) {
+      PointerType *NewTy = PointerType::get(OriginalTy->getElementType(),
+                                            Arg->getType()->getPointerAddressSpace());
+      NewBasePtr = Builder.CreateBitCast(
+          Arg, NewTy, Arg->getName() + "_hack_load_for_blockgen");
+    } else {
+        report_fatal_error(" I did not think about this case yet.");
+
+    }
+    ValueMap[SAI->getBasePtr()] = NewBasePtr;
+
     if (SAI->getNumberOfDimensions() > 0) {
       Arg++;
       continue;
@@ -2355,7 +2372,6 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
 
     Value *Alloca = BlockGen.getOrCreateAlloca(SAI);
     Builder.CreateStore(Val, Alloca);
-
     Arg++;
   }
 }
@@ -3111,15 +3127,11 @@ public:
     if (Array->getNumberOfDimensions() == 0)
       return isl::set::universe(Array->getSpace());
 
-    errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
-
     isl::union_map Accesses = S->getAccesses(Array);
     isl::union_set AccessUSet = Accesses.range();
     AccessUSet = AccessUSet.coalesce();
     AccessUSet = AccessUSet.detect_equalities();
     AccessUSet = AccessUSet.coalesce();
-
-    errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
 
     if (AccessUSet.is_empty())
       return isl::set::empty(Array->getSpace());
@@ -3127,8 +3139,6 @@ public:
     isl::set AccessSet = AccessUSet.extract_set(Array->getSpace());
 
     isl::local_space LS = isl::local_space(Array->getSpace());
-
-    errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
 
     isl::pw_aff Val = isl::aff::var_on_domain(LS, isl::dim::set, 0);
     isl::pw_aff OuterMin;
@@ -3142,7 +3152,6 @@ public:
              << " | HACK: assuming array is zero lower-bounded because our "
                 "access function is non-affine!\n";
     }
-    errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
     isl::pw_aff OuterMax;
     if (AccessSet.dim_has_upper_bound(isl::dim::set, 0)) {
       OuterMax = AccessSet.dim_max(0);
@@ -3155,12 +3164,10 @@ public:
                 "access function is non-affine!\n";
     }
 
-    errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
     OuterMin = OuterMin.add_dims(isl::dim::in, Val.dim(isl::dim::in));
     OuterMax = OuterMax.add_dims(isl::dim::in, Val.dim(isl::dim::in));
     OuterMin = OuterMin.set_tuple_id(isl::dim::in, Array->getBasePtrId());
     OuterMax = OuterMax.set_tuple_id(isl::dim::in, Array->getBasePtrId());
-    errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
 
     isl::set Extent = isl::set::universe(Array->getSpace());
 
@@ -3169,26 +3176,16 @@ public:
     errs() << "Val: ";
     Val.dump();
     auto X = OuterMin.le_set(Val);
-    errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
     Extent = Extent.intersect(X);
-    errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
     Extent = Extent.intersect(OuterMax.ge_set(Val));
-    errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
 
     for (unsigned i = 1; i < NumDims; ++i) {
-      errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
       Extent = Extent.lower_bound_si(isl::dim::set, i, 0);
-      errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
     }
 
-    errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
-
     if (!Array->hasStrides()) {
-      errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
       for (unsigned i = 0; i < NumDims; ++i) {
-        errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
         isl::pw_aff PwAff = Array->getDimensionSizePw(i);
-        errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
 
         // isl_pw_aff can be NULL for zero dimension. Only in the case of a
         // Fortran array will we have a legitimate dimension.
@@ -3200,19 +3197,13 @@ public:
 
         isl::pw_aff Val = isl::aff::var_on_domain(
             isl::local_space(Array->getSpace()), isl::dim::set, i);
-        errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
         PwAff = PwAff.add_dims(isl::dim::in, Val.dim(isl::dim::in));
-        errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
         PwAff =
             PwAff.set_tuple_id(isl::dim::in, Val.get_tuple_id(isl::dim::in));
-        errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
         isl::set Set = PwAff.gt_set(Val);
-        errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
         Extent = Set.intersect(Extent);
-        errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
       }
     }
-    errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
 
     return Extent;
   }

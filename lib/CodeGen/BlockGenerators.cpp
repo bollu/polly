@@ -130,7 +130,6 @@ Value *BlockGenerator::getNewValue(ScopStmt &Stmt, Value *Old, ValueMapT &BBMap,
     break;
 
   case VirtualUse::Constant:
-    errs() << "VirtualUse::Constant\n";
     // Used by:
     // * Isl/CodeGen/OpenMP/reference-argument-from-non-affine-region.ll
     // Constants should not be redefined. In this case, the GlobalMap just
@@ -144,7 +143,6 @@ Value *BlockGenerator::getNewValue(ScopStmt &Stmt, Value *Old, ValueMapT &BBMap,
     break;
 
   case VirtualUse::ReadOnly:
-    errs() << "VirtualUse::ReadOnly\n";
     assert(!GlobalMap.count(Old));
 
     // Required for:
@@ -165,7 +163,6 @@ Value *BlockGenerator::getNewValue(ScopStmt &Stmt, Value *Old, ValueMapT &BBMap,
     break;
 
   case VirtualUse::Synthesizable:
-    errs() << "VirtualUse::Synthesizable\n";
     // Used by:
     // * Isl/CodeGen/OpenMP/loop-body-references-outer-values-3.ll
     // * Isl/CodeGen/OpenMP/recomputed-srem.ll
@@ -176,10 +173,12 @@ Value *BlockGenerator::getNewValue(ScopStmt &Stmt, Value *Old, ValueMapT &BBMap,
     // implementation prioritized GlobalMap, so this is what we do here as well.
     // Ideally, synthesizable values should not end up in GlobalMap.
     if ((New = lookupGlobally(Old))) {
-      errs() << "\t\tfound New in GlobalMap!" << " | Old: " << *Old << "|New: " << *New << "\n";
+      errs() << "\t\tfound New in GlobalMap!"
+             << " | Old: " << *Old << "|New: " << *New << "\n";
       break;
     }
-      errs() << "\t\tdid *not* New in GlobalMap!" << " | Old: " << *Old << "|New: EMPTY\n";
+    errs() << "\t\tdid *not* New in GlobalMap!"
+           << " | Old: " << *Old << "|New: EMPTY\n";
 
     // Required for:
     // * Isl/CodeGen/RuntimeDebugBuilder/combine_different_values.ll
@@ -197,7 +196,6 @@ Value *BlockGenerator::getNewValue(ScopStmt &Stmt, Value *Old, ValueMapT &BBMap,
     break;
 
   case VirtualUse::Hoisted:
-    errs() << "VirtualUse::Hoisted\n";
     // TODO: Hoisted invariant loads should be found in GlobalMap only, but not
     // redefined locally (which will be ignored anyway). That is, the following
     // assertion should apply: assert(!BBMap.count(Old))
@@ -207,13 +205,42 @@ Value *BlockGenerator::getNewValue(ScopStmt &Stmt, Value *Old, ValueMapT &BBMap,
 
   case VirtualUse::Intra:
   case VirtualUse::Inter:
-    errs() << "VirtualUse::Intra | Inter\n";
     assert(!GlobalMap.count(Old) &&
            "Intra and inter-stmt values are never global");
     New = BBMap.lookup(Old);
     break;
   }
   assert(New && "Unexpected scalar dependence in region!");
+  return New;
+}
+
+/*
+// Copy the address space of the PointerVal onto the Old type
+static Type *copyAddressSpace(Type *NewType, Type *AddrSpaceType) {
+    assert(isa<PointerType>(Old));
+    PointerType *PTy = cast<PointerType>(PointerVal->getType());
+    return PointerType::get(PTy->getElementType(), PTy->getAddressSpace()
+}
+*/
+
+// Fixup the address space info from the old instruction to the
+// new instruction.
+static Instruction *fixupAddressSpace(Instruction *New) {
+
+    errs() << __FUNCTION__ << "\n";
+  if (BitCastInst *BC = dyn_cast<BitCastInst>(New)) {
+    Value *V = New->getOperand(0);
+    errs() << " -V: " << *V << "\n";
+    int AddrSpace = V->getType()->getPointerAddressSpace();
+    errs() << " -Addrspace: " << AddrSpace << "\n";
+    Type *NewElemTy = cast<PointerType>(BC->getDestTy())->getElementType();
+    errs() << " -NewElemTy: " << *NewElemTy << "\n";
+    Type *NewTy = PointerType::get(NewElemTy, AddrSpace);
+    errs() << " -NewTy: " << *NewTy << "\n";
+
+    BitCastInst *NewBC = new BitCastInst(V, NewTy, New->getName());
+    return NewBC;
+  }
   return New;
 }
 
@@ -226,16 +253,12 @@ void BlockGenerator::copyInstScalar(ScopStmt &Stmt, Instruction *Inst,
     return;
 
   Instruction *NewInst = Inst->clone();
-  errs() << "===\n";
-  errs() << "* Copying: " << *NewInst << "\n";
+  // errs() << "* Copying: " << *NewInst << "\n";
 
   // Replace old operands with the new ones.
   for (Value *OldOperand : Inst->operands()) {
     Value *NewOperand =
         getNewValue(Stmt, OldOperand, BBMap, LTS, getLoopForStmt(Stmt));
-
-    errs() << "-\n";
-    errs() << "\tOld: " << *OldOperand << "\n\tNew: " << *NewOperand << "\n";
 
     if (!NewOperand) {
       assert(!isa<StoreInst>(NewInst) &&
@@ -243,8 +266,15 @@ void BlockGenerator::copyInstScalar(ScopStmt &Stmt, Instruction *Inst,
       NewInst->deleteValue();
       return;
     }
-
     NewInst->replaceUsesOfWith(OldOperand, NewOperand);
+  }
+
+
+  Instruction *FixedUpNewInst = fixupAddressSpace(NewInst);
+  if (FixedUpNewInst != NewInst) {
+      Builder.Insert(NewInst);
+      NewInst->eraseFromParent();
+      NewInst = FixedUpNewInst;
   }
 
   Builder.Insert(NewInst);
@@ -354,6 +384,12 @@ void BlockGenerator::generateArrayStore(ScopStmt &Stmt, StoreInst *Store,
       RuntimeDebugBuilder::createCPUPrinter(Builder, "Store to  ", NewPointer,
                                             ": ", ValueOperand, "\n");
 
+    // errs() << "func:\n";
+    // errs() << *Builder.GetInsertBlock()->getParent();
+    // errs() << "---\n";
+    // errs() << "ValueOperand: " << *ValueOperand << "\n";
+    // errs() << "NewPointer: " << *NewPointer << "\n";
+    // errs() << "--\n";
     Builder.CreateAlignedStore(ValueOperand, NewPointer, Store->getAlignment());
   });
 }
@@ -657,7 +693,9 @@ void BlockGenerator::generateConditionalExecution(
   // Put the client code into the conditional block and continue in the merge
   // block afterwards.
   Builder.SetInsertPoint(ThenBlock, ThenBlock->getFirstInsertionPt());
+  errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
   GenThenFunc();
+  errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
   Builder.SetInsertPoint(TailBlock, TailBlock->getFirstInsertionPt());
 }
 
