@@ -1796,6 +1796,11 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
           new AllocaInst(Builder.getInt8PtrTy(), AddressSpace,
                          Launch + "_param_" + std::to_string(Index),
                          EntryBlock->getTerminator());
+      if (isa<SelectInst>(DevArray)) {
+          DevArray->dump();
+          SAI->dump();
+          assert(false && "DevArray is a select inst!");
+      }
       Value *DevArrayCast = Builder.CreatePointerCast(
           DevArray, Builder.getInt8PtrTy(), "DevArrayCast");
       StoreInst *SI = Builder.CreateStore(DevArrayCast, Param);
@@ -2360,7 +2365,7 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
 
     isl_id_free(Id);
 
-    if (isHackedNonAffineFunction(S) && doesArrayHaveNonaffineAccess(SAI, &S)) {
+    if (isHackedNonAffineFunction(S)) { // && doesArrayHaveNonaffineAccess(SAI, &S)) {
         Value *NewBasePtr = Arg;
         if (PointerType *OriginalTy =
                 dyn_cast<PointerType>(SAI->getBasePtr()->getType())) {
@@ -3920,6 +3925,11 @@ public:
     errs() << "PPCGCodeGen running on : " << getUniqueScopName(S)
            << " | count: " << ScopNumber << " "
            << " | loop depth: " << S->getMaxLoopDepth() << "\n";
+
+    if (S->getMaxLoopDepth() < 1) {
+        errs() << " Scop has loop depth <1. Bailing out!\n";
+        return false;
+    }
 
     if (!isAllowedScop(ScopNumber)) {
       errs() << "Scop not allowed (" << getUniqueScopName(S)

@@ -208,8 +208,11 @@ Value *BlockGenerator::getNewValue(ScopStmt &Stmt, Value *Old, ValueMapT &BBMap,
   case VirtualUse::Intra:
   case VirtualUse::Inter:
     auto It = GlobalMap.find(Old);
-    if (GlobalMap.count(Old))
-      errs() << "Old: " << *Old << " |New: " << *It->second << "\n";
+    if (GlobalMap.count(Old)) {
+      errs() << "==Use::Intra|Inter from GlobalMap===\n";
+      errs() << "Old: " << *Old << " |\nNew: " << *It->second << "\n";
+      return It->second;
+    }
     assert(!GlobalMap.count(Old) &&
            "Intra and inter-stmt values are never global");
     New = BBMap.lookup(Old);
@@ -233,9 +236,11 @@ static Type *copyAddressSpace(Type *NewType, Type *AddrSpaceType) {
 static Instruction *fixupAddressSpace(Instruction *New) {
 
   // errs() << "\n\n==== " << __FUNCTION__ << "====\n";
-  errs() << "**" << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";;
+  errs() << "**" << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";
+  ;
   if (BitCastInst *BC = dyn_cast<BitCastInst>(New)) {
-  errs() << "**" << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";;
+    errs() << "**" << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";
+    ;
     Value *V = New->getOperand(0);
 
     int AddrSpace = [&]() {
@@ -245,33 +250,32 @@ static Instruction *fixupAddressSpace(Instruction *New) {
         report_fatal_error(
             "unimplemented addrspace inspection of bitcast(V to ...)\n");
       }
-  errs() << "**" << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";
+      errs() << "**" << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";
     }();
     // errs() << "New: " << *New << "\n";
     // errs() << " -V: " << *V << "\n";
     // errs() << " -Addrspace: " << AddrSpace << "\n";
-  errs() << "**" << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";
+    errs() << "**" << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";
     Type *NewElemTy = cast<PointerType>(BC->getDestTy())->getElementType();
     // errs() << " -NewElemTy: " << *NewElemTy << "\n";
     Type *NewTy = PointerType::get(NewElemTy, AddrSpace);
     //// Type *NewTy = BC->getDestTy();
     // errs() << " -NewTy: " << *NewTy << "\n";
 
-  errs() << "**" << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";
+    errs() << "**" << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";
     auto NewBC =
         CastInst::CreatePointerBitCastOrAddrSpaceCast(V, NewTy, New->getName());
     // errs() << "NewBC: " << *NewBC << "\n";
-  errs() << "**" << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";
+    errs() << "**" << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";
     return NewBC;
   }
   errs() << "**" << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";
   return New;
 }
 
-
-
 void BlockGenerator::copyInstScalarHacked(ScopStmt &Stmt, Instruction *Inst,
-                                    ValueMapT &BBMap, LoopToScevMapT &LTS) {
+                                          ValueMapT &BBMap,
+                                          LoopToScevMapT &LTS) {
   // We do not generate debug intrinsics as we did not investigate how to
   // copy them correctly. At the current state, they just crash the code
   // generation as the meta-data operands are not correctly copied.
@@ -287,16 +291,19 @@ void BlockGenerator::copyInstScalarHacked(ScopStmt &Stmt, Instruction *Inst,
     for (Value *Ix : GEP->indices()) {
       NewIxs.push_back(getNewValue(Stmt, Ix, BBMap, LTS, getLoopForStmt(Stmt)));
     }
-    // Type *PointeeType = cast<PointerType>(GetElementPtrInst::getGEPReturnType(NewPtr, NewIxs))->getElementType();
-    // HACK: tell LLVM what it wants to hear about the pointee type...
-    // this is nuts.
-    Type *ExpectedPointeeType = cast<PointerType>(NewPtr->getType()->getScalarType())->getElementType();
-    //errs() << "===" << __FUNCTION__ << "==\n";
-    //errs() << "Old: " << *Inst << "\n";
-    //errs() << "NewPtr: " << *NewPtr << "\n";
-    //errs() << "ExpectedPointeeType: " << *ExpectedPointeeType << "\n";
-    //errs() << "--\n";
-    NewInst = GetElementPtrInst::Create(ExpectedPointeeType, NewPtr, NewIxs, GEP->getName());
+    // Type *PointeeType =
+    // cast<PointerType>(GetElementPtrInst::getGEPReturnType(NewPtr,
+    // NewIxs))->getElementType(); HACK: tell LLVM what it wants to hear about
+    // the pointee type... this is nuts.
+    Type *ExpectedPointeeType =
+        cast<PointerType>(NewPtr->getType()->getScalarType())->getElementType();
+    // errs() << "===" << __FUNCTION__ << "==\n";
+    // errs() << "Old: " << *Inst << "\n";
+    // errs() << "NewPtr: " << *NewPtr << "\n";
+    // errs() << "ExpectedPointeeType: " << *ExpectedPointeeType << "\n";
+    // errs() << "--\n";
+    NewInst = GetElementPtrInst::Create(ExpectedPointeeType, NewPtr, NewIxs,
+                                        GEP->getName());
 
   } else {
     assert(!isa<GetElementPtrInst>(Inst));
@@ -340,7 +347,7 @@ void BlockGenerator::copyInstScalarHacked(ScopStmt &Stmt, Instruction *Inst,
 }
 
 void BlockGenerator::copyInstScalarOrig(ScopStmt &Stmt, Instruction *Inst,
-                                    ValueMapT &BBMap, LoopToScevMapT &LTS) {
+                                        ValueMapT &BBMap, LoopToScevMapT &LTS) {
   // We do not generate debug intrinsics as we did not investigate how to
   // copy them correctly. At the current state, they just crash the code
   // generation as the meta-data operands are not correctly copied.
@@ -384,9 +391,9 @@ void BlockGenerator::copyInstScalar(ScopStmt &Stmt, Instruction *Inst,
                                     ValueMapT &BBMap, LoopToScevMapT &LTS) {
   const bool RunHacks = isHackedNonAffineFunction(Stmt);
   if (RunHacks)
-      copyInstScalarHacked(Stmt, Inst, BBMap, LTS);
+    copyInstScalarHacked(Stmt, Inst, BBMap, LTS);
   else
-      copyInstScalarOrig(Stmt, Inst, BBMap, LTS);
+    copyInstScalarOrig(Stmt, Inst, BBMap, LTS);
 }
 
 Value *

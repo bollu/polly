@@ -725,6 +725,14 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
     errs() << "Num array dims: " << NArrayDims << "\n";
 
   Value *BasePtr = GEP->getPointerOperand();
+  // const SCEV *BasePtrSCEV = SE.getSCEV(BasePtr);
+  // errs() << "\n==BasePtrSCEV===\n";
+  // errs() << *BasePtrSCEV << "\n";
+  // if (!isa<SCEVUnknown>(BasePtrSCEV)) {
+  //     errs() << " weird base ptr: " << *BasePtrSCEV;
+  //     assert(false && "this should not happen.");
+  //     return false;
+  // }
 
   std::vector<const SCEV *> Subscripts;
   std::vector<const SCEV *> Strides;
@@ -987,6 +995,7 @@ MemoryAccess *ScopBuilder::addMemoryAccess(
     ArrayRef<const SCEV *> Subscripts, ShapeInfo Shape, MemoryKind Kind) {
   bool isKnownMustAccess = false;
 
+
   // Accesses in single-basic block statements are always executed.
   if (Stmt->isBlockStmt())
     isKnownMustAccess = true;
@@ -1024,7 +1033,8 @@ void ScopBuilder::addArrayAccess(ScopStmt *Stmt, MemAccInst MemAccInst,
                                  bool IsAffine,
                                  ArrayRef<const SCEV *> Subscripts,
                                  ShapeInfo Shape, Value *AccessValue) {
-
+  if (isa<SelectInst>(MemAccInst))
+      assert(false && "baseptr is a select inst");
   //   DEBUG(
   //    dbgs() << "\n" << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
   //    dbgs() << "\t-BaseAddr: " << *BaseAddress << "\n";
@@ -1080,6 +1090,7 @@ void ScopBuilder::ensureValueRead(Value *V, ScopStmt *UserStmt) {
   // information available at ScopStmt::buildAccessRelations(), so we could
   // create the AccessRelation right away. This is what
   // ScopStmt::ensureValueRead(Value*) does.
+  errs() << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";
 
   auto *Scope = UserStmt->getSurroundingLoop();
   auto VUse = VirtualUse::create(scop.get(), UserStmt, Scope, V, false);
@@ -1089,10 +1100,12 @@ void ScopBuilder::ensureValueRead(Value *V, ScopStmt *UserStmt) {
   case VirtualUse::Synthesizable:
   case VirtualUse::Hoisted:
   case VirtualUse::Intra:
+      errs() << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";
     // Uses of these kinds do not need a MemoryAccess.
     break;
 
   case VirtualUse::ReadOnly:
+    errs() << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";
     // Add MemoryAccess for invariant values only if requested.
     if (!ModelReadOnlyScalars)
       break;
@@ -1105,14 +1118,21 @@ void ScopBuilder::ensureValueRead(Value *V, ScopStmt *UserStmt) {
     if (UserStmt->lookupValueReadOf(V))
       break;
 
+    errs() << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";
     addMemoryAccess(UserStmt, nullptr, MemoryAccess::READ, V, V->getType(),
                     true, V, ArrayRef<const SCEV *>(),
                     ShapeInfo::fromSizes(ArrayRef<const SCEV *>()),
                     MemoryKind::Value);
 
+    errs() << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";
+
     // Inter-statement uses need to write the value in their defining statement.
-    if (VUse.isInter())
+    errs() << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";
+    if (VUse.isInter()) {
+        errs() << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";
       ensureValueWrite(cast<Instruction>(V));
+      errs() << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";
+    }
     break;
   }
 }
