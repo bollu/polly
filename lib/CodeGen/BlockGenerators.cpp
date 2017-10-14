@@ -208,11 +208,11 @@ Value *BlockGenerator::getNewValue(ScopStmt &Stmt, Value *Old, ValueMapT &BBMap,
   case VirtualUse::Intra:
   case VirtualUse::Inter:
     auto It = GlobalMap.find(Old);
-    if (GlobalMap.count(Old)) {
-      errs() << "==Use::Intra|Inter from GlobalMap===\n";
-      errs() << "Old: " << *Old << " |\nNew: " << *It->second << "\n";
-      return It->second;
-    }
+    // if (GlobalMap.count(Old)) {
+    //   errs() << "==Use::Intra|Inter from GlobalMap===\n";
+    //   errs() << "Old: " << *Old << " |\nNew: " << *It->second << "\n";
+    //   return It->second;
+    // }
     assert(!GlobalMap.count(Old) &&
            "Intra and inter-stmt values are never global");
     New = BBMap.lookup(Old);

@@ -2365,7 +2365,7 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
 
     isl_id_free(Id);
 
-    if (isHackedNonAffineFunction(S)) { // && doesArrayHaveNonaffineAccess(SAI, &S)) {
+    if (isHackedNonAffineFunction(S) && doesArrayHaveNonaffineAccess(SAI, &S)) {
         Value *NewBasePtr = Arg;
         if (PointerType *OriginalTy =
                 dyn_cast<PointerType>(SAI->getBasePtr()->getType())) {
@@ -3926,8 +3926,8 @@ public:
            << " | count: " << ScopNumber << " "
            << " | loop depth: " << S->getMaxLoopDepth() << "\n";
 
-    if (S->getMaxLoopDepth() < 1) {
-        errs() << " Scop has loop depth <1. Bailing out!\n";
+    if (S->getMaxLoopDepth() < 2) {
+        errs() << "Scop has loop depth < 2. Bailing out!\n\n";
         return false;
     }
 

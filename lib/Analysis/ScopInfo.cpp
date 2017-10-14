@@ -2424,7 +2424,6 @@ buildMinMaxAccess(isl::set Set, Scop::MinMaxVectorTy &MinMaxAccesses, Scop &S) {
   Set = Set.remove_divs();
 
   if (isl_set_n_basic_set(Set.get()) >= MaxDisjunctsInDomain) {
-    errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
     return isl::stat::error;
   }
 
@@ -2449,13 +2448,11 @@ buildMinMaxAccess(isl::set Set, Scop::MinMaxVectorTy &MinMaxAccesses, Scop &S) {
         InvolvedParams++;
 
     if (InvolvedParams > RunTimeChecksMaxParameters) {
-      errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
       return isl::stat::error;
     }
   }
 
   if (isl_set_n_basic_set(Set.get()) > RunTimeChecksMaxAccessDisjuncts) {
-    errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
     return isl::stat::error;
   }
 
@@ -2463,7 +2460,6 @@ buildMinMaxAccess(isl::set Set, Scop::MinMaxVectorTy &MinMaxAccesses, Scop &S) {
   MaxPMA = Set.lexmax_pw_multi_aff();
 
   if (isl_ctx_last_error(Ctx.get()) == isl_error_quota) {
-    errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
     return isl::stat::error;
   }
 
@@ -3329,7 +3325,6 @@ bool Scop::buildAliasGroups(AliasAnalysis &AA) {
 
   for (AliasGroupTy &AG : AliasGroups) {
     if (!hasFeasibleRuntimeContext()) {
-      errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
       return false;
     }
 
@@ -3337,13 +3332,11 @@ bool Scop::buildAliasGroups(AliasAnalysis &AA) {
       IslMaxOperationsGuard MaxOpGuard(getIslCtx(), OptComputeOut);
       bool Valid = buildAliasGroup(AG, HasWriteAccess);
       if (!Valid) {
-        errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
         return false;
       }
     }
     if (isl_ctx_last_error(getIslCtx()) == isl_error_quota) {
       invalidate(COMPLEXITY, DebugLoc());
-      errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
       return false;
     }
   }
@@ -3390,7 +3383,6 @@ bool Scop::buildAliasGroup(Scop::AliasGroupTy &AliasGroup,
     if (!MA->isAffine()) {
       invalidate(ALIASING, MA->getAccessInstruction()->getDebugLoc(),
                  MA->getAccessInstruction()->getParent());
-      errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
       return false;
     }
   }
@@ -3414,7 +3406,6 @@ bool Scop::buildAliasGroup(Scop::AliasGroupTy &AliasGroup,
       calculateMinMaxAccess(ReadWriteAccesses, *this, MinMaxAccessesReadWrite);
 
   if (!Valid) {
-    errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
     return false;
   }
 
@@ -3424,14 +3415,12 @@ bool Scop::buildAliasGroup(Scop::AliasGroupTy &AliasGroup,
   if (MinMaxAccessesReadWrite.size() + ReadOnlyArrays.size() >
       RunTimeChecksMaxArraysPerGroup) {
     return false;
-    errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
   }
 
   Valid =
       calculateMinMaxAccess(ReadOnlyAccesses, *this, MinMaxAccessesReadOnly);
 
   if (!Valid) {
-    errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
     return false;
   }
 
