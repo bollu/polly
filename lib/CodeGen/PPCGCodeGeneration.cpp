@@ -2714,21 +2714,21 @@ void countNumUnusedParamsInFunction(Function *F) {
 
 std::string GPUNodeBuilder::finalizeKernelFunction() {
 
-  //{
-  //  // NOTE: We currently copy all uses of gfortran_polly_array_index.
-  //  // However, these are unsused, but they refer to host side values
-  //  // So, ADCE them out.
-  //  // For correctness, we should probably add these to
-  //  // BlockGenerators.cpp - polly::isIgnoredIntrinsic.
-  //  llvm::legacy::PassManager OptPasses;
-  //  OptPasses.add(createAggressiveDCEPass());
-  //  // Comment this to allow tests to pass:
-  //  // Polly :: GPGPU/host-control-flow.ll
-  //  // Polly :: GPGPU/kernel-params-only-some-arrays.ll
-  //  // Polly :: GPGPU/live-range-reordering-with-privatization.ll
-  //  // Polly :: GPGPU/phi-nodes-in-kernel.ll
-  //  OptPasses.run(*GPUModule);
-  //}
+  {
+    // NOTE: We currently copy all uses of gfortran_polly_array_index.
+    // However, these are unsused, but they refer to host side values
+    // So, ADCE them out.
+    // For correctness, we should probably add these to
+    // BlockGenerators.cpp - polly::isIgnoredIntrinsic.
+    llvm::legacy::PassManager OptPasses;
+    OptPasses.add(createAggressiveDCEPass());
+    // Comment this to allow tests to pass:
+    // Polly :: GPGPU/host-control-flow.ll
+    // Polly :: GPGPU/kernel-params-only-some-arrays.ll
+    // Polly :: GPGPU/live-range-reordering-with-privatization.ll
+    // Polly :: GPGPU/phi-nodes-in-kernel.ll
+    OptPasses.run(*GPUModule);
+  }
 
   if (verifyModule(*GPUModule)) {
     DEBUG(dbgs() << "verifyModule failed on module:\n";
