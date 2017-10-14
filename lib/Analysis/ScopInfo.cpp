@@ -4241,8 +4241,10 @@ ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
         SAI->overwriteSizeWithStrides(Shape.strides(), Shape.offset(),
                                       Shape.hackFAD());
       } else {
+    
         errs() << "SAI has strides, Shape is size based. This should not "
                   "happen. Ignoring new data for now.";
+        assert(isHackedNonAffineFunction(getFunction().getName()));
         return SAI.get();
       }
     }

@@ -3161,6 +3161,7 @@ public:
     isl::pw_aff Val = isl::aff::var_on_domain(LS, isl::dim::set, 0);
     //isl::pw_aff OuterMin;
     if (!AccessSet.dim_has_lower_bound(isl::dim::set, 0)) {
+        assert(isHackedNonAffineFunction(*S));
         errs()<< "=== no lower bound found, setting lower bound to 0===\n";
         errs() << "AccessSet(prev): "; AccessSet.dump();
         isl::constraint LB = isl::constraint::alloc_inequality(isl::local_space(AccessSet.get_space()));
@@ -3172,6 +3173,7 @@ public:
     isl::pw_aff OuterMin = AccessSet.dim_min(0);
 
     if (!AccessSet.dim_has_upper_bound(isl::dim::set, 0)) {
+        assert(isHackedNonAffineFunction(*S));
         errs()<< "=== no upper bound found, setting upper bound to 10kj===\n";
         errs() << "AccessSet(prev): "; AccessSet.dump();
         isl::constraint C = isl::constraint::alloc_inequality(isl::local_space(AccessSet.get_space()));
