@@ -38,6 +38,7 @@ class GetElementPtrInst;
 
 namespace polly {
 class Scop;
+class ScopStmt;
 
 /// Type to remap values.
 using ValueMapT = llvm::DenseMap<llvm::AssertingVH<llvm::Value>,
@@ -461,5 +462,12 @@ llvm::Loop *getFirstNonBoxedLoopFor(llvm::BasicBlock *BB, llvm::LoopInfo &LI,
 static const std::string POLLY_ABSTRACT_INDEX_BASENAME = "polly_array_index";
 llvm::Optional<std::pair<llvm::CallInst *, llvm::GEPOperator *>>
 getAbstractMatrixCall(MemAccInst Inst, llvm::ScalarEvolution &SE);
+
+
+// Return whether these are the hacked functions for which we want to enable our
+// non-affine related code.
+bool isHackedNonAffineFunction(std::string name);
+bool isHackedNonAffineFunction(const polly::ScopStmt &Stmt);
+bool isHackedNonAffineFunction(const polly::Scop &S);
 } // namespace polly
 #endif

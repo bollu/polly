@@ -2359,7 +2359,7 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
 
     isl_id_free(Id);
 
-    if (doesArrayHaveNonaffineAccess(SAI, &S)) {
+    if (isHackedNonAffineFunction(S) && doesArrayHaveNonaffineAccess(SAI, &S)) {
         Value *NewBasePtr = Arg;
         if (PointerType *OriginalTy =
                 dyn_cast<PointerType>(SAI->getBasePtr()->getType())) {
@@ -2372,7 +2372,7 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
 
         }
         ValueMap[SAI->getBasePtr()] = NewBasePtr;
-    }
+    };
 
     if (SAI->getNumberOfDimensions() > 0) {
       Arg++;
