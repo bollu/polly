@@ -268,9 +268,10 @@ static Instruction *fixupAddressSpace(Instruction *New) {
   return New;
 }
 
-void BlockGenerator::copyInstScalar(ScopStmt &Stmt, Instruction *Inst,
+
+
+void BlockGenerator::copyInstScalarHacked(ScopStmt &Stmt, Instruction *Inst,
                                     ValueMapT &BBMap, LoopToScevMapT &LTS) {
-  const bool RunHacks = isHackedNonAffineFunction(Stmt);
   // We do not generate debug intrinsics as we did not investigate how to
   // copy them correctly. At the current state, they just crash the code
   // generation as the meta-data operands are not correctly copied.
@@ -278,24 +279,27 @@ void BlockGenerator::copyInstScalar(ScopStmt &Stmt, Instruction *Inst,
     return;
 
   Instruction *NewInst = nullptr;
-  if (RunHacks) {
-    if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(Inst)) {
+  if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(Inst)) {
 
-      Value *NewPtr = getNewValue(Stmt, GEP->getPointerOperand(), BBMap, LTS,
-                                  getLoopForStmt(Stmt));
-      SmallVector<Value *, 4> NewIxs;
-      for (Value *Ix : GEP->indices()) {
-            getNewValue(Stmt, Ix, BBMap, LTS, getLoopForStmt(Stmt));
-      }
-      Type *ExpectedPointeeType =
-          cast<PointerType>(NewPtr->getType()->getScalarType())
-              ->getElementType();
-      NewInst = GetElementPtrInst::Create(ExpectedPointeeType, NewPtr, NewIxs,
-                                          GEP->getName());
+    Value *NewPtr = getNewValue(Stmt, GEP->getPointerOperand(), BBMap, LTS,
+                                getLoopForStmt(Stmt));
+    SmallVector<Value *, 4> NewIxs;
+    for (Value *Ix : GEP->indices()) {
+      NewIxs.push_back(getNewValue(Stmt, Ix, BBMap, LTS, getLoopForStmt(Stmt)));
     }
-  } 
+    // Type *PointeeType = cast<PointerType>(GetElementPtrInst::getGEPReturnType(NewPtr, NewIxs))->getElementType();
+    // HACK: tell LLVM what it wants to hear about the pointee type...
+    // this is nuts.
+    Type *ExpectedPointeeType = cast<PointerType>(NewPtr->getType()->getScalarType())->getElementType();
+    //errs() << "===" << __FUNCTION__ << "==\n";
+    //errs() << "Old: " << *Inst << "\n";
+    //errs() << "NewPtr: " << *NewPtr << "\n";
+    //errs() << "ExpectedPointeeType: " << *ExpectedPointeeType << "\n";
+    //errs() << "--\n";
+    NewInst = GetElementPtrInst::Create(ExpectedPointeeType, NewPtr, NewIxs, GEP->getName());
 
-  if (!NewInst) {
+  } else {
+    assert(!isa<GetElementPtrInst>(Inst));
     NewInst = Inst->clone();
 
     for (Value *OldOperand : Inst->operands()) {
@@ -312,15 +316,11 @@ void BlockGenerator::copyInstScalar(ScopStmt &Stmt, Instruction *Inst,
     }
   }
 
-  assert(NewInst && "newInst unitialized");
-
-  if (RunHacks) {
-    Instruction *FixedUpNewInst = fixupAddressSpace(NewInst);
-    if (FixedUpNewInst != NewInst) {
-      Builder.Insert(NewInst);
-      NewInst->eraseFromParent();
-      NewInst = FixedUpNewInst;
-    }
+  Instruction *FixedUpNewInst = fixupAddressSpace(NewInst);
+  if (FixedUpNewInst != NewInst) {
+    Builder.Insert(NewInst);
+    NewInst->eraseFromParent();
+    NewInst = FixedUpNewInst;
   }
 
   Builder.Insert(NewInst);
@@ -337,6 +337,56 @@ void BlockGenerator::copyInstScalar(ScopStmt &Stmt, Instruction *Inst,
 
   if (!NewInst->getType()->isVoidTy())
     NewInst->setName("pxxx_" + Inst->getName());
+}
+
+void BlockGenerator::copyInstScalarOrig(ScopStmt &Stmt, Instruction *Inst,
+                                    ValueMapT &BBMap, LoopToScevMapT &LTS) {
+  // We do not generate debug intrinsics as we did not investigate how to
+  // copy them correctly. At the current state, they just crash the code
+  // generation as the meta-data operands are not correctly copied.
+  if (isa<DbgInfoIntrinsic>(Inst))
+    return;
+
+  Instruction *NewInst = Inst->clone();
+
+  // Replace old operands with the new ones.
+  for (Value *OldOperand : Inst->operands()) {
+    Value *NewOperand =
+        getNewValue(Stmt, OldOperand, BBMap, LTS, getLoopForStmt(Stmt));
+
+    if (!NewOperand) {
+      assert(!isa<StoreInst>(NewInst) &&
+             "Store instructions are always needed!");
+      NewInst->deleteValue();
+      return;
+    }
+
+    NewInst->replaceUsesOfWith(OldOperand, NewOperand);
+  }
+
+  Builder.Insert(NewInst);
+  BBMap[Inst] = NewInst;
+
+  // When copying the instruction onto the Module meant for the GPU,
+  // debug metadata attached to an instruction causes all related
+  // metadata to be pulled into the Module. This includes the DICompileUnit,
+  // which will not be listed in llvm.dbg.cu of the Module since the Module
+  // doesn't contain one. This fails the verification of the Module and the
+  // subsequent generation of the ASM string.
+  if (NewInst->getModule() != Inst->getModule())
+    NewInst->setDebugLoc(llvm::DebugLoc());
+
+  if (!NewInst->getType()->isVoidTy())
+    NewInst->setName("p_" + Inst->getName());
+}
+
+void BlockGenerator::copyInstScalar(ScopStmt &Stmt, Instruction *Inst,
+                                    ValueMapT &BBMap, LoopToScevMapT &LTS) {
+  const bool RunHacks = isHackedNonAffineFunction(Stmt);
+  if (RunHacks)
+      copyInstScalarHacked(Stmt, Inst, BBMap, LTS);
+  else
+      copyInstScalarOrig(Stmt, Inst, BBMap, LTS);
 }
 
 Value *

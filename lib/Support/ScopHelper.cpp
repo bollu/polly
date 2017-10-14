@@ -673,10 +673,13 @@ polly::getAbstractMatrixCall(MemAccInst Inst, ScalarEvolution &SE) {
 
 
 bool polly::isHackedNonAffineFunction(std::string name) {
-    return name == "__src_block_fields_MOD_copytoblock3d" ||
-        name == "__src_block_fields_MOD_copytoblock2d" ||
-        name == "__src_block_fields_MOD_copyfromblock3d" ||
-        name == "__src_block_fields_MOD_copytoblock2d";
+    StringRef refname(name);
+    bool contains =  refname.contains("__src_block_fields_MOD_copytoblock3d") ||
+        refname.contains("__src_block_fields_MOD_copytoblock2d") ||
+        refname.contains("__src_block_fields_MOD_copyfromblock3d") ||
+        refname.contains("__src_block_fields_MOD_copytoblock2d");
+   assert(contains);
+   return contains;
 }
 
 bool polly::isHackedNonAffineFunction(const ScopStmt &Stmt) {

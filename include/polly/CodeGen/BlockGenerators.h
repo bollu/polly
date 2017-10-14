@@ -471,6 +471,12 @@ protected:
   void copyInstScalar(ScopStmt &Stmt, Instruction *Inst, ValueMapT &BBMap,
                       LoopToScevMapT &LTS);
 
+  void copyInstScalarOrig(ScopStmt &Stmt, Instruction *Inst, ValueMapT &BBMap,
+                      LoopToScevMapT &LTS);
+
+  void copyInstScalarHacked(ScopStmt &Stmt, Instruction *Inst, ValueMapT &BBMap,
+                      LoopToScevMapT &LTS);
+
   /// Get the innermost loop that surrounds the statement @p Stmt.
   Loop *getLoopForStmt(const ScopStmt &Stmt) const;
 
