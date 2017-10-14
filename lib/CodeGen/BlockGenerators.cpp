@@ -233,7 +233,9 @@ static Type *copyAddressSpace(Type *NewType, Type *AddrSpaceType) {
 static Instruction *fixupAddressSpace(Instruction *New) {
 
   // errs() << "\n\n==== " << __FUNCTION__ << "====\n";
+  errs() << "**" << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";;
   if (BitCastInst *BC = dyn_cast<BitCastInst>(New)) {
+  errs() << "**" << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";;
     Value *V = New->getOperand(0);
 
     int AddrSpace = [&]() {
@@ -243,21 +245,26 @@ static Instruction *fixupAddressSpace(Instruction *New) {
         report_fatal_error(
             "unimplemented addrspace inspection of bitcast(V to ...)\n");
       }
+  errs() << "**" << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";
     }();
     // errs() << "New: " << *New << "\n";
     // errs() << " -V: " << *V << "\n";
     // errs() << " -Addrspace: " << AddrSpace << "\n";
+  errs() << "**" << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";
     Type *NewElemTy = cast<PointerType>(BC->getDestTy())->getElementType();
     // errs() << " -NewElemTy: " << *NewElemTy << "\n";
     Type *NewTy = PointerType::get(NewElemTy, AddrSpace);
     //// Type *NewTy = BC->getDestTy();
     // errs() << " -NewTy: " << *NewTy << "\n";
 
+  errs() << "**" << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";
     auto NewBC =
         CastInst::CreatePointerBitCastOrAddrSpaceCast(V, NewTy, New->getName());
     // errs() << "NewBC: " << *NewBC << "\n";
+  errs() << "**" << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";
     return NewBC;
   }
+  errs() << "**" << __LINE__ << ":" << __PRETTY_FUNCTION__ << "\n";
   return New;
 }
 
@@ -278,8 +285,7 @@ void BlockGenerator::copyInstScalar(ScopStmt &Stmt, Instruction *Inst,
                                   getLoopForStmt(Stmt));
       SmallVector<Value *, 4> NewIxs;
       for (Value *Ix : GEP->indices()) {
-        NewIxs.push_back(
-            getNewValue(Stmt, Ix, BBMap, LTS, getLoopForStmt(Stmt)));
+            getNewValue(Stmt, Ix, BBMap, LTS, getLoopForStmt(Stmt));
       }
       Type *ExpectedPointeeType =
           cast<PointerType>(NewPtr->getType()->getScalarType())
@@ -287,8 +293,9 @@ void BlockGenerator::copyInstScalar(ScopStmt &Stmt, Instruction *Inst,
       NewInst = GetElementPtrInst::Create(ExpectedPointeeType, NewPtr, NewIxs,
                                           GEP->getName());
     }
-  } else {
-    assert(!RunHacks || !isa<GetElementPtrInst>(Inst));
+  } 
+
+  if (!NewInst) {
     NewInst = Inst->clone();
 
     for (Value *OldOperand : Inst->operands()) {
@@ -304,6 +311,8 @@ void BlockGenerator::copyInstScalar(ScopStmt &Stmt, Instruction *Inst,
       NewInst->replaceUsesOfWith(OldOperand, NewOperand);
     }
   }
+
+  assert(NewInst && "newInst unitialized");
 
   if (RunHacks) {
     Instruction *FixedUpNewInst = fixupAddressSpace(NewInst);

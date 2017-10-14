@@ -769,8 +769,7 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
       return false;
     }
     for (LoadInst *LInst : AccessILS) {
-        if (!ScopRIL.count(LInst)) {
-            // errs() << "\t" << __FUNCTION__ << "|" << __LINE__ << "|found load that is not part of scop: " << *LInst << "\n";
+        if (!ScopRIL.count(LInst) && isHackedNonAffineFunction(*Stmt)) {
             return false;
         }
     }
@@ -812,7 +811,7 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
 
   // If all loads in our acceses are not part of the scop, bail out
   for (LoadInst *LInst : AccessILS) {
-    if (!ScopRIL.count(LInst)) {
+    if (!ScopRIL.count(LInst) && isHackedNonAffineFunction(*Stmt)) {
       return false;
     }
   }

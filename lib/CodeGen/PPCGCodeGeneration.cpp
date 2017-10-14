@@ -371,6 +371,7 @@ static __isl_give isl_id_to_ast_expr *pollyBuildAstExprForStmt(
 
   for (MemoryAccess *Acc : *Stmt) {
     if (!Acc->isAffine()) {
+        assert(isHackedNonAffineFunction(*Stmt) && "found non-affine access in our non-hacked function!");
       errs() << __PRETTY_FUNCTION__
              << "skipping materializing the stmt's memory access because it's "
                 "nonaffine\n";
