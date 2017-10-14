@@ -374,12 +374,6 @@ static __isl_give isl_id_to_ast_expr *pollyBuildAstExprForStmt(
       errs() << __PRETTY_FUNCTION__
              << "skipping materializing the stmt's memory access because it's "
                 "nonaffine\n";
-      errs() << "Acc: ";
-      Acc->dump();
-      isl::id RefId = Acc->getId();
-      errs() << "RefID: ";
-      RefId.dump();
-      errs() << "\n";
       continue;
     }
     isl::map AddrFunc = Acc->getAddressFunction();
@@ -2333,6 +2327,26 @@ void GPUNodeBuilder::insertKernelCallsSPIR(ppcg_kernel *Kernel) {
     createFunc(LocalName[i], isl_id_list_get_id(Kernel->thread_ids, i));
 }
 
+bool doesArrayHaveNonaffineAccess(ScopArrayInfo *Array, Scop *S) {
+    unsigned NumDims = Array->getNumberOfDimensions();
+
+    if (Array->getNumberOfDimensions() == 0)
+      return false;
+    isl::union_map Accesses = S->getAccesses(Array);
+    isl::union_set AccessUSet = Accesses.range();
+    AccessUSet = AccessUSet.coalesce();
+    AccessUSet = AccessUSet.detect_equalities();
+    AccessUSet = AccessUSet.coalesce();
+
+    if (AccessUSet.is_empty())
+      return false;
+
+    isl::set AccessSet = AccessUSet.extract_set(Array->getSpace());
+
+    return  !AccessSet.dim_has_lower_bound(isl::dim::set, 0) ||
+        !AccessSet.dim_has_upper_bound(isl::dim::set, 0);
+}
+
 void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
   auto Arg = FN->arg_begin();
   for (long i = 0; i < Kernel->n_array; i++) {
@@ -2340,22 +2354,25 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
       continue;
 
     isl_id *Id = isl_space_get_tuple_id(Prog->array[i].space, isl_dim_set);
-    const ScopArrayInfo *SAI =
-        ScopArrayInfo::getFromId(isl::manage(isl_id_copy(Id)));
+    ScopArrayInfo *SAI =
+        const_cast<ScopArrayInfo *>(ScopArrayInfo::getFromId(isl::manage(isl_id_copy(Id))));
+
     isl_id_free(Id);
 
-    Value *NewBasePtr = Arg;
-    if (PointerType *OriginalTy =
-            dyn_cast<PointerType>(SAI->getBasePtr()->getType())) {
-      PointerType *NewTy = PointerType::get(OriginalTy->getElementType(),
-                                            Arg->getType()->getPointerAddressSpace());
-      NewBasePtr = Builder.CreateBitCast(
-          Arg, NewTy, Arg->getName() + "_hack_load_for_blockgen");
-    } else {
-        report_fatal_error(" I did not think about this case yet.");
+    if (doesArrayHaveNonaffineAccess(SAI, &S)) {
+        Value *NewBasePtr = Arg;
+        if (PointerType *OriginalTy =
+                dyn_cast<PointerType>(SAI->getBasePtr()->getType())) {
+          PointerType *NewTy = PointerType::get(OriginalTy->getElementType(),
+                                                Arg->getType()->getPointerAddressSpace());
+          NewBasePtr = Builder.CreateBitCast(
+              Arg, NewTy, Arg->getName() + "_hack_load_for_blockgen");
+        } else {
+            report_fatal_error(" I did not think about this case yet.");
 
+        }
+        ValueMap[SAI->getBasePtr()] = NewBasePtr;
     }
-    ValueMap[SAI->getBasePtr()] = NewBasePtr;
 
     if (SAI->getNumberOfDimensions() > 0) {
       Arg++;
@@ -2745,15 +2762,15 @@ std::string GPUNodeBuilder::finalizeKernelFunction() {
   if (DumpKernelIR)
     outs() << *GPUModule << "\n";
 
-  if (Arch != GPUArch::SPIR32 && Arch != GPUArch::SPIR64) {
-    // Optimize module.
-    llvm::legacy::PassManager OptPasses;
-    PassManagerBuilder PassBuilder;
-    PassBuilder.OptLevel = 3;
-    PassBuilder.SizeLevel = 0;
-    PassBuilder.populateModulePassManager(OptPasses);
-    OptPasses.run(*GPUModule);
-  }
+  //if (Arch != GPUArch::SPIR32 && Arch != GPUArch::SPIR64) {
+  //  // Optimize module.
+  //  llvm::legacy::PassManager OptPasses;
+  //  PassManagerBuilder PassBuilder;
+  //  PassBuilder.OptLevel = 3;
+  //  PassBuilder.SizeLevel = 0;
+  //  PassBuilder.populateModulePassManager(OptPasses);
+  //  OptPasses.run(*GPUModule);
+  //}
 
   for (Function &F : *GPUModule) {
     countNumUnusedParamsInFunction(&F);
@@ -3141,28 +3158,28 @@ public:
     isl::local_space LS = isl::local_space(Array->getSpace());
 
     isl::pw_aff Val = isl::aff::var_on_domain(LS, isl::dim::set, 0);
-    isl::pw_aff OuterMin;
-    if (AccessSet.dim_has_lower_bound(isl::dim::set, 0)) {
-      OuterMin = AccessSet.dim_min(0);
-    } else {
-      isl::val Zero = isl::val::zero(AccessSet.get_ctx());
-      isl::set Univ = isl::set::universe(isl::space(AccessSet.get_ctx(), 0, 0));
-      OuterMin = isl::pw_aff(Univ, Zero);
-      errs() << __PRETTY_FUNCTION__
-             << " | HACK: assuming array is zero lower-bounded because our "
-                "access function is non-affine!\n";
+    //isl::pw_aff OuterMin;
+    if (!AccessSet.dim_has_lower_bound(isl::dim::set, 0)) {
+        errs()<< "=== no lower bound found, setting lower bound to 0===\n";
+        errs() << "AccessSet(prev): "; AccessSet.dump();
+        isl::constraint LB = isl::constraint::alloc_inequality(isl::local_space(AccessSet.get_space()));
+        LB = LB.set_coefficient_si(isl::dim::set, 0, 1);
+        AccessSet = AccessSet.add_constraint(LB);
+        errs() << "AccessSet(new): "; AccessSet.dump();
+      //OuterMin = AccessSet.dim_min(0);
     }
-    isl::pw_aff OuterMax;
-    if (AccessSet.dim_has_upper_bound(isl::dim::set, 0)) {
-      OuterMax = AccessSet.dim_max(0);
-    } else {
-      isl::val TenK = isl::val(AccessSet.get_ctx(), 1e5);
-      isl::set Univ = isl::set::universe(isl::space(AccessSet.get_ctx(), 0, 0));
-      OuterMax = isl::pw_aff(Univ, TenK);
-      errs() << __PRETTY_FUNCTION__
-             << " | HACK: assuming array is 50k upper-bounded because our "
-                "access function is non-affine!\n";
-    }
+    isl::pw_aff OuterMin = AccessSet.dim_min(0);
+
+    if (!AccessSet.dim_has_upper_bound(isl::dim::set, 0)) {
+        errs()<< "=== no upper bound found, setting upper bound to 10kj===\n";
+        errs() << "AccessSet(prev): "; AccessSet.dump();
+        isl::constraint C = isl::constraint::alloc_inequality(isl::local_space(AccessSet.get_space()));
+        C = C.set_coefficient_si(isl::dim::set, 0, -1);
+        C = C.set_constant_si(10000);
+        AccessSet = AccessSet.add_constraint(C);
+        errs() << "AccessSet(new): "; AccessSet.dump();
+    } 
+    isl::pw_aff OuterMax = AccessSet.dim_max(0);
 
     OuterMin = OuterMin.add_dims(isl::dim::in, Val.dim(isl::dim::in));
     OuterMax = OuterMax.add_dims(isl::dim::in, Val.dim(isl::dim::in));
@@ -3171,10 +3188,6 @@ public:
 
     isl::set Extent = isl::set::universe(Array->getSpace());
 
-    errs() << "OuterMin: ";
-    OuterMin.dump();
-    errs() << "Val: ";
-    Val.dump();
     auto X = OuterMin.le_set(Val);
     Extent = Extent.intersect(X);
     Extent = Extent.intersect(OuterMax.ge_set(Val));
@@ -3557,7 +3570,7 @@ public:
     // report_fatal_error("see full param space");
     //
 
-    if (!has_permutable || has_permutable < 0) {
+    if (false && (!has_permutable || has_permutable < 0)) {
       Schedule = isl_schedule_free(Schedule);
       DEBUG(dbgs() << getUniqueScopName(S)
                    << " does not have permutable bands. Bailing out\n";);

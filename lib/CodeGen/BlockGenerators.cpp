@@ -175,12 +175,12 @@ Value *BlockGenerator::getNewValue(ScopStmt &Stmt, Value *Old, ValueMapT &BBMap,
     // implementation prioritized GlobalMap, so this is what we do here as well.
     // Ideally, synthesizable values should not end up in GlobalMap.
     if ((New = lookupGlobally(Old))) {
-      errs() << "\t\tfound New in GlobalMap!"
-             << " | Old: " << *Old << "|New: " << *New << "\n";
+      //errs() << "\t\tfound New in GlobalMap!"
+      //       << " | Old: " << *Old << "|New: " << *New << "\n";
       break;
     }
-    errs() << "\t\tdid *not* New in GlobalMap!"
-           << " | Old: " << *Old << "|New: EMPTY\n";
+    //errs() << "\t\tdid *not* New in GlobalMap!"
+    //       << " | Old: " << *Old << "|New: EMPTY\n";
 
     // Required for:
     // * Isl/CodeGen/RuntimeDebugBuilder/combine_different_values.ll
@@ -207,6 +207,9 @@ Value *BlockGenerator::getNewValue(ScopStmt &Stmt, Value *Old, ValueMapT &BBMap,
 
   case VirtualUse::Intra:
   case VirtualUse::Inter:
+    auto It = GlobalMap.find(Old);
+    if (GlobalMap.count(Old))
+        errs() << "Old: " << *Old << " |New: " << *It->second << "\n";
     assert(!GlobalMap.count(Old) &&
            "Intra and inter-stmt values are never global");
     New = BBMap.lookup(Old);
@@ -229,7 +232,7 @@ static Type *copyAddressSpace(Type *NewType, Type *AddrSpaceType) {
 // new instruction.
 static Instruction *fixupAddressSpace(Instruction *New) {
 
-  errs() << "\n\n==== " << __FUNCTION__ << "====\n";
+  //errs() << "\n\n==== " << __FUNCTION__ << "====\n";
   if (BitCastInst *BC = dyn_cast<BitCastInst>(New)) {
     Value *V = New->getOperand(0);
 
@@ -241,18 +244,18 @@ static Instruction *fixupAddressSpace(Instruction *New) {
             "unimplemented addrspace inspection of bitcast(V to ...)\n");
       }
     }();
-    errs() << "New: " << *New << "\n";
-    errs() << " -V: " << *V << "\n";
-    errs() << " -Addrspace: " << AddrSpace << "\n";
+    //errs() << "New: " << *New << "\n";
+    //errs() << " -V: " << *V << "\n";
+    //errs() << " -Addrspace: " << AddrSpace << "\n";
     Type *NewElemTy = cast<PointerType>(BC->getDestTy())->getElementType();
-    errs() << " -NewElemTy: " << *NewElemTy << "\n";
+    //errs() << " -NewElemTy: " << *NewElemTy << "\n";
     Type *NewTy = PointerType::get(NewElemTy, AddrSpace);
-    // Type *NewTy = BC->getDestTy();
-    errs() << " -NewTy: " << *NewTy << "\n";
+    //// Type *NewTy = BC->getDestTy();
+    //errs() << " -NewTy: " << *NewTy << "\n";
 
     auto NewBC =
         CastInst::CreatePointerBitCastOrAddrSpaceCast(V, NewTy, New->getName());
-    errs() << "NewBC: " << *NewBC << "\n";
+    //errs() << "NewBC: " << *NewBC << "\n";
     return NewBC;
   }
   return New;
@@ -275,13 +278,16 @@ void BlockGenerator::copyInstScalar(ScopStmt &Stmt, Instruction *Inst,
     for (Value *Ix : GEP->indices()) {
       NewIxs.push_back(getNewValue(Stmt, Ix, BBMap, LTS, getLoopForStmt(Stmt)));
     }
-    Type *PointeeType = cast<PointerType>(GetElementPtrInst::getGEPReturnType(NewPtr, NewIxs))->getElementType();
-    errs() << "===" << __FUNCTION__ << "==\n";
-    errs() << "Old: " << *Inst << "\n";
-    errs() << "PointeeType: " << *PointeeType;
-    errs() << "NewPtr: " << *NewPtr << "\n";
-    errs() << "--\n";
-    NewInst = GetElementPtrInst::Create(PointeeType, NewPtr, NewIxs, GEP->getName());
+    // Type *PointeeType = cast<PointerType>(GetElementPtrInst::getGEPReturnType(NewPtr, NewIxs))->getElementType();
+    // HACK: tell LLVM what it wants to hear about the pointee type...
+    // this is nuts.
+    Type *ExpectedPointeeType = cast<PointerType>(NewPtr->getType()->getScalarType())->getElementType();
+    //errs() << "===" << __FUNCTION__ << "==\n";
+    //errs() << "Old: " << *Inst << "\n";
+    //errs() << "NewPtr: " << *NewPtr << "\n";
+    //errs() << "ExpectedPointeeType: " << *ExpectedPointeeType << "\n";
+    //errs() << "--\n";
+    NewInst = GetElementPtrInst::Create(ExpectedPointeeType, NewPtr, NewIxs, GEP->getName());
 
   } else {
     assert(!isa<GetElementPtrInst>(Inst));

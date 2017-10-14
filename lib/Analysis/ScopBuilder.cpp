@@ -730,20 +730,11 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
   std::vector<const SCEV *> Strides;
   Loop *SurroundingLoop = Stmt->getSurroundingLoop();
   const InvariantLoadsSetTy &ScopRIL = scop->getRequiredInvariantLoads();
-  errs() << "** ScopRIL:\n";
-  for(LoadInst *LI : ScopRIL) {
-      errs() << *LI << "\n";
-  }
-  errs() << "===\n";
 
   InvariantLoadsSetTy AccessILS;
 
   if (isa<UndefValue>(Call->getArgOperand(0)))
     return false;
-
-  errs() << "\n\n\n"
-         << __FUNCTION__ << " : MemAccInst: " << *Inst << " | Call: " << *Call
-         << "\n";
   const SCEV *Offset = SE.getSCEV(Call->getArgOperand(0));
 
   if (!isAffineExpr(&scop->getRegion(), SurroundingLoop, Offset, SE,
@@ -777,14 +768,9 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
                       &AccessILS)) {
       return false;
     }
-    errs() << "\n**AccessILS:" << __LINE__ << "\n";
-    for(LoadInst *LInst : AccessILS) {
-        errs() << "\t" << *LInst << "\n";
-    };
-    errs() << "===\n";
     for (LoadInst *LInst : AccessILS) {
         if (!ScopRIL.count(LInst)) {
-            errs() << "\t" << __FUNCTION__ << "|" << __LINE__ << "|found load that is not part of scop: " << *LInst << "\n";
+            // errs() << "\t" << __FUNCTION__ << "|" << __LINE__ << "|found load that is not part of scop: " << *LInst << "\n";
             return false;
         }
     }
@@ -827,7 +813,6 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
   // If all loads in our acceses are not part of the scop, bail out
   for (LoadInst *LInst : AccessILS) {
     if (!ScopRIL.count(LInst)) {
-      errs() << "\t" << __FUNCTION__ << "|" << __LINE__ << "|found load that is not part of scop: " << *LInst << "\n";
       return false;
     }
   }

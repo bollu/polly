@@ -333,7 +333,6 @@ ScopArrayInfo::ScopArrayInfo(Value *BasePtr, Type *ElementType, isl::ctx Ctx,
                                       UseInstructionNames);
   Id = isl::id::alloc(Ctx, BasePtrName, this);
 
-  
   // Shape.mapSizes([&] (SmallVector<const SCEV*, 4> &Sizes)  {
   // this->updateSizes(Sizes); });
   if (Shape.hasSizes())
@@ -450,14 +449,14 @@ void ScopArrayInfo::overwriteSizeWithStrides(ArrayRef<const SCEV *> Strides,
   updateStrides(Strides, Offset, FAD);
 }
 bool ScopArrayInfo::updateStrides(ArrayRef<const SCEV *> Strides,
-                                  const SCEV *Offset,
-                                  GlobalValue *FAD) {
+                                  const SCEV *Offset, GlobalValue *FAD) {
   Shape.setStrides(Strides, Offset, FAD);
   DimensionSizesPw.clear();
   for (size_t i = 0; i < Shape.getNumberOfDimensions(); i++) {
     isl::space Space(S.getIslCtx(), 1, 0);
 
-    std::string param_name = getIslCompatibleName("stride_" + std::to_string(i) + "__", getName(), "");
+    std::string param_name = getIslCompatibleName(
+        "stride_" + std::to_string(i) + "__", getName(), "");
     isl::id IdPwAff = isl::id::alloc(S.getIslCtx(), param_name, this);
 
     Space = Space.set_dim_id(isl::dim::param, 0, IdPwAff);
@@ -639,7 +638,8 @@ void MemoryAccess::wrapConstantDimensions() {
 void MemoryAccess::updateDimensionality() {
   auto *SAI = getScopArrayInfo();
   //  HACK: check if this makes sense.
-  if(SAI->hasStrides()) return;
+  if (SAI->hasStrides())
+    return;
 
   isl::space ArraySpace = SAI->getSpace();
 
@@ -2424,7 +2424,7 @@ buildMinMaxAccess(isl::set Set, Scop::MinMaxVectorTy &MinMaxAccesses, Scop &S) {
   Set = Set.remove_divs();
 
   if (isl_set_n_basic_set(Set.get()) >= MaxDisjunctsInDomain) {
-      errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
+    errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
     return isl::stat::error;
   }
 
@@ -2455,7 +2455,7 @@ buildMinMaxAccess(isl::set Set, Scop::MinMaxVectorTy &MinMaxAccesses, Scop &S) {
   }
 
   if (isl_set_n_basic_set(Set.get()) > RunTimeChecksMaxAccessDisjuncts) {
-      errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
+    errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
     return isl::stat::error;
   }
 
@@ -2463,7 +2463,7 @@ buildMinMaxAccess(isl::set Set, Scop::MinMaxVectorTy &MinMaxAccesses, Scop &S) {
   MaxPMA = Set.lexmax_pw_multi_aff();
 
   if (isl_ctx_last_error(Ctx.get()) == isl_error_quota) {
-      errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
+    errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
     return isl::stat::error;
   }
 
@@ -2512,7 +2512,7 @@ static bool calculateMinMaxAccess(Scop::AliasGroupTy AliasGroup, Scop &S,
   auto Lambda = [&MinMaxAccesses, &S](isl::set Set) -> isl::stat {
     return buildMinMaxAccess(Set, MinMaxAccesses, S);
   };
-  bool Valid =  Locations.foreach_set(Lambda) == isl::stat::ok;
+  bool Valid = Locations.foreach_set(Lambda) == isl::stat::ok;
 
   return Valid;
 }
@@ -3337,7 +3337,7 @@ bool Scop::buildAliasGroups(AliasAnalysis &AA) {
       IslMaxOperationsGuard MaxOpGuard(getIslCtx(), OptComputeOut);
       bool Valid = buildAliasGroup(AG, HasWriteAccess);
       if (!Valid) {
-          errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
+        errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
         return false;
       }
     }
@@ -3414,7 +3414,7 @@ bool Scop::buildAliasGroup(Scop::AliasGroupTy &AliasGroup,
       calculateMinMaxAccess(ReadWriteAccesses, *this, MinMaxAccessesReadWrite);
 
   if (!Valid) {
-      errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
+    errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
     return false;
   }
 
@@ -3424,14 +3424,14 @@ bool Scop::buildAliasGroup(Scop::AliasGroupTy &AliasGroup,
   if (MinMaxAccessesReadWrite.size() + ReadOnlyArrays.size() >
       RunTimeChecksMaxArraysPerGroup) {
     return false;
-      errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
+    errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
   }
 
   Valid =
       calculateMinMaxAccess(ReadOnlyAccesses, *this, MinMaxAccessesReadOnly);
 
   if (!Valid) {
-      errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
+    errs() << "@@@" << __PRETTY_FUNCTION__ << __LINE__ << "\n";
     return false;
   }
 
@@ -3694,7 +3694,7 @@ void Scop::updateAccessDimensionality() {
 
   for (auto &Stmt : *this)
     for (auto &Access : Stmt) {
-        Access->updateDimensionality();
+      Access->updateDimensionality();
     }
 }
 
@@ -4185,12 +4185,12 @@ void Scop::canonicalizeDynamicBasePtrs() {
 }
 
 Value *getPointerFromLoadOrStore(Value *V) {
-    if (LoadInst *LI = dyn_cast<LoadInst>(V))
-        return LI->getPointerOperand();
+  if (LoadInst *LI = dyn_cast<LoadInst>(V))
+    return LI->getPointerOperand();
 
-    if (StoreInst *SI = dyn_cast<StoreInst>(V))
-        return SI->getPointerOperand();
-    return nullptr;
+  if (StoreInst *SI = dyn_cast<StoreInst>(V))
+    return SI->getPointerOperand();
+  return nullptr;
 }
 
 ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
@@ -4201,24 +4201,25 @@ ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
   assert(!(BasePtr && BaseName) && "BaseName is redundant.");
 
   auto getCommonBasePtr = [&]() -> Value * {
-      Value *CurBase = getPointerFromLoadOrStore(BasePtr);
-      if (!CurBase) return BasePtr;
-
-      for(ScopArrayInfo *SAI : arrays()) {
-        Value *SAIBase = getPointerFromLoadOrStore(SAI->getBasePtr());
-        if (!SAIBase) continue;
-
-        if (SAIBase == CurBase) return SAI->getBasePtr();
-      }
+    Value *CurBase = getPointerFromLoadOrStore(BasePtr);
+    if (!CurBase)
       return BasePtr;
+
+    for (ScopArrayInfo *SAI : arrays()) {
+      Value *SAIBase = getPointerFromLoadOrStore(SAI->getBasePtr());
+      if (!SAIBase)
+        continue;
+
+      if (SAIBase == CurBase)
+        return SAI->getBasePtr();
+    }
+    return BasePtr;
   };
 
   // BasePtr = getCommonBasePtr();
 
-
   auto &SAI = BasePtr ? ScopArrayInfoMap[std::make_pair(BasePtr, Kind)]
                       : ScopArrayNameMap[BaseName];
-
 
   if (!SAI) {
     auto &DL = getFunction().getParent()->getDataLayout();
@@ -4237,10 +4238,12 @@ ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
       if (Shape.hasStrides()) {
         DEBUG(dbgs() << "Shape has strides, SAI had size. Overwriting size "
                         "with strides");
-        SAI->overwriteSizeWithStrides(Shape.strides(), Shape.offset(), Shape.hackFAD());
+        SAI->overwriteSizeWithStrides(Shape.strides(), Shape.offset(),
+                                      Shape.hackFAD());
       } else {
-        report_fatal_error(
-            "SAI has strides, Shape is size based. This should not happen");
+        errs() << "SAI has strides, Shape is size based. This should not "
+                  "happen. Ignoring new data for now.";
+        return SAI.get();
       }
     }
 
@@ -4328,12 +4331,13 @@ isl::space Scop::getFullParamSpace() const {
 
   std::vector<isl::id> StrideIDs;
 
-  for(ScopArrayInfo *Array : arrays()) {
-      if (!Array->hasStrides()) continue;
-      for(int i = 0 ; i < Array->getNumberOfDimensions(); i++) {
-          isl::id Id = Array->getDimensionSizeId(i);
-          StrideIDs.push_back(Id);
-      }
+  for (ScopArrayInfo *Array : arrays()) {
+    if (!Array->hasStrides())
+      continue;
+    for (int i = 0; i < Array->getNumberOfDimensions(); i++) {
+      isl::id Id = Array->getDimensionSizeId(i);
+      StrideIDs.push_back(Id);
+    }
   }
 
   isl::space Space = isl::space::params_alloc(

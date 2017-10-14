@@ -1121,11 +1121,9 @@ bool IslNodeBuilder::materializeValue(isl_id *Id) {
 
 bool IslNodeBuilder::materializeParameters(isl_set *Set) {
   for (unsigned i = 0, e = isl_set_dim(Set, isl_dim_param); i < e; ++i) {
-      errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
     if (!isl_set_involves_dims(Set, isl_dim_param, i, 1))
       continue;
     isl_id *Id = isl_set_get_dim_id(Set, isl_dim_param, i);
-    errs() << "\t-Id:"; isl_id_dump(Id); errs() << "\n";
     if (!materializeValue(Id))
       return false;
   }
