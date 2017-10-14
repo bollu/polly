@@ -115,8 +115,10 @@ Value *BlockGenerator::getNewValue(ScopStmt &Stmt, Value *Old, ValueMapT &BBMap,
 
     // No test case for this code.
     if (Old->getType()->getScalarSizeInBits() <
-        New->getType()->getScalarSizeInBits())
+        New->getType()->getScalarSizeInBits()) {
+      assert(false);
       New = Builder.CreateTruncOrBitCast(New, Old->getType());
+    }
 
     return New;
   };
@@ -227,46 +229,29 @@ static Type *copyAddressSpace(Type *NewType, Type *AddrSpaceType) {
 // new instruction.
 static Instruction *fixupAddressSpace(Instruction *New) {
 
-    errs() << __FUNCTION__ << "\n";
-  if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(New)) {
-      // int AddrSpace = GEP->getAddressSpace();
-      Type *SrcTy = GEP->getOperand(0)->getType();
-      errs() << "SrcTy: " << *SrcTy << "\n";
-
-      errs() << "GEP->type: " << *GEP->getType() << "\n";
-
-      Type *DestElemTy = cast<PointerType>(GEP->getType())->getElementType();
-      errs() << "DestElemTy: " << *DestElemTy << "\n";
-
-      Type *FixedUpDestTy = PointerType::get(DestElemTy, SrcTy->getPointerAddressSpace());
-      errs() << "FixedUpDestTy: " << *FixedUpDestTy << "\n";
-
-      SmallVector<Value *, 4> Idxs(GEP->indices());
-      Value *Ptr = GEP->getPointerOperand();
-      errs() << "Ptr: " << *Ptr;
-      return GetElementPtrInst::Create(FixedUpDestTy, Ptr, Idxs);
-  }
+  errs() << "\n\n==== " << __FUNCTION__ << "====\n";
   if (BitCastInst *BC = dyn_cast<BitCastInst>(New)) {
     Value *V = New->getOperand(0);
 
-    int AddrSpace = [&]() { 
-        if (auto *GEP = dyn_cast<GetElementPtrInst>(V)) {
-            return GEP->getAddressSpace();
-        }
-        else {
-            report_fatal_error("unimplemented addrspace inspection of bitcast(V to ...)\n");
-        }
+    int AddrSpace = [&]() {
+      if (auto *GEP = dyn_cast<GetElementPtrInst>(V)) {
+        return GEP->getAddressSpace();
+      } else {
+        report_fatal_error(
+            "unimplemented addrspace inspection of bitcast(V to ...)\n");
+      }
     }();
-
+    errs() << "New: " << *New << "\n";
     errs() << " -V: " << *V << "\n";
     errs() << " -Addrspace: " << AddrSpace << "\n";
     Type *NewElemTy = cast<PointerType>(BC->getDestTy())->getElementType();
     errs() << " -NewElemTy: " << *NewElemTy << "\n";
-    // Type *NewTy = PointerType::get(NewElemTy, AddrSpace);
-    Type *NewTy = BC->getDestTy(); 
+    Type *NewTy = PointerType::get(NewElemTy, AddrSpace);
+    // Type *NewTy = BC->getDestTy();
     errs() << " -NewTy: " << *NewTy << "\n";
 
-    auto NewBC = new BitCastInst(V, BC->getDestTy(), New->getName());
+    auto NewBC =
+        CastInst::CreatePointerBitCastOrAddrSpaceCast(V, NewTy, New->getName());
     errs() << "NewBC: " << *NewBC << "\n";
     return NewBC;
   }
@@ -281,29 +266,46 @@ void BlockGenerator::copyInstScalar(ScopStmt &Stmt, Instruction *Inst,
   if (isa<DbgInfoIntrinsic>(Inst))
     return;
 
-  Instruction *NewInst = Inst->clone();
-  // errs() << "* Copying: " << *NewInst << "\n";
+  Instruction *NewInst = nullptr;
+  if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(Inst)) {
 
-  // Replace old operands with the new ones.
-  for (Value *OldOperand : Inst->operands()) {
-    Value *NewOperand =
-        getNewValue(Stmt, OldOperand, BBMap, LTS, getLoopForStmt(Stmt));
-
-    if (!NewOperand) {
-      assert(!isa<StoreInst>(NewInst) &&
-             "Store instructions are always needed!");
-      NewInst->deleteValue();
-      return;
+    Value *NewPtr = getNewValue(Stmt, GEP->getPointerOperand(), BBMap, LTS,
+                                getLoopForStmt(Stmt));
+    SmallVector<Value *, 4> NewIxs;
+    for (Value *Ix : GEP->indices()) {
+      NewIxs.push_back(getNewValue(Stmt, Ix, BBMap, LTS, getLoopForStmt(Stmt)));
     }
-    NewInst->replaceUsesOfWith(OldOperand, NewOperand);
-  }
+    Type *PointeeType = cast<PointerType>(GetElementPtrInst::getGEPReturnType(NewPtr, NewIxs))->getElementType();
+    errs() << "===" << __FUNCTION__ << "==\n";
+    errs() << "Old: " << *Inst << "\n";
+    errs() << "PointeeType: " << *PointeeType;
+    errs() << "NewPtr: " << *NewPtr << "\n";
+    errs() << "--\n";
+    NewInst = GetElementPtrInst::Create(PointeeType, NewPtr, NewIxs, GEP->getName());
 
+  } else {
+    assert(!isa<GetElementPtrInst>(Inst));
+    NewInst = Inst->clone();
+
+    for (Value *OldOperand : Inst->operands()) {
+      Value *NewOperand =
+          getNewValue(Stmt, OldOperand, BBMap, LTS, getLoopForStmt(Stmt));
+
+      if (!NewOperand) {
+        assert(!isa<StoreInst>(NewInst) &&
+               "Store instructions are always needed!");
+        NewInst->deleteValue();
+        return;
+      }
+      NewInst->replaceUsesOfWith(OldOperand, NewOperand);
+    }
+  }
 
   Instruction *FixedUpNewInst = fixupAddressSpace(NewInst);
   if (FixedUpNewInst != NewInst) {
-      Builder.Insert(NewInst);
-      NewInst->eraseFromParent();
-      NewInst = FixedUpNewInst;
+    Builder.Insert(NewInst);
+    NewInst->eraseFromParent();
+    NewInst = FixedUpNewInst;
   }
 
   Builder.Insert(NewInst);
@@ -319,7 +321,7 @@ void BlockGenerator::copyInstScalar(ScopStmt &Stmt, Instruction *Inst,
     NewInst->setDebugLoc(llvm::DebugLoc());
 
   if (!NewInst->getType()->isVoidTy())
-    NewInst->setName("p_" + Inst->getName());
+    NewInst->setName("pxxx_" + Inst->getName());
 }
 
 Value *
