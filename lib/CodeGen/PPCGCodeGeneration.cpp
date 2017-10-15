@@ -2617,12 +2617,12 @@ std::string GPUNodeBuilder::createKernelASM() {
   TargetOptions Options;
   Options.AllowFPOpFusion = FPOpFusion::Fast;
   Options.UnsafeFPMath = false;
-  // Options.NoInfsFPMath = true;
-  // Options.NoNaNsFPMath = true;
+  Options.NoInfsFPMath = true;
+  Options.NoNaNsFPMath = true;
   // Options.HonorSignDependentRoundingFPMathOption = false;
   //Options.NoZerosInBSS = false;
   //Options.GuaranteedTailCallOpt = false;
-  //Options.EnableIPRA = true;
+  Options.EnableIPRA = true;
   //Options.StackAlignmentOverride = 0;
   std::string subtarget;
 
