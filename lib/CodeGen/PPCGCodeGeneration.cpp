@@ -2620,10 +2620,10 @@ std::string GPUNodeBuilder::createKernelASM() {
   Options.NoInfsFPMath = true;
   Options.NoNaNsFPMath = true;
   // Options.HonorSignDependentRoundingFPMathOption = false;
-  //Options.NoZerosInBSS = false;
-  //Options.GuaranteedTailCallOpt = false;
+  Options.NoZerosInBSS = false;
+  Options.GuaranteedTailCallOpt = false;
   Options.EnableIPRA = true;
-  //Options.StackAlignmentOverride = 0;
+  Options.StackAlignmentOverride = 0;
   std::string subtarget;
 
   switch (Arch) {
