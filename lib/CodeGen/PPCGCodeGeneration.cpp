@@ -1469,14 +1469,15 @@ isl_bool collectReferencesInGPUStmt(__isl_keep isl_ast_node *Node, void *User) {
 /// A list of functions that are available in NVIDIA's libdevice.
 const std::set<std::string> CUDALibDeviceFunctions = {
     "exp",      "expf",      "expl",      "cos", "cosf", "sqrt", "sqrtf",
-    "copysign", "copysignf", "copysignl", "log", "logf", "powi", "powif"};
+    "copysign", "copysignf", "copysignl", "log", "logf", "powi", "powif", "llround"};
 
 // A map from intrinsics to their corresponding libdevice functions.
 const std::map<std::string, std::string> IntrinsicToLibdeviceFunc = {
     {"llvm.exp.f64", "exp"},
     {"llvm.exp.f32", "expf"},
     {"llvm.powi.f64", "powi"},
-    {"llvm.powi.f32", "powif"}};
+    {"llvm.powi.f32", "powif"},
+    {"lround", "llround"}};
 
 /// Return the corresponding CUDA libdevice function name for @p F.
 /// Note that this function will try to convert instrinsics in the list
