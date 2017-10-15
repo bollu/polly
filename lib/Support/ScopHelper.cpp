@@ -677,8 +677,7 @@ bool polly::isHackedNonAffineFunction(std::string name) {
     bool contains =  refname.contains("__src_block_fields_MOD_copytoblock3d") ||
         refname.contains("__src_block_fields_MOD_copytoblock2d") ||
         refname.contains("__src_block_fields_MOD_copyfromblock3d") ||
-        refname.contains("__src_block_fields_MOD_copytoblock2d") ||
-        refname.contains("__radiation_rg_org_MOD_radiation_rg_organize");
+        refname.contains("__src_block_fields_MOD_copytoblock2d");
    // assert(contains);
    return contains;
 }
