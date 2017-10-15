@@ -248,8 +248,9 @@ StringRef polly::PollySkipFnAttr = "polly.skip.fn";
 
 bool hackIsRegionDisallowed(const Region &R) {
   static std::vector<std::pair<std::string, std::string>>
+      // DISALLOWED 1. zapre(:) = p0hl(:,ke+1) 
       HACK_DISALLOWED_REGIONS = {
-          {"__radiation_rg_org_MOD_radiation_rg_organize", "352"}};
+           {"__radiation_rg_org_MOD_radiation_rg_organize", "347"}};
   const std::string FnName = R.getEntry()->getParent()->getName();
   const std::string RegionName = R.getEntry()->getName();
 
@@ -1683,7 +1684,7 @@ bool ScopDetection::isValidRegion(DetectionContext &Context) const {
   if (hackIsRegionDisallowed(CurRegion)) {
     errs() << "HACK: region entry contained in HACK_DISALLOWED_REGIONS. "
               "skipping..\n";
-    // assert(false && "debug crash.");
+    return false;
   }
 
   // SCoP cannot contain the entry block of the function, because we need
