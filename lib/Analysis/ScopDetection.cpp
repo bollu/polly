@@ -246,25 +246,6 @@ bool polly::PollyTrackFailures = false;
 bool polly::PollyDelinearize = false;
 StringRef polly::PollySkipFnAttr = "polly.skip.fn";
 
-bool hackIsRegionDisallowed(const Region &R) {
-  static std::vector<std::pair<std::string, std::string>>
-      // DISALLOWED 1. zapre(:) = p0hl(:,ke+1) 
-      HACK_DISALLOWED_REGIONS = {
-           {"__radiation_rg_org_MOD_radiation_rg_organize", "347"}};
-  const std::string FnName = R.getEntry()->getParent()->getName();
-  const std::string RegionName = R.getEntry()->getName();
-
-  for (auto It : HACK_DISALLOWED_REGIONS) {
-    const std::pair<std::string, std::string> ItVal = It;
-    if (ItVal == std::make_pair(FnName, RegionName)) {
-      errs() << "*HACK: found region to skip: " << FnName << "|" << RegionName
-             << "\n";
-      return true;
-    }
-  }
-  return false;
-}
-
 //===----------------------------------------------------------------------===//
 // Statistics.
 
@@ -1678,12 +1659,6 @@ bool ScopDetection::isValidRegion(DetectionContext &Context) const {
       dbgs() << "Region entry does not match -polly-region-only";
       dbgs() << "\n";
     });
-    return false;
-  }
-
-  if (hackIsRegionDisallowed(CurRegion)) {
-    errs() << "HACK: region entry contained in HACK_DISALLOWED_REGIONS. "
-              "skipping..\n";
     return false;
   }
 

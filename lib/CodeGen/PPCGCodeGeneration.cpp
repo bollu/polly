@@ -39,11 +39,13 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
+#include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
 #include "polly/Support/ISLOStream.h"
 #include "isl/union_map.h"
+
 
 extern "C" {
 #include "ppcg/cuda.h"
@@ -2613,8 +2615,17 @@ std::string GPUNodeBuilder::createKernelASM() {
   }
 
   TargetOptions Options;
-  Options.UnsafeFPMath = FastMath;
-
+  Options.UnsafeFPMath = false;
+  // Options.UnsafeFPMath = FastMath;
+  // Options.AllowFPOpFusion = FPOpFusion::Fast;
+  // Options.UnsafeFPMath = true;
+  // Options.NoInfsFPMath = true;
+  // Options.NoNaNsFPMath = true;
+  // Options.HonorSignDependentRoundingFPMathOption = false;
+  // Options.NoZerosInBSS = false;
+  // Options.GuaranteedTailCallOpt = false;
+  // Options.EnableIPRA = true;
+  // Options.StackAlignmentOverride = 0;
   std::string subtarget;
 
   switch (Arch) {
@@ -2627,7 +2638,7 @@ std::string GPUNodeBuilder::createKernelASM() {
   }
 
   std::unique_ptr<TargetMachine> TargetM(GPUTarget->createTargetMachine(
-      GPUTriple.getTriple(), subtarget, "", Options, Optional<Reloc::Model>()));
+      GPUTriple.getTriple(), subtarget, "", Options, Optional<Reloc::Model>(), llvm::CodeModel::Small, CodeGenOpt::Aggressive));
 
   SmallString<0> ASMString;
   raw_svector_ostream ASMStream(ASMString);
@@ -2769,15 +2780,28 @@ std::string GPUNodeBuilder::finalizeKernelFunction() {
   if (DumpKernelIR)
     outs() << *GPUModule << "\n";
 
-  //if (Arch != GPUArch::SPIR32 && Arch != GPUArch::SPIR64) {
-  //  // Optimize module.
-  //  llvm::legacy::PassManager OptPasses;
-  //  PassManagerBuilder PassBuilder;
-  //  PassBuilder.OptLevel = 3;
-  //  PassBuilder.SizeLevel = 0;
-  //  PassBuilder.populateModulePassManager(OptPasses);
-  //  OptPasses.run(*GPUModule);
-  //}
+
+  static const bool HACK_DENORMALIZE = false;
+  if (HACK_DENORMALIZE) {
+    GPUModule->addModuleFlag(Module::Override, "nvvm-reflect-ftz", 1);
+
+    for (llvm::Function &F : *GPUModule) {
+      F.addFnAttr("nvptx-f32ftz", "true");
+    }
+  };
+
+  if (Arch != GPUArch::SPIR32 && Arch != GPUArch::SPIR64) {
+    // Optimize module.
+    llvm::legacy::PassManager OptPasses;
+    PassManagerBuilder PassBuilder;
+    PassBuilder.OptLevel = 3;
+    PassBuilder.SizeLevel = 0;
+    PassBuilder.LoopVectorize = true;
+    PassBuilder.SLPVectorize = true;
+    PassBuilder.Inliner = createFunctionInliningPass(PassBuilder.OptLevel, 0, false);
+    PassBuilder.populateModulePassManager(OptPasses);
+    OptPasses.run(*GPUModule);
+  }
 
   for (Function &F : *GPUModule) {
     countNumUnusedParamsInFunction(&F);
