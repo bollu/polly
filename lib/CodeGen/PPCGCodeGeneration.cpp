@@ -2615,17 +2615,15 @@ std::string GPUNodeBuilder::createKernelASM() {
   }
 
   TargetOptions Options;
+  Options.AllowFPOpFusion = FPOpFusion::Fast;
   Options.UnsafeFPMath = false;
-  // Options.UnsafeFPMath = FastMath;
-  // Options.AllowFPOpFusion = FPOpFusion::Fast;
-  // Options.UnsafeFPMath = true;
   // Options.NoInfsFPMath = true;
   // Options.NoNaNsFPMath = true;
   // Options.HonorSignDependentRoundingFPMathOption = false;
-  // Options.NoZerosInBSS = false;
-  // Options.GuaranteedTailCallOpt = false;
-  // Options.EnableIPRA = true;
-  // Options.StackAlignmentOverride = 0;
+  //Options.NoZerosInBSS = false;
+  //Options.GuaranteedTailCallOpt = false;
+  //Options.EnableIPRA = true;
+  //Options.StackAlignmentOverride = 0;
   std::string subtarget;
 
   switch (Arch) {
