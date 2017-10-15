@@ -2781,7 +2781,7 @@ std::string GPUNodeBuilder::finalizeKernelFunction() {
     outs() << *GPUModule << "\n";
 
 
-  static const bool HACK_DENORMALIZE = false;
+  static const bool HACK_DENORMALIZE = true;
   if (HACK_DENORMALIZE) {
     GPUModule->addModuleFlag(Module::Override, "nvvm-reflect-ftz", 1);
 
