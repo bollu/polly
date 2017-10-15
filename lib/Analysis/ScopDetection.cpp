@@ -246,6 +246,24 @@ bool polly::PollyTrackFailures = false;
 bool polly::PollyDelinearize = false;
 StringRef polly::PollySkipFnAttr = "polly.skip.fn";
 
+bool hackIsRegionDisallowed(const Region &R) {
+  static std::vector<std::pair<std::string, std::string>>
+      HACK_DISALLOWED_REGIONS = {
+          {"__radiation_rg_org_MOD_radiation_rg_organize", "352"}};
+  const std::string FnName = R.getEntry()->getParent()->getName();
+  const std::string RegionName = R.getEntry()->getName();
+
+  for (auto It : HACK_DISALLOWED_REGIONS) {
+    const std::pair<std::string, std::string> ItVal = It;
+    if (ItVal == std::make_pair(FnName, RegionName)) {
+      errs() << "*HACK: found region to skip: " << FnName << "|" << RegionName
+             << "\n";
+      return true;
+    }
+  }
+  return false;
+}
+
 //===----------------------------------------------------------------------===//
 // Statistics.
 
@@ -541,8 +559,9 @@ bool isSCEVCallToPollyAbstractIndex(const SCEV *S) {
   if (isa<SCEVUnknown>(S)) {
     Value *V = cast<SCEVUnknown>(S)->getValue();
     CallInst *Call = dyn_cast<CallInst>(V);
-    if (Call && Call->getCalledFunction() && Call->getCalledFunction()->getName().count(
-                    POLLY_ABSTRACT_INDEX_BASENAME))
+    if (Call && Call->getCalledFunction() &&
+        Call->getCalledFunction()->getName().count(
+            POLLY_ABSTRACT_INDEX_BASENAME))
       return true;
   }
   return false;
@@ -702,8 +721,8 @@ bool ScopDetection::isValidCFG(BasicBlock &BB, bool IsLoopBranch,
 bool ScopDetection::isValidCallInst(CallInst &CI,
                                     DetectionContext &Context) const {
   // if(CI.getCalledFunction()->getName().count("break_scop")) {
-  //     errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << ":" << "found break_scop\n";
-  //     return false;
+  //     errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << ":" << "found
+  //     break_scop\n"; return false;
   // }
 
   if (CI.doesNotReturn())
@@ -718,14 +737,13 @@ bool ScopDetection::isValidCallInst(CallInst &CI,
 
   Function *CalledFunction = CI.getCalledFunction();
 
-
   // Indirect calls are not supported.
   if (CalledFunction == nullptr)
     return false;
-  
+
   // Function being called is a polly indexing function.
   if (CalledFunction->getName().count(POLLY_ABSTRACT_INDEX_BASENAME)) {
-      return true;
+    return true;
   }
 
   if (AllowModrefCall) {
@@ -1660,6 +1678,12 @@ bool ScopDetection::isValidRegion(DetectionContext &Context) const {
       dbgs() << "\n";
     });
     return false;
+  }
+
+  if (hackIsRegionDisallowed(CurRegion)) {
+    errs() << "HACK: region entry contained in HACK_DISALLOWED_REGIONS. "
+              "skipping..\n";
+    // assert(false && "debug crash.");
   }
 
   // SCoP cannot contain the entry block of the function, because we need

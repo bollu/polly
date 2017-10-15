@@ -3926,8 +3926,8 @@ public:
            << " | count: " << ScopNumber << " "
            << " | loop depth: " << S->getMaxLoopDepth() << "\n";
 
-    if (S->getMaxLoopDepth() < 2) {
-        errs() << "Scop has loop depth < 2. Bailing out!\n\n";
+    if (S->getMaxLoopDepth() < 1) {
+        errs() << "Scop has loop depth < 1. Bailing out!\n\n";
         return false;
     }
 
