@@ -40,6 +40,7 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/IPO.h"
+#include "llvm/Transforms/IPO/AlwaysInliner.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
@@ -207,6 +208,7 @@ static Function *createPollyAbstractIndexFunction(Module &M,
     TotalIx = Builder.CreateAdd(TotalIx, StrideMulIx);
   }
   Builder.CreateRet(TotalIx);
+  F->addFnAttr(Attribute::AlwaysInline);
   return F;
 }
 
@@ -1470,13 +1472,13 @@ isl_bool collectReferencesInGPUStmt(__isl_keep isl_ast_node *Node, void *User) {
 
 /// A list of functions that are available in NVIDIA's libdevice.
 const std::set<std::string> CUDALibDeviceFunctions = {
-    "exp",      "expf",      "expl",      "cos", "cosf", "sqrt", "sqrtf",
-    "copysign", "copysignf", "copysignl", "log", "logf", "powi", "powif", "llround"};
+    "exp",      "expf", "fast_expf",     "expl",      "cos", "cosf","fast_cosf", "sqrt", "sqrtf",
+    "copysign", "copysignf", "copysignl", "log", "logf", "fast_logf", "powi", "powif", "llround"};
 
 // A map from intrinsics to their corresponding libdevice functions.
 const std::map<std::string, std::string> IntrinsicToLibdeviceFunc = {
     {"llvm.exp.f64", "exp"},
-    {"llvm.exp.f32", "expf"},
+    {"llvm.exp.f32", "fast_expf"},
     {"llvm.powi.f64", "powi"},
     {"llvm.powi.f32", "powif"},
     {"lround", "llround"}};
@@ -2636,7 +2638,46 @@ std::string GPUNodeBuilder::createKernelASM() {
   }
 
   std::unique_ptr<TargetMachine> TargetM(GPUTarget->createTargetMachine(
-      GPUTriple.getTriple(), subtarget, "", Options, Optional<Reloc::Model>(), llvm::CodeModel::Small, CodeGenOpt::Aggressive));
+      GPUTriple.getTriple(), subtarget, "+ptx50", Options, Optional<Reloc::Model>(), llvm::CodeModel::Small, CodeGenOpt::Aggressive));
+
+
+  if (Arch != GPUArch::SPIR32 && Arch != GPUArch::SPIR64) {
+    // Optimize module.
+    llvm::legacy::PassManager ModulePassManager;
+    legacy::FunctionPassManager FPM(GPUModule.get());
+
+    PassManagerBuilder PassBuilder;
+    TargetM->adjustPassManager(PassBuilder);
+
+    PassBuilder.OptLevel = 3;
+    //PassBuilder.SizeLevel = 0;
+    PassBuilder.LoopVectorize = true;
+    PassBuilder.SLPVectorize = true;
+    PassBuilder.Inliner = createFunctionInliningPass(PassBuilder.OptLevel, 0, false);
+
+    ModulePassManager.add(createTargetTransformInfoWrapperPass(TargetM->getTargetIRAnalysis()));
+    ModulePassManager.add(createAlwaysInlinerLegacyPass());
+    FPM.add(createTargetTransformInfoWrapperPass(TargetM->getTargetIRAnalysis()));
+
+    PassBuilder.populateModulePassManager(ModulePassManager);
+    PassBuilder.populateFunctionPassManager(FPM);
+
+    FPM.doInitialization();
+    for (llvm::Module::iterator i = GPUModule->begin(); i != GPUModule->end(); i++) {
+        FPM.run(*i);
+    }
+
+    FPM.doFinalization();
+    ModulePassManager.run(*GPUModule);
+  }
+
+  if (DumpKernelIR)
+    outs() << *GPUModule << "\n";
+
+  //for (Function &F : *GPUModule) {
+  //  countNumUnusedParamsInFunction(&F);
+  //};
+
 
   SmallString<0> ASMString;
   raw_svector_ostream ASMStream(ASMString);
@@ -2775,8 +2816,6 @@ std::string GPUNodeBuilder::finalizeKernelFunction() {
 
   addCUDALibDevice();
 
-  if (DumpKernelIR)
-    outs() << *GPUModule << "\n";
 
 
   static const bool HACK_DENORMALIZE = true;
@@ -2786,23 +2825,6 @@ std::string GPUNodeBuilder::finalizeKernelFunction() {
     for (llvm::Function &F : *GPUModule) {
       F.addFnAttr("nvptx-f32ftz", "true");
     }
-  };
-
-  if (Arch != GPUArch::SPIR32 && Arch != GPUArch::SPIR64) {
-    // Optimize module.
-    llvm::legacy::PassManager OptPasses;
-    PassManagerBuilder PassBuilder;
-    PassBuilder.OptLevel = 3;
-    PassBuilder.SizeLevel = 0;
-    PassBuilder.LoopVectorize = true;
-    PassBuilder.SLPVectorize = true;
-    PassBuilder.Inliner = createFunctionInliningPass(PassBuilder.OptLevel, 0, false);
-    PassBuilder.populateModulePassManager(OptPasses);
-    OptPasses.run(*GPUModule);
-  }
-
-  for (Function &F : *GPUModule) {
-    countNumUnusedParamsInFunction(&F);
   };
 
   std::string Assembly = createKernelASM();
