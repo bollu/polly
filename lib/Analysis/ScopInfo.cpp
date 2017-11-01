@@ -4189,7 +4189,11 @@ ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
          "BasePtr and BaseName can not be nullptr at the same time.");
   assert(!(BasePtr && BaseName) && "BaseName is redundant.");
 
-  auto getCommonBasePtr = [&]() -> Value * {
+  // We assume that arrays with the strided representation can unify.
+  // Yes this is nuts. Yes I stil want to do this.
+  auto unifyStridedArrayBasePtrs = [&]() -> Value * {
+    if (Shape.hasSizes()) return BasePtr;
+
     Value *CurBase = getPointerFromLoadOrStore(BasePtr);
     if (!CurBase)
       return BasePtr;
@@ -4199,13 +4203,13 @@ ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
       if (!SAIBase)
         continue;
 
-      if (SAIBase == CurBase)
+      if (SAIBase == CurBase && SAI->hasStrides())
         return SAI->getBasePtr();
     }
     return BasePtr;
   };
 
-  // BasePtr = getCommonBasePtr();
+  BasePtr = unifyStridedArrayBasePtrs();
 
   auto &SAI = BasePtr ? ScopArrayInfoMap[std::make_pair(BasePtr, Kind)]
                       : ScopArrayNameMap[BaseName];
