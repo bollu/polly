@@ -703,7 +703,7 @@ GlobalValue *getBasePtrForVariableStride(Value *V) {
 }
 bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
                                                  ScopStmt *Stmt) {
-
+  bool IsAffine = true;
   auto optionalCallGEP = getAbstractMatrixCall(Inst, SE);
   if (!optionalCallGEP)
     return false;
@@ -725,39 +725,26 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
     errs() << "Num array dims: " << NArrayDims << "\n";
 
   Value *BasePtr = GEP->getPointerOperand();
-  // const SCEV *BasePtrSCEV = SE.getSCEV(BasePtr);
-  // errs() << "\n==BasePtrSCEV===\n";
-  // errs() << *BasePtrSCEV << "\n";
-  // if (!isa<SCEVUnknown>(BasePtrSCEV)) {
-  //     errs() << " weird base ptr: " << *BasePtrSCEV;
-  //     assert(false && "this should not happen.");
-  //     return false;
-  // }
 
   std::vector<const SCEV *> Subscripts;
   std::vector<const SCEV *> Strides;
   Loop *SurroundingLoop = Stmt->getSurroundingLoop();
-  const InvariantLoadsSetTy &ScopRIL = scop->getRequiredInvariantLoads();
 
   InvariantLoadsSetTy AccessILS;
 
-  if (isa<UndefValue>(Call->getArgOperand(0)))
-    return false;
   const SCEV *Offset = SE.getSCEV(Call->getArgOperand(0));
 
   if (!isAffineExpr(&scop->getRegion(), SurroundingLoop, Offset, SE,
                     &AccessILS)) {
-    return false;
+      scop->invalidate(AssumptionKind::DELINEARIZATION, Call->getDebugLoc());
+      IsAffine = false;
   }
 
   //// Offsets are always loaded from the array, they will get invariant 
   //load hoisted correctly later.
-  //for (LoadInst *LInst : AccessILS) {
-  //    if (!ScopRIL.count(LInst)) {
-  //        errs() << "\t" << __FUNCTION__ << "|" << __LINE__ << "|found load that is not part of scop: " << *LInst << "\n";
-  //        return false;
-  //    }
-  //}
+  for (LoadInst *L : AccessILS) {
+      scop->addRequiredInvariantLoad(L);
+  }
   AccessILS.clear();
 
 
@@ -774,19 +761,16 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
 
     if (!isAffineExpr(&scop->getRegion(), SurroundingLoop, IxSCEV, SE,
                       &AccessILS)) {
-      return false;
+      scop->invalidate(AssumptionKind::DELINEARIZATION, Call->getDebugLoc());
+      IsAffine = false;
     }
-    // for (LoadInst *LInst : AccessILS) {
-    //     if (!ScopRIL.count(LInst) && isHackedNonAffineFunction(*Stmt)) {
-    //         return false;
-    //     }
-    // }
+    for (LoadInst *L : AccessILS) {
+        scop->addRequiredInvariantLoad(L);
+    }
     AccessILS.clear();
 
 
     Value *Stride = Call->getArgOperand(1 + i);
-    if (isa<UndefValue>(Ix) || isa<UndefValue>(Stride))
-      return false;
 
     if (AbstractMatrixDebug)
       errs() << i << " |Raw Ix: " << *Ix << " |Raw Stride: " << *Stride << "\n";
@@ -795,19 +779,13 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
 
     if (!isAffineExpr(&scop->getRegion(), SurroundingLoop, StrideSCEV, SE,
                       &AccessILS)) {
-      return false;
+      scop->invalidate(AssumptionKind::DELINEARIZATION, Call->getDebugLoc());
+      IsAffine = false;
+    }
+    for (LoadInst *L : AccessILS) {
+            scop->addRequiredInvariantLoad(L);
     }
     AccessILS.clear();
-    // strides are always loaded from the array, they will be invariant load
-    // hoisted later on.
-    //errs() << "===\n";
-    //for (LoadInst *LInst : AccessILS) {
-    //    if (!ScopRIL.count(LInst)) {
-    //        errs() << "\t" << __FUNCTION__ << "|" << __LINE__ << "|found load that is not part of scop: " << *LInst << "\n";
-    //        return false;
-    //    }
-    //}
-    //AccessILS.clear();
 
     // Try to get an FAD from a stride.
     if (!isa<SCEVConstant>(StrideSCEV) && FAD == nullptr) {
@@ -816,13 +794,6 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
     }
     Strides.push_back(StrideSCEV);
   }
-
-  // If all loads in our acceses are not part of the scop, bail out
-  //for (LoadInst *LInst : AccessILS) {
-  //  if (!ScopRIL.count(LInst) && isHackedNonAffineFunction(*Stmt)) {
-  //    return false;
-  //  }
-  //}
 
   for (unsigned i = 0; i < Subscripts.size(); ++i) {
     if (AbstractMatrixDebug)
@@ -872,7 +843,7 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
   // NOTE: this should be fromStrides.
   // NOTE: To be able to change this, we need to teach ScopArrayInfo to recieve
   // a Shape object. So, do that first.
-  addArrayAccess(Stmt, Inst, AccType, BasePtr, ElementType, true, Subscripts,
+  addArrayAccess(Stmt, Inst, AccType, BasePtr, ElementType, IsAffine, Subscripts,
                  ShapeInfo::fromStrides(Strides, Offset, FAD), Val);
 
   if (AbstractMatrixDebug)
