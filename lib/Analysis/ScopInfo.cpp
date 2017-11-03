@@ -4237,7 +4237,7 @@ ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
     
         errs() << "SAI has strides, Shape is size based. This should not "
                   "happen. Ignoring new data for now.";
-        assert(isHackedNonAffineFunction(getFunction().getName()));
+        report_fatal_error("SAI was given sizes when it had strides");
         return SAI.get();
       }
     }

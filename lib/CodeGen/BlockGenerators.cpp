@@ -377,10 +377,6 @@ void BlockGenerator::copyInstScalarOrig(ScopStmt &Stmt, Instruction *Inst,
 
 void BlockGenerator::copyInstScalar(ScopStmt &Stmt, Instruction *Inst,
                                     ValueMapT &BBMap, LoopToScevMapT &LTS) {
-  const bool RunHacks = isHackedNonAffineFunction(Stmt);
-  if (RunHacks)
-    copyInstScalarHacked(Stmt, Inst, BBMap, LTS);
-  else
     copyInstScalarOrig(Stmt, Inst, BBMap, LTS);
 }
 

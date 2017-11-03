@@ -670,21 +670,3 @@ polly::getAbstractMatrixCall(MemAccInst Inst, ScalarEvolution &SE) {
   std::pair<CallInst *, GEPOperator *> p = std::make_pair(Call, GEP);
   return Optional<std::pair<CallInst *, GEPOperator *>>(p);
 }
-
-
-bool polly::isHackedNonAffineFunction(std::string name) {
-    StringRef refname(name);
-    bool contains =  refname.contains("__src_block_fields_MOD_copytoblock3d") ||
-        refname.contains("__src_block_fields_MOD_copytoblock2d") ||
-        refname.contains("__src_block_fields_MOD_copyfromblock3d") ||
-        refname.contains("__src_block_fields_MOD_copytoblock2d");
-   // assert(contains);
-   return contains;
-}
-
-bool polly::isHackedNonAffineFunction(const ScopStmt &Stmt) {
-    return isHackedNonAffineFunction(Stmt.getParent()->getFunction().getName());
-}
-bool polly::isHackedNonAffineFunction(const polly::Scop &S) {
-    return isHackedNonAffineFunction(S.getFunction().getName());
-}

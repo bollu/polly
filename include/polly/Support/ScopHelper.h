@@ -464,10 +464,5 @@ llvm::Optional<std::pair<llvm::CallInst *, llvm::GEPOperator *>>
 getAbstractMatrixCall(MemAccInst Inst, llvm::ScalarEvolution &SE);
 
 
-// Return whether these are the hacked functions for which we want to enable our
-// non-affine related code.
-bool isHackedNonAffineFunction(std::string name);
-bool isHackedNonAffineFunction(const polly::ScopStmt &Stmt);
-bool isHackedNonAffineFunction(const polly::Scop &S);
 } // namespace polly
 #endif

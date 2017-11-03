@@ -776,11 +776,11 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
                       &AccessILS)) {
       return false;
     }
-    for (LoadInst *LInst : AccessILS) {
-        if (!ScopRIL.count(LInst) && isHackedNonAffineFunction(*Stmt)) {
-            return false;
-        }
-    }
+    // for (LoadInst *LInst : AccessILS) {
+    //     if (!ScopRIL.count(LInst) && isHackedNonAffineFunction(*Stmt)) {
+    //         return false;
+    //     }
+    // }
     AccessILS.clear();
 
 
@@ -818,11 +818,11 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
   }
 
   // If all loads in our acceses are not part of the scop, bail out
-  for (LoadInst *LInst : AccessILS) {
-    if (!ScopRIL.count(LInst) && isHackedNonAffineFunction(*Stmt)) {
-      return false;
-    }
-  }
+  //for (LoadInst *LInst : AccessILS) {
+  //  if (!ScopRIL.count(LInst) && isHackedNonAffineFunction(*Stmt)) {
+  //    return false;
+  //  }
+  //}
 
   for (unsigned i = 0; i < Subscripts.size(); ++i) {
     if (AbstractMatrixDebug)

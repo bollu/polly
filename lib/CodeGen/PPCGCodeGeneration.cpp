@@ -375,7 +375,7 @@ static __isl_give isl_id_to_ast_expr *pollyBuildAstExprForStmt(
 
   for (MemoryAccess *Acc : *Stmt) {
     if (!Acc->isAffine()) {
-        assert(isHackedNonAffineFunction(*Stmt) && "found non-affine access in our non-hacked function!");
+        assert(false && "found non-affine access in function!");
       errs() << __PRETTY_FUNCTION__
              << "skipping materializing the stmt's memory access because it's "
                 "nonaffine\n";
@@ -2338,26 +2338,6 @@ void GPUNodeBuilder::insertKernelCallsSPIR(ppcg_kernel *Kernel) {
     createFunc(LocalName[i], isl_id_list_get_id(Kernel->thread_ids, i));
 }
 
-bool doesArrayHaveNonaffineAccess(ScopArrayInfo *Array, Scop *S) {
-    unsigned NumDims = Array->getNumberOfDimensions();
-
-    if (Array->getNumberOfDimensions() == 0)
-      return false;
-    isl::union_map Accesses = S->getAccesses(Array);
-    isl::union_set AccessUSet = Accesses.range();
-    AccessUSet = AccessUSet.coalesce();
-    AccessUSet = AccessUSet.detect_equalities();
-    AccessUSet = AccessUSet.coalesce();
-
-    if (AccessUSet.is_empty())
-      return false;
-
-    isl::set AccessSet = AccessUSet.extract_set(Array->getSpace());
-
-    return  !AccessSet.dim_has_lower_bound(isl::dim::set, 0) ||
-        !AccessSet.dim_has_upper_bound(isl::dim::set, 0);
-}
-
 void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
   auto Arg = FN->arg_begin();
   for (long i = 0; i < Kernel->n_array; i++) {
@@ -2370,20 +2350,20 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
 
     isl_id_free(Id);
 
-    if (isHackedNonAffineFunction(S) && doesArrayHaveNonaffineAccess(SAI, &S)) {
-        Value *NewBasePtr = Arg;
-        if (PointerType *OriginalTy =
-                dyn_cast<PointerType>(SAI->getBasePtr()->getType())) {
-          PointerType *NewTy = PointerType::get(OriginalTy->getElementType(),
-                                                Arg->getType()->getPointerAddressSpace());
-          NewBasePtr = Builder.CreateBitCast(
-              Arg, NewTy, Arg->getName() + "_hack_load_for_blockgen");
-        } else {
-            report_fatal_error(" I did not think about this case yet.");
+    //if (isHackedNonAffineFunction(S) && doesArrayHaveNonaffineAccess(SAI, &S)) {
+    //    Value *NewBasePtr = Arg;
+    //    if (PointerType *OriginalTy =
+    //            dyn_cast<PointerType>(SAI->getBasePtr()->getType())) {
+    //      PointerType *NewTy = PointerType::get(OriginalTy->getElementType(),
+    //                                            Arg->getType()->getPointerAddressSpace());
+    //      NewBasePtr = Builder.CreateBitCast(
+    //          Arg, NewTy, Arg->getName() + "_hack_load_for_blockgen");
+    //    } else {
+    //        report_fatal_error(" I did not think about this case yet.");
 
-        }
-        ValueMap[SAI->getBasePtr()] = NewBasePtr;
-    };
+    //    }
+    //    ValueMap[SAI->getBasePtr()] = NewBasePtr;
+    //};
 
     if (SAI->getNumberOfDimensions() > 0) {
       Arg++;
@@ -3211,7 +3191,7 @@ public:
     isl::pw_aff Val = isl::aff::var_on_domain(LS, isl::dim::set, 0);
     //isl::pw_aff OuterMin;
     if (!AccessSet.dim_has_lower_bound(isl::dim::set, 0)) {
-        assert(isHackedNonAffineFunction(*S));
+        assert(false && "found access with no lower bound (nonaffine)");
         errs()<< "=== no lower bound found, setting lower bound to 0===\n";
         errs() << "AccessSet(prev): "; AccessSet.dump();
         isl::constraint LB = isl::constraint::alloc_inequality(isl::local_space(AccessSet.get_space()));
@@ -3223,7 +3203,7 @@ public:
     isl::pw_aff OuterMin = AccessSet.dim_min(0);
 
     if (!AccessSet.dim_has_upper_bound(isl::dim::set, 0)) {
-        assert(isHackedNonAffineFunction(*S));
+        assert(false && "found access with no upper bound (nonaffine)");
         errs()<< "=== no upper bound found, setting upper bound to 10kj===\n";
         errs() << "AccessSet(prev): "; AccessSet.dump();
         isl::constraint C = isl::constraint::alloc_inequality(isl::local_space(AccessSet.get_space()));
