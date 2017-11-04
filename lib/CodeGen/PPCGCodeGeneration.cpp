@@ -3951,10 +3951,10 @@ public:
            << " | count: " << ScopNumber << " "
            << " | loop depth: " << S->getMaxLoopDepth() << "\n";
 
-    if (S->getMaxLoopDepth() < 1) {
-        errs() << "Scop has loop depth < 1. Bailing out!\n\n";
-        return false;
-    }
+    //if (S->getMaxLoopDepth() < 1) {
+    //    errs() << "Scop has loop depth < 1. Bailing out!\n\n";
+    //    return false;
+    //}
 
     if (!isAllowedScop(ScopNumber)) {
       errs() << "Scop not allowed (" << getUniqueScopName(S)
