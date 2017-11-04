@@ -4009,6 +4009,40 @@ isl::set Scop::getNonHoistableCtx(MemoryAccess *Access, isl::union_map Writes) {
   isl::map AccessRelation = give(Access->getAccessRelation().release());
   
   // Allow all accesses to parameters.
+  //IMPLICIT NONE
+  //    REAL, ALLOCATABLE :: &
+  //        arr1(:), &
+  //        arr2(:,:)
+  //
+  //CONTAINS
+  //    SUBROUTINE f(sotr, sobs, sod_t, zsmu0_flux, nproma, ke, ipend)
+  //        INTEGER, INTENT(IN) :: &
+  //            nproma, ke, ipend
+  //        REAL, INTENT(IN) :: &
+  //            zsmu0_flux  (nproma)
+  //
+  //        REAL, INTENT(INOUT) ::  &
+  //            sotr        (nproma,ke+1),  &
+  //            sod_t       (nproma)
+  //        REAL, INTENT(OUT) ::     &
+  //            sobs        (nproma)
+  //
+  //        REAL, PARAMETER ::  &
+  //            zepemu = 1.0E-9 ! avoids cosine of zenith angle = 0.0
+  //
+  //        INTEGER :: &
+  //            i
+  //
+  //        INTEGER :: ip
+  //            DO ip = 1,ipend
+  //            IF (zsmu0_flux(ip) > 10) THEN
+  //                ! in generated ll file, move "ke" access to be inside loop.
+  //                sobs    (ip) = sotr       (1, ke)
+  //            ENDIF
+  //        ENDDO
+  //    END SUBROUTINE f
+  //
+  //END MODULE m
   if (PollyAllowDereferenceOfAllFunctionParams &&
           isAParameter(LI->getPointerOperand(), this->getFunction()))
           return isl::set::universe(AccessRelation.get_space().range());
