@@ -4006,10 +4006,16 @@ isl::set Scop::getNonHoistableCtx(MemoryAccess *Access, isl::union_map Writes) {
   // no base pointer origin we check that the base pointer is defined
   // outside the region.
   auto *LI = cast<LoadInst>(Access->getAccessInstruction());
+  isl::map AccessRelation = give(Access->getAccessRelation().release());
+  
+  // Allow all accesses to parameters.
+  if (PollyAllowDereferenceOfAllFunctionParams &&
+          isAParameter(LI->getPointerOperand(), this->getFunction()))
+          return isl::set::universe(AccessRelation.get_space().range());
+
   if (hasNonHoistableBasePtrInScop(Access, Writes))
     return nullptr;
 
-  isl::map AccessRelation = give(Access->getAccessRelation().release());
   assert(!AccessRelation.is_empty());
 
   if (AccessRelation.involves_dims(isl::dim::in, 0, Stmt.getNumIterators()))
