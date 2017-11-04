@@ -1508,6 +1508,7 @@ std::string getCUDALibDeviceFuntion(Function *F) {
 }
 
 /// Check if F is a function that we can code-generate in a GPU kernel.
+// TODO: consider `@llvm.expect.i64`
 static bool isValidFunctionInKernel(llvm::Function *F, bool AllowLibDevice) {
   assert(F && "F is an invalid pointer");
   // We string compare against the name of the function to allow
