@@ -4235,9 +4235,14 @@ ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
                                       Shape.hackFAD());
       } else {
     
-        errs() << "SAI has strides, Shape is size based. This should not "
+        errs() << __PRETTY_FUNCTION__ << "\n" << "SAI has strides, Shape is size based. This should not "
                   "happen. Ignoring new data for now.";
-        report_fatal_error("SAI was given sizes when it had strides");
+        errs() << " SAI:\n";
+        SAI->print(errs(), false);
+        errs() << "Shape:\n";
+        errs() << Shape << "\n";
+        errs() << "---\n";
+        // report_fatal_error("SAI was given sizes when it had strides");
         return SAI.get();
       }
     }
