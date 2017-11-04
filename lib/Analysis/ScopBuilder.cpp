@@ -840,6 +840,16 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
                        ArrayRef<const SCEV *> Sizes, Value *AccessValue);
  */
 
+  if (!IsAffine) {
+      errs() << "polly fortran index expr is nonaffine:\n";
+      errs() << *Inst << "\n";
+      errs() << *Call << "\n";
+      errs() << *BasePtr << "\n";
+      if (FAD) 
+          errs() << "FAD: " << *FAD << "\n";
+      errs() << "======\n";
+  }
+
   // NOTE: this should be fromStrides.
   // NOTE: To be able to change this, we need to teach ScopArrayInfo to recieve
   // a Shape object. So, do that first.
