@@ -1054,6 +1054,9 @@ static bool isDivisible(const SCEV *Expr, unsigned Size, ScalarEvolution &SE) {
 }
 
 void MemoryAccess::buildAccessRelation(const ScopArrayInfo *SAI) {
+    // errs() << __PRETTY_FUNCTION__ << "\n";
+    // this->dump();
+    // errs() << "\n";
   assert(AccessRelation.is_null() && "AccessRelation already built");
 
   // Initialize the invalid domain which describes all iterations for which the

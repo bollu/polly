@@ -736,7 +736,7 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
 
   if (!isAffineExpr(&scop->getRegion(), SurroundingLoop, Offset, SE,
                     &AccessILS)) {
-      scop->invalidate(AssumptionKind::DELINEARIZATION, Call->getDebugLoc());
+      errs() <<__LINE__ << "| Offset nonaffine: " << *Offset << "\n";
       IsAffine = false;
   }
 
@@ -761,7 +761,7 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
 
     if (!isAffineExpr(&scop->getRegion(), SurroundingLoop, IxSCEV, SE,
                       &AccessILS)) {
-      scop->invalidate(AssumptionKind::DELINEARIZATION, Call->getDebugLoc());
+      errs() <<__LINE__ << "| Ix nonaffine: " << *IxSCEV << "\n";
       IsAffine = false;
     }
     for (LoadInst *L : AccessILS) {
@@ -779,7 +779,7 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
 
     if (!isAffineExpr(&scop->getRegion(), SurroundingLoop, StrideSCEV, SE,
                       &AccessILS)) {
-      scop->invalidate(AssumptionKind::DELINEARIZATION, Call->getDebugLoc());
+      errs() <<__LINE__ << "| stride nonaffine: " << *StrideSCEV << "\n";
       IsAffine = false;
     }
     for (LoadInst *L : AccessILS) {
@@ -853,7 +853,7 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
   // NOTE: this should be fromStrides.
   // NOTE: To be able to change this, we need to teach ScopArrayInfo to recieve
   // a Shape object. So, do that first.
-  addArrayAccess(Stmt, Inst, AccType, BasePtr, ElementType, IsAffine, Subscripts,
+  addArrayAccess(Stmt, Inst, AccType, BasePtr, ElementType, false, Subscripts,
                  ShapeInfo::fromStrides(Strides, Offset, FAD), Val);
 
   if (AbstractMatrixDebug)
@@ -1016,11 +1016,7 @@ void ScopBuilder::addArrayAccess(ScopStmt *Stmt, MemAccInst MemAccInst,
                                  ShapeInfo Shape, Value *AccessValue) {
   if (isa<SelectInst>(MemAccInst))
       assert(false && "baseptr is a select inst");
-  //   DEBUG(
-  //    dbgs() << "\n" << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
-  //    dbgs() << "\t-BaseAddr: " << *BaseAddress << "\n";
-  //    dbgs() << "\t-ElemType: " << *ElementType << "\n";
-  //    dbgs() << "\t-AccessValue: " << *AccessValue << "\n";);
+
   ArrayBasePointers.insert(BaseAddress);
   auto *MemAccess = addMemoryAccess(Stmt, MemAccInst, AccType, BaseAddress,
                                     ElementType, IsAffine, AccessValue,
