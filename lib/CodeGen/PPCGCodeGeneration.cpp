@@ -922,6 +922,12 @@ void GPUNodeBuilder::addCUDAAnnotations(Module *M, Value *BlockDimX,
     if (F.getCallingConv() != CallingConv::PTX_Kernel)
       continue;
 
+    if (BlockDimX == Builder.getInt32(32) &&
+        BlockDimY == Builder.getInt32(1) &&
+        BlockDimZ == Builder.getInt32(1)) {
+      BlockDimX = Builder.getInt32(512);
+    }
+
     Value *V[] = {BlockDimX, BlockDimY, BlockDimZ};
 
     Metadata *Elements[] = {
