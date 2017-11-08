@@ -578,6 +578,13 @@ private:
   /// @param FN            The function into which to generate the variables.
   void createKernelVariables(ppcg_kernel *Kernel, Function *FN);
 
+
+
+  /// Cast ScopArrayInfos in the kernel to the correct type, so that
+  /// BlockGenerators later does not get type mismatches.
+  /// We currently pass all parameters as i8*, so we need this bitcast.
+  // void castKernelArrays(ppcg_kernel *Kernel, Function *FN, PollyIRBuilder Builder);
+
   /// Add CUDA annotations to module.
   ///
   /// Add a set of CUDA annotations that declares the maximal block dimensions
@@ -2236,8 +2243,14 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     isl_ast_build_free(Build);
     KernelIds.push_back(Id);
     IDToSAI[Id] = SAIRep;
+    // static const int KernelAddrSpace = 1;
+    // Builder.SetInsertPoint(&FN->getEntryBlock());
+    // Value *ArgTyped = Builder.CreateBitCast(Arg, SAI->getElementType()->getPointerTo(KernelAddrSpace));
+    // errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
+    //ValueMap[SAI->getBasePtr()] = ArgTyped;
+    // errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
+    // errs() << "Mapping: " << *SAI->getBasePtr() << " => " << *ArgTyped << "\n";
     ValueMap[SAI->getBasePtr()] = Arg;
-    errs() << "Mapping: " << *SAI->getBasePtr() << " => " << *Arg << "\n";
     Arg++;
   }
 
@@ -2345,6 +2358,26 @@ void GPUNodeBuilder::insertKernelCallsSPIR(ppcg_kernel *Kernel) {
     createFunc(LocalName[i], isl_id_list_get_id(Kernel->thread_ids, i));
 }
 
+bool doesArrayHaveNonaffineAccess(ScopArrayInfo *Array, Scop *S) {
+
+    if (Array->getNumberOfDimensions() == 0)
+      return false;
+    isl::union_map Accesses = S->getAccesses(Array);
+    isl::union_set AccessUSet = Accesses.range();
+    AccessUSet = AccessUSet.coalesce();
+    AccessUSet = AccessUSet.detect_equalities();
+    AccessUSet = AccessUSet.coalesce();
+
+    if (AccessUSet.is_empty())
+      return false;
+
+    isl::set AccessSet = AccessUSet.extract_set(Array->getSpace());
+
+    return  !AccessSet.dim_has_lower_bound(isl::dim::set, 0) ||
+        !AccessSet.dim_has_upper_bound(isl::dim::set, 0);
+}
+
+
 void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
   auto Arg = FN->arg_begin();
   for (long i = 0; i < Kernel->n_array; i++) {
@@ -2357,20 +2390,22 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
 
     isl_id_free(Id);
 
-    //if (isHackedNonAffineFunction(S) && doesArrayHaveNonaffineAccess(SAI, &S)) {
-    //    Value *NewBasePtr = Arg;
-    //    if (PointerType *OriginalTy =
-    //            dyn_cast<PointerType>(SAI->getBasePtr()->getType())) {
-    //      PointerType *NewTy = PointerType::get(OriginalTy->getElementType(),
-    //                                            Arg->getType()->getPointerAddressSpace());
-    //      NewBasePtr = Builder.CreateBitCast(
-    //          Arg, NewTy, Arg->getName() + "_hack_load_for_blockgen");
-    //    } else {
-    //        report_fatal_error(" I did not think about this case yet.");
+    if (doesArrayHaveNonaffineAccess(SAI, &S)) {
+        Value *NewBasePtr = Arg;
+        if (PointerType *OriginalTy =
+                dyn_cast<PointerType>(SAI->getBasePtr()->getType())) {
+            PointerType *NewTy = PointerType::get(OriginalTy->getElementType(),
+                    Arg->getType()->getPointerAddressSpace());
+            NewBasePtr = Builder.CreateBitCast(
+                    Arg, NewTy, Arg->getName() + "_hack_load_for_blockgen");
 
-    //    }
-    //    ValueMap[SAI->getBasePtr()] = NewBasePtr;
-    //};
+            errs() << __FUNCTION__ <<  "Remapped old: " << *SAI->getBasePtr() << " to: " << *NewBasePtr << "\n";
+        } else {
+            report_fatal_error(" I did not think about this case yet.");
+
+        }
+        ValueMap[SAI->getBasePtr()] = NewBasePtr;
+    };
 
     if (SAI->getNumberOfDimensions() > 0) {
       Arg++;
@@ -2443,6 +2478,41 @@ void GPUNodeBuilder::finalizeKernelArguments(ppcg_kernel *Kernel) {
     }
   }
 }
+
+/*
+void GPUNodeBuilder::castKernelArrays(ppcg_kernel *Kernel, Function *FN, PollyIRBuilder Builder) {
+    assert(!FN->isDeclaration() && "Expect function to have entry block");
+    Builder.SetInsertPoint(&FN->getEntryBlock());
+
+  unsigned ArgIdx = 0;
+  for (long i = 0; i < Prog->n_array; i++) {
+    if (!ppcg_kernel_requires_array_argument(Kernel, i))
+      continue;
+
+    // NOTE: I have not thought about this case.
+    if (gpu_array_is_read_only_scalar(&Prog->array[i])) {
+        ArgIdx++;
+        continue;
+    }
+    else {
+        isl_id *Id = isl_space_get_tuple_id(Prog->array[i].space, isl_dim_set);
+        const ScopArrayInfo *SAI = ScopArrayInfo::getFromId(isl::manage(Id));
+        Value *Arg = FN->arg_begin() + ArgIdx;
+
+        static const unsigned GlobalAddressSpace = 1;
+        PointerType *SAIOriginalType = cast<PointerType>(SAI->getBasePtr()->getType());
+        PointerType *SAINewType = PointerType::get(SAIOriginalType->getElementType(), GlobalAddressSpace);
+
+        errs() << "Arg type: " << *Arg->getType() << "\n";
+        errs() << "original SAI type: " << *SAIOriginalType << "\n";
+        errs() << "new SAI type: " << *SAINewType << "\n";
+        Value *SAITyped = Builder.CreateBitCast(Arg, SAINewType);
+        ValueMap[Arg]  = SAITyped;
+        ArgIdx++;
+    }
+  }
+}
+*/
 
 void GPUNodeBuilder::createKernelVariables(ppcg_kernel *Kernel, Function *FN) {
   Module *M = Builder.GetInsertBlock()->getParent()->getParent();
@@ -2528,6 +2598,7 @@ void GPUNodeBuilder::createKernelFunction(
   GPUModule.reset(new Module(Identifier, Builder.getContext()));
 
   Function *FN = createKernelFunctionDecl(Kernel, SubtreeValues);
+  errs() << "KernelFunction: " << *FN << "\n";
 
   switch (Arch) {
   case GPUArch::NVPTX64:
@@ -2560,6 +2631,7 @@ void GPUNodeBuilder::createKernelFunction(
 
   prepareKernelArguments(Kernel, FN);
   createKernelVariables(Kernel, FN);
+  // castKernelArrays(Kernel, FN, Builder);
 
   switch (Arch) {
   case GPUArch::NVPTX64:
@@ -3196,26 +3268,10 @@ public:
       return isl::set::empty(Array->getSpace());
 
     isl::set AccessSet = AccessUSet.extract_set(Array->getSpace());
-    // if (!AccessSet.dim_has_lower_bound(isl::dim::set, 0) || !AccessSet.dim_has_upper_bound(isl::dim::set, 0)) {
-    //     assert(Array->hasStrides() && "found nonaffine access to non-fortran array in PPCGCodeGen!");
-    //     isl::id SizeId = [&] {
-    //         isl::pw_aff ParametricPwAff = Array->getDimensionSizePw(0);
-    //         assert(ParametricPwAff && "parametric pw_aff corresponding "
-    //                 "to outermost dimension does not "
-    //                 "exist");
-    //         return ParametricPwAff.get_dim_id(isl::dim::param, 0);
-    //     }();
-
-    //     errs() << "SizeId: "; SizeId.dump(); errs() << "\n";
-    //     AccessSet = AccessSet.insert_dims(isl::dim::param, 0, 1);
-    //     AccessSet = AccessSet.set_dim_id(isl::dim::param, 0, SizeId);
-    // };
-
 
     isl::local_space LS = isl::local_space(Array->getSpace());
 
     isl::pw_aff Val = isl::aff::var_on_domain(LS, isl::dim::set, 0);
-    //isl::pw_aff OuterMin;
     if (!AccessSet.dim_has_lower_bound(isl::dim::set, 0)) {
         assert(Array->hasStrides() && "found nonaffine access to non-fortran array in PPCGCodeGen!");
         errs()<< "=== no lower bound found, setting lower bound to 0===\n";

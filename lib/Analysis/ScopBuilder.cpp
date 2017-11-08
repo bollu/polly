@@ -303,7 +303,7 @@ GlobalValue *ScopBuilder::findFADAllocationVisible(MemAccInst Inst) {
     if (!isFortranArrayDescriptor(Descriptor))
       continue;
 
-    return cast<GlobalValue>(Descriptor);
+    return dyn_cast<GlobalValue>(Descriptor);
   }
 
   return nullptr;
@@ -341,7 +341,7 @@ GlobalValue *ScopBuilder::findFADAllocationInvisible(MemAccInst Inst) {
   if (!isFortranArrayDescriptor(Descriptor))
     return nullptr;
 
-  return cast<GlobalValue>(Descriptor);
+  return dyn_cast<GlobalValue>(Descriptor);
 }
 
 bool ScopBuilder::buildAccessMultiDimFixed(MemAccInst Inst, ScopStmt *Stmt) {
@@ -754,11 +754,7 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
   // If all the strides are constants, then we don't need the FAD.
   // Otherwise, we need the FAD to load the correct values of strides
   // and offset.
-  GlobalValue *FAD = findFADAllocationVisible(Inst);
-  if (FAD == nullptr) {
-      FAD = findFADAllocationInvisible(Inst);
-  }
-
+  GlobalValue *FAD = nullptr;
   for (int i = 0; i < NArrayDims; i++) {
     Value *Ix = Call->getArgOperand(1 + NArrayDims + i);
     const SCEV *IxSCEV = SE.getSCEV(Ix);

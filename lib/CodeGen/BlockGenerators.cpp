@@ -240,7 +240,6 @@ static Type *copyAddressSpace(Type *NewType, Type *AddrSpaceType) {
 // new instruction.
 static Instruction *fixupAddressSpace(Instruction *New) {
 
-  // errs() << "\n\n==== " << __FUNCTION__ << "====\n";
   if (BitCastInst *BC = dyn_cast<BitCastInst>(New)) {
     Value *V = New->getOperand(0);
 
@@ -253,14 +252,10 @@ static Instruction *fixupAddressSpace(Instruction *New) {
       }
     }();
     Type *NewElemTy = cast<PointerType>(BC->getDestTy())->getElementType();
-    // errs() << " -NewElemTy: " << *NewElemTy << "\n";
     Type *NewTy = PointerType::get(NewElemTy, AddrSpace);
-    //// Type *NewTy = BC->getDestTy();
-    // errs() << " -NewTy: " << *NewTy << "\n";
 
     auto NewBC =
         CastInst::CreatePointerBitCastOrAddrSpaceCast(V, NewTy, New->getName());
-    // errs() << "NewBC: " << *NewBC << "\n";
     return NewBC;
   }
   return New;
@@ -275,53 +270,37 @@ void BlockGenerator::copyInstScalarHacked(ScopStmt &Stmt, Instruction *Inst,
   if (isa<DbgInfoIntrinsic>(Inst))
     return;
 
+  errs() << __FUNCTION__ << "|copying: " <<  *Inst << "\n";
   Instruction *NewInst = nullptr;
-  if (GetElementPtrInst *GEP = dyn_cast<GetElementPtrInst>(Inst)) {
+  if (auto GEP = dyn_cast<GetElementPtrInst>(Inst)) {
+      Value *NewGEPBase = getNewValue(Stmt, GEP->getOperand(0), BBMap,
+              LTS, getLoopForStmt(Stmt));
+      SmallVector<Value *, 4> NewIxs;
 
-    Value *NewPtr = getNewValue(Stmt, GEP->getPointerOperand(), BBMap, LTS,
-                                getLoopForStmt(Stmt));
-    SmallVector<Value *, 4> NewIxs;
-    for (Value *Ix : GEP->indices()) {
-      NewIxs.push_back(getNewValue(Stmt, Ix, BBMap, LTS, getLoopForStmt(Stmt)));
-    }
-    // Type *PointeeType =
-    // cast<PointerType>(GetElementPtrInst::getGEPReturnType(NewPtr,
-    // NewIxs))->getElementType(); HACK: tell LLVM what it wants to hear about
-    // the pointee type... this is nuts.
-    Type *ExpectedPointeeType =
-        cast<PointerType>(NewPtr->getType()->getScalarType())->getElementType();
-    // errs() << "===" << __FUNCTION__ << "==\n";
-    // errs() << "Old: " << *Inst << "\n";
-    // errs() << "NewPtr: " << *NewPtr << "\n";
-    // errs() << "ExpectedPointeeType: " << *ExpectedPointeeType << "\n";
-    // errs() << "--\n";
-    NewInst = GetElementPtrInst::Create(ExpectedPointeeType, NewPtr, NewIxs,
-                                        GEP->getName());
-
-  } else {
-    assert(!isa<GetElementPtrInst>(Inst));
-    NewInst = Inst->clone();
-
-    for (Value *OldOperand : Inst->operands()) {
-      Value *NewOperand =
-          getNewValue(Stmt, OldOperand, BBMap, LTS, getLoopForStmt(Stmt));
-
-      if (!NewOperand) {
-        assert(!isa<StoreInst>(NewInst) &&
-               "Store instructions are always needed!");
-        NewInst->deleteValue();
-        return;
+      for(unsigned i = 1; i < GEP->getNumOperands(); i++) {
+          NewIxs.push_back(getNewValue(Stmt, GEP->getOperand(i), BBMap, LTS, getLoopForStmt(Stmt)));
       }
-      NewInst->replaceUsesOfWith(OldOperand, NewOperand);
-    }
-  }
 
-  Instruction *FixedUpNewInst = fixupAddressSpace(NewInst);
-  if (FixedUpNewInst != NewInst) {
-    Builder.Insert(NewInst);
-    NewInst->eraseFromParent();
-    NewInst = FixedUpNewInst;
+      errs() << "\t\t" << __LINE__ << "\n";
+      errs() << "NewGEPBase: " << *NewGEPBase << "\n";
+      NewInst = GetElementPtrInst::Create(/*PointeeType=*/nullptr, NewGEPBase, NewIxs, Inst->getName());
+      errs() << "\t\t" << __LINE__ << "\n";
   }
+  else if(auto Bitcast = dyn_cast<BitCastInst>(Inst)) {
+      Value *NewSrc = BBMap[Bitcast->getOperand(0)];
+      PointerType *OldDestTy = cast<PointerType>(Bitcast->getDestTy());
+      int NewAddrspace = NewSrc->getType()->getPointerAddressSpace();
+      PointerType *NewDestTy = PointerType::get(OldDestTy->getElementType(), NewAddrspace);
+      errs() << "\t\t" << __LINE__ << "\n";
+      NewInst = new BitCastInst(NewSrc, NewDestTy, Bitcast->getName());
+      errs() << "\t\t" << __LINE__ << "\n";
+  }
+  else {
+      assert(false && "unhandled addrspace inst");
+  }
+  errs() << "\t\t" << __LINE__ << "\n";
+  assert(NewInst && "NewInst was not initialized");
+  errs() << "\t\t" << __LINE__ << "\n";
 
   Builder.Insert(NewInst);
   BBMap[Inst] = NewInst;
@@ -332,11 +311,13 @@ void BlockGenerator::copyInstScalarHacked(ScopStmt &Stmt, Instruction *Inst,
   // which will not be listed in llvm.dbg.cu of the Module since the Module
   // doesn't contain one. This fails the verification of the Module and the
   // subsequent generation of the ASM string.
+  errs() << "\t\t" << __LINE__ << "\n";
   if (NewInst->getModule() != Inst->getModule())
     NewInst->setDebugLoc(llvm::DebugLoc());
 
+  errs() << "\t\t" << __LINE__ << "\n";
   if (!NewInst->getType()->isVoidTy())
-    NewInst->setName("pxxx_" + Inst->getName());
+    NewInst->setName("p_" + Inst->getName());
 }
 
 void BlockGenerator::copyInstScalarOrig(ScopStmt &Stmt, Instruction *Inst,
@@ -432,13 +413,16 @@ bool BlockGenerator::DoesInstNeedAddrspaceFixup(ScopStmt &Stmt, Instruction *Ins
 void BlockGenerator::copyInstScalar(ScopStmt &Stmt, Instruction *Inst,
                                     ValueMapT &BBMap, LoopToScevMapT &LTS) {
 
-  if (Stmt.getParent()->getFunction().getName() == "__radiation_rg_org_MOD_radiation_rg_organize") {
-      //DoesInstNeedAddrspaceFixup(Stmt, Inst, BBMap, LTS)) {
-    //report_fatal_error("foo");
-    copyInstScalarHacked(Stmt, Inst, BBMap, LTS);
-  } else {
-    copyInstScalarOrig(Stmt, Inst, BBMap, LTS);
-  }
+    if (DoesInstNeedAddrspaceFixup(Stmt, Inst, BBMap, LTS)) {
+        if (!isa<GetElementPtrInst>(Inst) && !isa<BitCastInst>(Inst)) {
+            errs() << "Instruction that needs address space handling but is currently unhandled: " << *Inst;
+            report_fatal_error("unhandled addrspace in copyInstScalar");
+        }
+        copyInstScalarHacked(Stmt, Inst, BBMap, LTS);
+    }
+    else {
+        copyInstScalarOrig(Stmt, Inst, BBMap, LTS);
+    }
 }
 
 Value *
