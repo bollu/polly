@@ -1479,7 +1479,7 @@ isl_bool collectReferencesInGPUStmt(__isl_keep isl_ast_node *Node, void *User) {
 /// A list of functions that are available in NVIDIA's libdevice.
 const std::set<std::string> CUDALibDeviceFunctions = {
     "exp",      "expf", "fast_expf",     "expl",      "cos", "cosf","fast_cosf", "sqrt", "sqrtf",
-    "copysign", "copysignf", "copysignl", "log", "logf", "fast_logf", "powi", "powif", "llround"};
+    "copysign", "copysignf", "copysignl", "log", "logf", "fast_logf", "powi", "powif", "llround", "llroundf"};
 
 // A map from intrinsics to their corresponding libdevice functions.
 const std::map<std::string, std::string> IntrinsicToLibdeviceFunc = {
@@ -1487,7 +1487,8 @@ const std::map<std::string, std::string> IntrinsicToLibdeviceFunc = {
     {"llvm.exp.f32", "fast_expf"},
     {"llvm.powi.f64", "powi"},
     {"llvm.powi.f32", "powif"},
-    {"lround", "llround"}};
+    {"lround", "llround"},
+    {"lroundf", "llroundf"}};
 
 /// Return the corresponding CUDA libdevice function name for @p F.
 /// Note that this function will try to convert instrinsics in the list
@@ -2832,6 +2833,9 @@ void countNumUnusedParamsInFunction(Function *F) {
 
 std::string GPUNodeBuilder::finalizeKernelFunction() {
     errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
+    errs() << "Module (pre ADCE):\n";
+    GPUModule->print(errs(), nullptr);
+    errs() << "=====\n";
 
   {
     // NOTE: We currently copy all uses of gfortran_polly_array_index.
