@@ -1,0 +1,25 @@
+diff --git a/lib/Transforms/InstCombine/InstCombinePHI.cpp b/lib/Transforms/InstCombine/InstCombinePHI.cpp
+index 0011412..40f5449 100644
+--- a/lib/Transforms/InstCombine/InstCombinePHI.cpp
++++ b/lib/Transforms/InstCombine/InstCombinePHI.cpp
+@@ -290,6 +290,7 @@ static bool isSafeAndProfitableToSinkLoad(LoadInst *L) {
+ }
+ 
+ Instruction *InstCombiner::FoldPHIArgLoadIntoPHI(PHINode &PN) {
++  return nullptr;
+   LoadInst *FirstLI = cast<LoadInst>(PN.getIncomingValue(0));
+ 
+   // FIXME: This is overconservative; this transform is allowed in some cases
+diff --git a/lib/Transforms/Utils/SimplifyCFG.cpp b/lib/Transforms/Utils/SimplifyCFG.cpp
+index 1ee1e38..ce6a219 100644
+--- a/lib/Transforms/Utils/SimplifyCFG.cpp
++++ b/lib/Transforms/Utils/SimplifyCFG.cpp
+@@ -1634,6 +1634,8 @@ namespace {
+ /// ends with an unconditional branch. If it is true, sink any common code
+ /// in the two predecessors to BBEnd.
+ static bool SinkThenElseCodeToEnd(BranchInst *BI1) {
++  return false;
++
+   assert(BI1->isUnconditional());
+   BasicBlock *BBEnd = BI1->getSuccessor(0);
+ 
