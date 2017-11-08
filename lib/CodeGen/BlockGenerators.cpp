@@ -218,7 +218,7 @@ Value *BlockGenerator::getNewValue(ScopStmt &Stmt, Value *Old, ValueMapT &BBMap,
     New = BBMap.lookup(Old);
     break;
   }
-  assert(New && "Unexpected scalar dependence in region!");
+  // assert(New && "Unexpected scalar dependence in region!");
   return New;
 }
 
@@ -344,6 +344,7 @@ void BlockGenerator::copyInstScalarOrig(ScopStmt &Stmt, Instruction *Inst,
 
   Instruction *NewInst = Inst->clone();
 
+  Inst->dump();
   // Replace old operands with the new ones.
   for (Value *OldOperand : Inst->operands()) {
     Value *NewOperand =
@@ -644,7 +645,7 @@ Value *BlockGenerator::getOrCreateAlloca(const ScopArrayInfo *Array) {
 
   const DataLayout &DL = Builder.GetInsertBlock()->getModule()->getDataLayout();
 
-  Addr = new AllocaInst(Ty, DL.getAllocaAddrSpace(),
+  Addr = new AllocaInst(Ty, DL.getAllocaAddrSpace(),// "polly." +
                         ScalarBase->getName() + NameExt);
   EntryBB = &Builder.GetInsertBlock()->getParent()->getEntryBlock();
   Addr->insertBefore(&*EntryBB->getFirstInsertionPt());

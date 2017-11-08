@@ -1442,6 +1442,7 @@ void **g_managedptrs;
 unsigned long long g_nmanagedptrs = 0;
 unsigned long long g_maxmanagedptrs = 0;
 
+
 __attribute__((constructor)) static void initManagedPtrsBuffer() {
   g_maxmanagedptrs = DEFAULT_MAX_POINTERS;
   const char *maxManagedPointersString = getenv("POLLY_MAX_MANAGED_POINTERS");
@@ -1453,7 +1454,9 @@ __attribute__((constructor)) static void initManagedPtrsBuffer() {
 
 
 char *g_virtual_managedmem_stack = NULL;
+char *g_virtual_managedmem_stack2 = NULL;
 char *g_virtual_managedmem_sp = NULL;
+char *g_virtual_managedmem_sp2 = NULL;
 #define  KB 1024l
 #define  MB 1024l * KB
 #define  GB 1024l * MB
@@ -1465,9 +1468,18 @@ __attribute__((constructor)) static void initVirtualManagedMemStack() {
   PollyGPUContext *_ = polly_initContextCUDA();
   assert(_ && "polly_initContextCUDA failed");
                 
-  const CUresult Res = CuMemAllocManagedFcnPtr((CUdeviceptr *)&g_virtual_managedmem_stack, STACK_SIZE,
+  CUresult Res = CuMemAllocManagedFcnPtr((CUdeviceptr *)&g_virtual_managedmem_stack, STACK_SIZE,
                                                CU_MEM_ATTACH_GLOBAL);
   g_virtual_managedmem_sp = g_virtual_managedmem_stack;
+
+  if (Res != CUDA_SUCCESS) {
+    fprintf(stderr, "cudaMallocManaged failed for stack of size: %zu\n", STACK_SIZE);
+    exit(-1);
+  }
+
+  Res = CuMemAllocManagedFcnPtr((CUdeviceptr *)&g_virtual_managedmem_stack2, STACK_SIZE,
+                                               CU_MEM_ATTACH_GLOBAL);
+  g_virtual_managedmem_sp2 = g_virtual_managedmem_stack2;
 
   if (Res != CUDA_SUCCESS) {
     fprintf(stderr, "cudaMallocManaged failed for stack of size: %zu\n", STACK_SIZE);
@@ -1522,12 +1534,24 @@ void freeManagedCUDA(void *mem) {
 }
 
 void *mallocManagedCUDA(size_t size) {
-    char *mem = g_virtual_managedmem_sp; 
-    g_virtual_managedmem_sp += (size / 32 + 1) * 32;
+    char *mem;
+    if (size > 0) {
+    mem = g_virtual_managedmem_sp2; 
+    g_virtual_managedmem_sp2 += (size / 32 + 1) * 32;
 
     #define SAFETY 1024 * KB // 1 M
-    assert(g_virtual_managedmem_sp - g_virtual_managedmem_stack <= STACK_SIZE - SAFETY && "stack was blown");
+    assert(g_virtual_managedmem_sp2 - g_virtual_managedmem_stack2 <= STACK_SIZE - SAFETY && "stack was blown");
     #undef SAFETY
+    //printf("\t\t\tSize %d large\n", size);
+    } else {
+    	mem = g_virtual_managedmem_sp; 
+	g_virtual_managedmem_sp += (size / 32 + 1) * 32;
+
+    	#define SAFETY 1024 * KB // 1 M
+    	assert(g_virtual_managedmem_sp - g_virtual_managedmem_stack <= STACK_SIZE - SAFETY && "stack was blown");
+        #undef SAFETY
+      //  printf("\t\t\tSize %d small\n", size);
+    }
     return mem;
   // Note: [Size 0 allocations]
   // Sometimes, some runtime computation of size could create a size of 0
