@@ -375,9 +375,8 @@ static __isl_give isl_id_to_ast_expr *pollyBuildAstExprForStmt(
 
   for (MemoryAccess *Acc : *Stmt) {
     if (!Acc->isAffine()) {
-        assert(false && "found non-affine access in function!");
-      errs() << __PRETTY_FUNCTION__
-             << "skipping materializing the stmt's memory access because it's "
+      errs() << __PRETTY_FUNCTION__ << "\n" <<
+             ":skipping materializing the stmt's memory access because it's "
                 "nonaffine\n";
       continue;
     }
@@ -1921,6 +1920,7 @@ void GPUNodeBuilder::setupKernelSubtreeFunctions(
   }
 }
 void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
+    errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
   isl_id *Id = isl_ast_node_get_annotation(KernelStmt);
   ppcg_kernel *Kernel = (ppcg_kernel *)isl_id_get_user(Id);
   isl_id_free(Id);
@@ -2105,6 +2105,7 @@ static std::string computeSPIRDataLayout(bool is64Bit) {
 Function *
 GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
                                          SetVector<Value *> &SubtreeValues) {
+    errs() << __PRETTY_FUNCTION__ << "\n";
   std::vector<Type *> Args;
   std::string Identifier = getKernelFuncName(Kernel->id);
 
@@ -2235,6 +2236,8 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     isl_ast_build_free(Build);
     KernelIds.push_back(Id);
     IDToSAI[Id] = SAIRep;
+    ValueMap[SAI->getBasePtr()] = Arg;
+    errs() << "Mapping: " << *SAI->getBasePtr() << " => " << *Arg << "\n";
     Arg++;
   }
 
@@ -2250,6 +2253,7 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_param, i);
     Arg->setName(isl_id_get_name(Id));
     Value *Val = IDToValue[Id];
+    errs() << "Mapping: " << *Val << " => " << *Arg << "\n";
     ValueMap[Val] = &*Arg;
     IDToValue[Id] = &*Arg;
     KernelIDs.insert(std::unique_ptr<isl_id, IslIdDeleter>(Id));
@@ -2258,9 +2262,11 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
 
   for (auto *V : SubtreeValues) {
     Arg->setName(V->getName());
+    errs() << "Mapping: " << *V << " => " << *Arg << "\n";
     ValueMap[V] = &*Arg;
     Arg++;
   }
+  errs() << "\n=======\n";
 
   return FN;
 }
@@ -2652,8 +2658,11 @@ std::string GPUNodeBuilder::createKernelASM() {
     ModulePassManager.run(*GPUModule);
   }
 
-  if (DumpKernelIR)
-    outs() << *GPUModule << "\n";
+  if (DumpKernelIR) {
+      outs() << "vvvKernel IR:vvv\n";
+      outs() << *GPUModule << "\n";
+      outs() << "-----------\n";
+  }
 
   //for (Function &F : *GPUModule) {
   //  countNumUnusedParamsInFunction(&F);
@@ -2750,6 +2759,7 @@ void countNumUnusedParamsInFunction(Function *F) {
 }
 
 std::string GPUNodeBuilder::finalizeKernelFunction() {
+    errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
 
   {
     // NOTE: We currently copy all uses of gfortran_polly_array_index.
@@ -3186,20 +3196,20 @@ public:
       return isl::set::empty(Array->getSpace());
 
     isl::set AccessSet = AccessUSet.extract_set(Array->getSpace());
-    if (!AccessSet.dim_has_lower_bound(isl::dim::set, 0) || !AccessSet.dim_has_upper_bound(isl::dim::set, 0)) {
-        assert(Array->hasStrides() && "found nonaffine access to non-fortran array in PPCGCodeGen!");
-        isl::id SizeId = [&] {
-            isl::pw_aff ParametricPwAff = Array->getDimensionSizePw(0);
-            assert(ParametricPwAff && "parametric pw_aff corresponding "
-                    "to outermost dimension does not "
-                    "exist");
-            return ParametricPwAff.get_dim_id(isl::dim::param, 0);
-        }();
+    // if (!AccessSet.dim_has_lower_bound(isl::dim::set, 0) || !AccessSet.dim_has_upper_bound(isl::dim::set, 0)) {
+    //     assert(Array->hasStrides() && "found nonaffine access to non-fortran array in PPCGCodeGen!");
+    //     isl::id SizeId = [&] {
+    //         isl::pw_aff ParametricPwAff = Array->getDimensionSizePw(0);
+    //         assert(ParametricPwAff && "parametric pw_aff corresponding "
+    //                 "to outermost dimension does not "
+    //                 "exist");
+    //         return ParametricPwAff.get_dim_id(isl::dim::param, 0);
+    //     }();
 
-        errs() << "SizeId: "; SizeId.dump(); errs() << "\n";
-        AccessSet = AccessSet.insert_dims(isl::dim::param, 0, 1);
-        AccessSet = AccessSet.set_dim_id(isl::dim::param, 0, SizeId);
-    };
+    //     errs() << "SizeId: "; SizeId.dump(); errs() << "\n";
+    //     AccessSet = AccessSet.insert_dims(isl::dim::param, 0, 1);
+    //     AccessSet = AccessSet.set_dim_id(isl::dim::param, 0, SizeId);
+    // };
 
 
     isl::local_space LS = isl::local_space(Array->getSpace());
@@ -3224,12 +3234,8 @@ public:
 
         isl::constraint C = isl::constraint::alloc_inequality(isl::local_space(AccessSet.get_space()));
         errs() << "Constraint: "; C.dump(); errs() << "\n";
-        C = C.set_coefficient_si(isl::dim::param, 0, 1);
-        errs() << __LINE__ << "\n";
         C = C.set_coefficient_si(isl::dim::set, 0, -1);
-        errs() << __LINE__ << "\n";
-        C = C.set_constant_si(0);
-        errs() << __LINE__ << "\n";
+        C = C.set_constant_si(std::numeric_limits<int>().max());
 
         errs() << "AccessSet(old): "; AccessSet.dump();
         AccessSet = AccessSet.add_constraint(C);
@@ -3841,6 +3847,7 @@ public:
   /// @param Root An isl_ast_node pointing to the root of the GPU AST.
   /// @param Prog The GPU Program to generate code for.
   void generateCode(__isl_take isl_ast_node *Root, gpu_prog *Prog) {
+      errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n\n";
     ScopAnnotator Annotator;
     Annotator.buildAliasScopes(*S);
 
@@ -3914,6 +3921,9 @@ public:
       isl_ast_node_free(Root);
     } else {
 
+      errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n\n";
+      errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n\n";
+
       NodeBuilder.addParameters(S->getContext().release());
       Value *RTC = NodeBuilder.createRTC(Condition);
       Builder.GetInsertBlock()->getTerminator()->setOperand(0, RTC);
@@ -3925,6 +3935,9 @@ public:
       isl_ast_node_dump(Root);
       NodeBuilder.create(Root);
       NodeBuilder.finalize();
+      errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n\n";
+      errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n\n";
+      errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n\n";
     }
 
     /// In case a sequential kernel has more surrounding loops as any parallel
@@ -3937,8 +3950,11 @@ public:
       // CondBr->setOperand(0, Builder.getFalse());
     }
 
-    if (!NodeBuilder.BuildSuccessful)
-      CondBr->setOperand(0, Builder.getFalse());
+    if (!NodeBuilder.BuildSuccessful) {
+        errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
+        CondBr->setOperand(0, Builder.getFalse());
+        report_fatal_error("!NodeBuilder.BuildSuccessful");
+    }
   }
 
   bool isAllowedScop(int n) {
@@ -4011,12 +4027,16 @@ public:
     auto PPCGProg = createPPCGProg(PPCGScop);
     auto PPCGGen = generateGPU(PPCGScop, PPCGProg);
 
+
     if (PPCGGen->tree) {
+      errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
       generateCode(isl_ast_node_copy(PPCGGen->tree), PPCGProg);
       CurrentScop.markAsToBeSkipped();
     } else {
+      errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
       DEBUG(dbgs() << getUniqueScopName(S)
                    << " has empty PPCGGen->tree. Bailing out.\n");
+      report_fatal_error("empty PPCGGen->tree.");
     }
 
     freeOptions(PPCGScop);

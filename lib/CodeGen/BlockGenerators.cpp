@@ -51,6 +51,11 @@ static cl::opt<bool, true> DebugPrintingX(
     cl::location(PollyDebugPrinting), cl::Hidden, cl::init(false),
     cl::ZeroOrMore, cl::cat(PollyCategory));
 
+Loop *BlockGenerator::getLoopForStmt(const ScopStmt &Stmt) const {
+  auto *StmtBB = Stmt.getEntryBlock();
+  return LI.getLoopFor(StmtBB);
+}
+
 BlockGenerator::BlockGenerator(
     PollyIRBuilder &B, LoopInfo &LI, ScalarEvolution &SE, DominatorTree &DT,
     AllocaMapTy &ScalarMap, EscapeUsersAllocaMapTy &EscapeMap,
@@ -343,11 +348,36 @@ void BlockGenerator::copyInstScalarOrig(ScopStmt &Stmt, Instruction *Inst,
     return;
 
   Instruction *NewInst = Inst->clone();
+  Module *curModule = Builder.GetInsertBlock()->getParent()->getParent();
 
   // Replace old operands with the new ones.
   for (Value *OldOperand : Inst->operands()) {
+
+    bool ValueAcrossModules = false;
+    if (isa<GlobalValue>(OldOperand) && !isa<Function>(OldOperand)) {
+      GlobalValue *GV = cast<GlobalValue>(OldOperand);
+      if (GV->getParent() != curModule) {
+        errs() << __PRETTY_FUNCTION__ << " global value across module:\n"
+               << *GV << "\n";
+        ValueAcrossModules = true;
+      }
+    }
+
     Value *NewOperand =
         getNewValue(Stmt, OldOperand, BBMap, LTS, getLoopForStmt(Stmt));
+
+    if (ValueAcrossModules) {
+      if (!NewOperand) {
+        errs()
+            << "Expected to find replacement for value accros modules, did not "
+               "find any.\n";
+        errs() << *OldOperand << "\n";
+        report_fatal_error("value expected across modules not found.\n");
+      } else {
+        errs() << "NewOperand:\n" << *NewOperand << "\n";
+        errs() << "---\n";
+      }
+    }
 
     if (!NewOperand) {
       assert(!isa<StoreInst>(NewInst) &&
@@ -375,9 +405,40 @@ void BlockGenerator::copyInstScalarOrig(ScopStmt &Stmt, Instruction *Inst,
     NewInst->setName("p_" + Inst->getName());
 }
 
+// Check if two values come from two different address spaces.
+bool hasDifferentAddrspaces(Value *V1, Value *V2) {
+  if (!V1->getType()->isPointerTy())
+    return false;
+  assert(V1->getType()->isPointerTy());
+  assert(V2->getType()->isPointerTy());
+  return V1->getType()->getPointerAddressSpace() !=
+         V2->getType()->getPointerAddressSpace();
+};
+
+bool BlockGenerator::DoesInstNeedAddrspaceFixup(ScopStmt &Stmt, Instruction *Inst, ValueMapT &BBMap,
+        LoopToScevMapT &LTS) {
+
+  for (Value *OldOperand : Inst->operands()) {
+
+    Value *NewOperand =
+        getNewValue(Stmt, OldOperand, BBMap, LTS, getLoopForStmt(Stmt));
+
+    if (hasDifferentAddrspaces(OldOperand, NewOperand)) return true;
+  }
+  return false;
+}
+
+
 void BlockGenerator::copyInstScalar(ScopStmt &Stmt, Instruction *Inst,
                                     ValueMapT &BBMap, LoopToScevMapT &LTS) {
+
+  if (Stmt.getParent()->getFunction().getName() == "__radiation_rg_org_MOD_radiation_rg_organize") {
+      //DoesInstNeedAddrspaceFixup(Stmt, Inst, BBMap, LTS)) {
+    //report_fatal_error("foo");
+    copyInstScalarHacked(Stmt, Inst, BBMap, LTS);
+  } else {
     copyInstScalarOrig(Stmt, Inst, BBMap, LTS);
+  }
 }
 
 Value *
@@ -431,10 +492,6 @@ BlockGenerator::getImplicitAddress(MemoryAccess &Access, Loop *L,
   return getOrCreateAlloca(Access);
 }
 
-Loop *BlockGenerator::getLoopForStmt(const ScopStmt &Stmt) const {
-  auto *StmtBB = Stmt.getEntryBlock();
-  return LI.getLoopFor(StmtBB);
-}
 
 Value *BlockGenerator::generateArrayLoad(ScopStmt &Stmt, LoadInst *Load,
                                          ValueMapT &BBMap, LoopToScevMapT &LTS,

@@ -468,6 +468,10 @@ protected:
   Value *getNewValue(ScopStmt &Stmt, Value *Old, ValueMapT &BBMap,
                      LoopToScevMapT &LTS, Loop *L) const;
 
+  // Return whether the instruction has a changed address space in its copy.
+  bool DoesInstNeedAddrspaceFixup(ScopStmt &Stmt, Instruction *Inst, ValueMapT &BBMap,
+                      LoopToScevMapT &LTS);
+
   void copyInstScalar(ScopStmt &Stmt, Instruction *Inst, ValueMapT &BBMap,
                       LoopToScevMapT &LTS);
 

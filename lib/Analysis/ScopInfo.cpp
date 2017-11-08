@@ -3651,6 +3651,12 @@ void Scop::markFortranArrays() {
       SAI->applyAndSetFAD(FAD);
     }
   }
+  
+  for(ScopArrayInfo *SAI: this->arrays()) {
+      if (SAI->hasStrides() && SAI->getShape().hackFAD())
+          SAI->applyAndSetFAD(SAI->getShape().hackFAD());
+          
+  }
 }
 
 void Scop::finalizeAccesses() {

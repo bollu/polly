@@ -112,7 +112,7 @@ class ScopBuilder {
   /// @param Inst The LoadInst/StoreInst that accesses the memory.
   ///
   /// @returns Reference to <descriptor> on success, nullptr on failure.
-  Value *findFADAllocationInvisible(MemAccInst Inst);
+  GlobalValue *findFADAllocationInvisible(MemAccInst Inst);
 
   /// Try to match for the descriptor of a Fortran array whose allocation
   /// call is visible. When we have a Fortran array, we try to look for a
@@ -138,7 +138,7 @@ class ScopBuilder {
   /// @param Inst The LoadInst/StoreInst that accesses the memory.
   ///
   /// @returns Reference to %untypedmem on success, nullptr on failure.
-  Value *findFADAllocationVisible(MemAccInst Inst);
+  GlobalValue *findFADAllocationVisible(MemAccInst Inst);
 
   // @}
 

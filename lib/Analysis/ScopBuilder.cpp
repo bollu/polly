@@ -239,7 +239,7 @@ bool isFortranArrayDescriptor(Value *V) {
   return true;
 }
 
-Value *ScopBuilder::findFADAllocationVisible(MemAccInst Inst) {
+GlobalValue *ScopBuilder::findFADAllocationVisible(MemAccInst Inst) {
   // match: 4.1 & 4.2 store/load
   if (!isa<LoadInst>(Inst) && !isa<StoreInst>(Inst))
     return nullptr;
@@ -303,13 +303,13 @@ Value *ScopBuilder::findFADAllocationVisible(MemAccInst Inst) {
     if (!isFortranArrayDescriptor(Descriptor))
       continue;
 
-    return Descriptor;
+    return cast<GlobalValue>(Descriptor);
   }
 
   return nullptr;
 }
 
-Value *ScopBuilder::findFADAllocationInvisible(MemAccInst Inst) {
+GlobalValue *ScopBuilder::findFADAllocationInvisible(MemAccInst Inst) {
   // match: 3
   if (!isa<LoadInst>(Inst) && !isa<StoreInst>(Inst))
     return nullptr;
@@ -341,7 +341,7 @@ Value *ScopBuilder::findFADAllocationInvisible(MemAccInst Inst) {
   if (!isFortranArrayDescriptor(Descriptor))
     return nullptr;
 
-  return Descriptor;
+  return cast<GlobalValue>(Descriptor);
 }
 
 bool ScopBuilder::buildAccessMultiDimFixed(MemAccInst Inst, ScopStmt *Stmt) {
@@ -754,7 +754,11 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
   // If all the strides are constants, then we don't need the FAD.
   // Otherwise, we need the FAD to load the correct values of strides
   // and offset.
-  GlobalValue *FAD = nullptr;
+  GlobalValue *FAD = findFADAllocationVisible(Inst);
+  if (FAD == nullptr) {
+      FAD = findFADAllocationInvisible(Inst);
+  }
+
   for (int i = 0; i < NArrayDims; i++) {
     Value *Ix = Call->getArgOperand(1 + NArrayDims + i);
     const SCEV *IxSCEV = SE.getSCEV(Ix);
@@ -790,7 +794,6 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
     // Try to get an FAD from a stride.
     if (!isa<SCEVConstant>(StrideSCEV) && FAD == nullptr) {
       FAD = getBasePtrForVariableStride(Stride);
-      // assert(FAD && "need legal FAD");
     }
     Strides.push_back(StrideSCEV);
   }
@@ -850,10 +853,18 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
       errs() << "======\n";
   }
 
+  if (!FAD) {
+      errs() << "Unable to find FAD for access:\n";
+      errs() << *Inst << "\n";
+      errs() << *Call << "\n";
+      errs() << *BasePtr << "\n";
+      errs() << "====\n";
+  }
+
   // NOTE: this should be fromStrides.
   // NOTE: To be able to change this, we need to teach ScopArrayInfo to recieve
   // a Shape object. So, do that first.
-  addArrayAccess(Stmt, Inst, AccType, BasePtr, ElementType, false, Subscripts,
+  addArrayAccess(Stmt, Inst, AccType, BasePtr, ElementType, IsAffine, Subscripts,
                  ShapeInfo::fromStrides(Strides, Offset, FAD), Val);
 
   if (AbstractMatrixDebug)
