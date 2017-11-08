@@ -404,7 +404,11 @@ bool BlockGenerator::DoesInstNeedAddrspaceFixup(ScopStmt &Stmt, Instruction *Ins
     Value *NewOperand =
         getNewValue(Stmt, OldOperand, BBMap, LTS, getLoopForStmt(Stmt));
 
-    if (hasDifferentAddrspaces(OldOperand, NewOperand)) return true;
+    if (hasDifferentAddrspaces(OldOperand, NewOperand)) { 
+        errs() << __PRETTY_FUNCTION__ << "\n\t Old Operand: " << *OldOperand << "\n\t New Operand: " << *NewOperand << "\n------\n";
+        errs() << __PRETTY_FUNCTION__<< "\n\tInstruction: " << *Inst << "\n";
+        return true;
+    }
   }
   return false;
 }

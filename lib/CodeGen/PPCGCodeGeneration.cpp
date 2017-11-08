@@ -2390,7 +2390,7 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
 
     isl_id_free(Id);
 
-    if (doesArrayHaveNonaffineAccess(SAI, &S)) {
+    // if (doesArrayHaveNonaffineAccess(SAI, &S)) {
         Value *NewBasePtr = Arg;
         if (PointerType *OriginalTy =
                 dyn_cast<PointerType>(SAI->getBasePtr()->getType())) {
@@ -2399,13 +2399,13 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
             NewBasePtr = Builder.CreateBitCast(
                     Arg, NewTy, Arg->getName() + "_hack_load_for_blockgen");
 
-            errs() << __FUNCTION__ <<  "Remapped old: " << *SAI->getBasePtr() << " to: " << *NewBasePtr << "\n";
+            errs() << __FUNCTION__ <<  "Remapped old: " << SAI->getBasePtr()->getName() << " to: " << *NewBasePtr << "\n";
         } else {
             report_fatal_error(" I did not think about this case yet.");
 
         }
         ValueMap[SAI->getBasePtr()] = NewBasePtr;
-    };
+    // };
 
     if (SAI->getNumberOfDimensions() > 0) {
       Arg++;
