@@ -2244,14 +2244,6 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     isl_ast_build_free(Build);
     KernelIds.push_back(Id);
     IDToSAI[Id] = SAIRep;
-    // static const int KernelAddrSpace = 1;
-    // Builder.SetInsertPoint(&FN->getEntryBlock());
-    // Value *ArgTyped = Builder.CreateBitCast(Arg, SAI->getElementType()->getPointerTo(KernelAddrSpace));
-    // errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
-    //ValueMap[SAI->getBasePtr()] = ArgTyped;
-    // errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
-    // errs() << "Mapping: " << *SAI->getBasePtr() << " => " << *ArgTyped << "\n";
-    ValueMap[SAI->getBasePtr()] = Arg;
     Arg++;
   }
 
@@ -2259,6 +2251,8 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_set, i);
     Arg->setName(isl_id_get_name(Id));
     IDToValue[Id] = &*Arg;
+    errs() << __LINE__ << "|DEALING WITH NON VALUE MAPPED PARAMETER: " << *Arg << "\n";
+    // ValueMap[Val] = &*Arg;
     KernelIDs.insert(std::unique_ptr<isl_id, IslIdDeleter>(Id));
     Arg++;
   }
@@ -2267,7 +2261,7 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_param, i);
     Arg->setName(isl_id_get_name(Id));
     Value *Val = IDToValue[Id];
-    errs() << "Mapping: " << *Val << " => " << *Arg << "\n";
+    errs() << __LINE__ <<  "|Mapping: " << *Val << " => " << *Arg << "\n";
     ValueMap[Val] = &*Arg;
     IDToValue[Id] = &*Arg;
     KernelIDs.insert(std::unique_ptr<isl_id, IslIdDeleter>(Id));
@@ -2275,8 +2269,8 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
   }
 
   for (auto *V : SubtreeValues) {
-    Arg->setName(V->getName());
-    errs() << "Mapping: " << *V << " => " << *Arg << "\n";
+    Arg->setName("subtree_" + V->getName());
+    errs() <<  __LINE__ << "|Mapping: " << *V << " => " << *Arg << "\n";
     ValueMap[V] = &*Arg;
     Arg++;
   }
@@ -2412,17 +2406,20 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
       Arg++;
       continue;
     }
-
+    
+    errs() << __LINE__ << "|" << "DEALING WITH NON VALUE MAPPED PARAMETER: " << *Arg << "\n";
     Value *Val = &*Arg;
 
     if (!gpu_array_is_read_only_scalar(&Prog->array[i])) {
       Type *TypePtr = SAI->getElementType()->getPointerTo();
       Value *TypedArgPtr = Builder.CreatePointerCast(Val, TypePtr);
       Val = Builder.CreateLoad(TypedArgPtr);
+    // };
     }
 
     Value *Alloca = BlockGen.getOrCreateAlloca(SAI);
     Builder.CreateStore(Val, Alloca);
+
     Arg++;
   }
 }
@@ -2589,6 +2586,8 @@ void GPUNodeBuilder::createKernelVariables(ppcg_kernel *Kernel, Function *FN) {
     LocalArrays.push_back(Allocation);
     KernelIds.push_back(Id);
     IDToSAI[Id] = SAI;
+
+    errs() << __LINE__ << "|DEALING WITH NON VALUE MAPPED PARAMETER: " << SAI->getBasePtr()->getName() << "\n";
   }
 }
 
@@ -2832,26 +2831,30 @@ void countNumUnusedParamsInFunction(Function *F) {
 }
 
 std::string GPUNodeBuilder::finalizeKernelFunction() {
-    errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
-    errs() << "Module (pre ADCE):\n";
-    GPUModule->print(errs(), nullptr);
-    errs() << "=====\n";
+    //errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
+    //errs() << "Kernel Module (pre ADCE):\n";
+    //GPUModule->print(errs(), nullptr);
+    //errs() << "=====\n";
+    //    
+    //errs() << "Host Module Function:\n";
+    //this->S.getFunction().print(errs());
+    //errs() << "======\n";
 
-  {
-    // NOTE: We currently copy all uses of gfortran_polly_array_index.
-    // However, these are unsused, but they refer to host side values
-    // So, ADCE them out.
-    // For correctness, we should probably add these to
-    // BlockGenerators.cpp - polly::isIgnoredIntrinsic.
-    llvm::legacy::PassManager OptPasses;
-    OptPasses.add(createAggressiveDCEPass());
-    // Comment this to allow tests to pass:
-    // Polly :: GPGPU/host-control-flow.ll
-    // Polly :: GPGPU/kernel-params-only-some-arrays.ll
-    // Polly :: GPGPU/live-range-reordering-with-privatization.ll
-    // Polly :: GPGPU/phi-nodes-in-kernel.ll
-    OptPasses.run(*GPUModule);
-  }
+  // {
+  //   // NOTE: We currently copy all uses of gfortran_polly_array_index.
+  //   // However, these are unsused, but they refer to host side values
+  //   // So, ADCE them out.
+  //   // For correctness, we should probably add these to
+  //   // BlockGenerators.cpp - polly::isIgnoredIntrinsic.
+  //   llvm::legacy::PassManager OptPasses;
+  //   OptPasses.add(createAggressiveDCEPass());
+  //   // Comment this to allow tests to pass:
+  //   // Polly :: GPGPU/host-control-flow.ll
+  //   // Polly :: GPGPU/kernel-params-only-some-arrays.ll
+  //   // Polly :: GPGPU/live-range-reordering-with-privatization.ll
+  //   // Polly :: GPGPU/phi-nodes-in-kernel.ll
+  //   OptPasses.run(*GPUModule);
+  // }
 
   if (verifyModule(*GPUModule)) {
     DEBUG(dbgs() << "verifyModule failed on module:\n";

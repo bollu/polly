@@ -270,7 +270,6 @@ void BlockGenerator::copyInstScalarHacked(ScopStmt &Stmt, Instruction *Inst,
   if (isa<DbgInfoIntrinsic>(Inst))
     return;
 
-  errs() << __FUNCTION__ << "|copying: " <<  *Inst << "\n";
   Instruction *NewInst = nullptr;
   if (auto GEP = dyn_cast<GetElementPtrInst>(Inst)) {
       Value *NewGEPBase = getNewValue(Stmt, GEP->getOperand(0), BBMap,
@@ -281,26 +280,19 @@ void BlockGenerator::copyInstScalarHacked(ScopStmt &Stmt, Instruction *Inst,
           NewIxs.push_back(getNewValue(Stmt, GEP->getOperand(i), BBMap, LTS, getLoopForStmt(Stmt)));
       }
 
-      errs() << "\t\t" << __LINE__ << "\n";
-      errs() << "NewGEPBase: " << *NewGEPBase << "\n";
       NewInst = GetElementPtrInst::Create(/*PointeeType=*/nullptr, NewGEPBase, NewIxs, Inst->getName());
-      errs() << "\t\t" << __LINE__ << "\n";
   }
   else if(auto Bitcast = dyn_cast<BitCastInst>(Inst)) {
       Value *NewSrc = BBMap[Bitcast->getOperand(0)];
       PointerType *OldDestTy = cast<PointerType>(Bitcast->getDestTy());
       int NewAddrspace = NewSrc->getType()->getPointerAddressSpace();
       PointerType *NewDestTy = PointerType::get(OldDestTy->getElementType(), NewAddrspace);
-      errs() << "\t\t" << __LINE__ << "\n";
       NewInst = new BitCastInst(NewSrc, NewDestTy, Bitcast->getName());
-      errs() << "\t\t" << __LINE__ << "\n";
   }
   else {
       assert(false && "unhandled addrspace inst");
   }
-  errs() << "\t\t" << __LINE__ << "\n";
   assert(NewInst && "NewInst was not initialized");
-  errs() << "\t\t" << __LINE__ << "\n";
 
   Builder.Insert(NewInst);
   BBMap[Inst] = NewInst;
@@ -311,11 +303,9 @@ void BlockGenerator::copyInstScalarHacked(ScopStmt &Stmt, Instruction *Inst,
   // which will not be listed in llvm.dbg.cu of the Module since the Module
   // doesn't contain one. This fails the verification of the Module and the
   // subsequent generation of the ASM string.
-  errs() << "\t\t" << __LINE__ << "\n";
   if (NewInst->getModule() != Inst->getModule())
     NewInst->setDebugLoc(llvm::DebugLoc());
 
-  errs() << "\t\t" << __LINE__ << "\n";
   if (!NewInst->getType()->isVoidTy())
     NewInst->setName("p_" + Inst->getName());
 }
@@ -405,8 +395,8 @@ bool BlockGenerator::DoesInstNeedAddrspaceFixup(ScopStmt &Stmt, Instruction *Ins
         getNewValue(Stmt, OldOperand, BBMap, LTS, getLoopForStmt(Stmt));
 
     if (hasDifferentAddrspaces(OldOperand, NewOperand)) { 
-        errs() << __PRETTY_FUNCTION__ << "\n\t Old Operand: " << *OldOperand << "\n\t New Operand: " << *NewOperand << "\n------\n";
-        errs() << __PRETTY_FUNCTION__<< "\n\tInstruction: " << *Inst << "\n";
+        // errs() << __PRETTY_FUNCTION__ << "\n\t Old Operand: " << *OldOperand << "\n\t New Operand: " << *NewOperand << "\n------\n";
+        // errs() << __PRETTY_FUNCTION__<< "\n\tInstruction: " << *Inst << "\n";
         return true;
     }
   }
@@ -417,6 +407,7 @@ bool BlockGenerator::DoesInstNeedAddrspaceFixup(ScopStmt &Stmt, Instruction *Ins
 void BlockGenerator::copyInstScalar(ScopStmt &Stmt, Instruction *Inst,
                                     ValueMapT &BBMap, LoopToScevMapT &LTS) {
 
+    errs() << "BlockGenerator copying: " << *Inst << "\n";
     if (DoesInstNeedAddrspaceFixup(Stmt, Inst, BBMap, LTS)) {
         if (!isa<GetElementPtrInst>(Inst) && !isa<BitCastInst>(Inst)) {
             errs() << "Instruction that needs address space handling but is currently unhandled: " << *Inst;

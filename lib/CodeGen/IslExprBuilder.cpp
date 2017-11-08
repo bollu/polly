@@ -303,6 +303,7 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
         DimSize = expandCodeFor(S, SE, DL, "polly", DimSCEV, DimSCEV->getType(),
                                 &*Builder.GetInsertPoint(), nullptr,
                                 StartBlock->getSinglePredecessor());
+        DimSize = getLatestValue(DimSize);
       }
       assert(DimSize && "dimsize uninitialized");
 
@@ -349,6 +350,7 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
       Offset = expandCodeFor(S, SE, DL, "polly", OffsetSCEV,
                              OffsetSCEV->getType(), &*Builder.GetInsertPoint(),
                              nullptr, StartBlock->getSinglePredecessor());
+      Offset = getLatestValue(Offset);
     }
     assert(Offset && "dimsize uninitialized");
     Offset = Builder.CreateIntCast(Offset, IndexOp->getType(), true);
@@ -853,4 +855,11 @@ Value *IslExprBuilder::create(__isl_take isl_ast_expr *Expr) {
   }
 
   llvm_unreachable("Unexpected enum value");
+}
+
+
+llvm::Value *IslExprBuilder::getLatestValue(llvm::Value *Old) {
+    if (GlobalMap.find(Old) != GlobalMap.end())
+        return GlobalMap.find(Old)->second;
+    return Old;
 }

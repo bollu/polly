@@ -268,6 +268,8 @@ private:
   /// @return A value that represents the result of the multiplication.
   llvm::Value *createMul(llvm::Value *LHS, llvm::Value *RHS,
                          const llvm::Twine &Name = "");
+
+  llvm::Value *getLatestValue(llvm::Value *Old);
 };
 } // namespace polly
 
