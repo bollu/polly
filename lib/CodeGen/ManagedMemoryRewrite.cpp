@@ -251,7 +251,7 @@ replaceGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &Array,
 
   if (!Array.hasInitializer() ||
           !isa<ConstantAggregateZero>(Array.getInitializer())) {
-      if ( Array.getName() != "__m_MOD_srcarray") { return; }
+      if ( Array.getName() != "__data_soil_MOD_csalb") { return; }
   }
 
   ReplacedGlobals.insert(&Array);
