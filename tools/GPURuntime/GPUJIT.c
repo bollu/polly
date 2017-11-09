@@ -1740,14 +1740,12 @@ void polly_launchKernel(PollyGPUFunction *Kernel, unsigned int GridDimX,
                         unsigned int GridDimY, unsigned int BlockDimX,
                         unsigned int BlockDimY, unsigned int BlockDimZ,
                         void **Parameters) {
-  dump_function();
-
-  /*
-  for(int i = 0; i < 17; i++) {
-      fprintf(stderr, "\tParam[%d] = %p\n", i, Parameters[i]);
-  }
-  fprintf(stderr,  "======\n");
-  */
+  //dump_function();
+  //for(int i = 0; i < 12; i++) {
+  //    fprintf(stderr, "\t&Param[%d] = %p\n", i, Parameters[i]);
+  //    fprintf(stderr, "\tParam[%d] = %p\n", i, *(void **)Parameters[i]);
+  //}
+  //fprintf(stderr,  "======\n");
 
   switch (Runtime) {
 #ifdef HAS_LIBCUDART

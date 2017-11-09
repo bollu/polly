@@ -248,17 +248,16 @@ replaceGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &Array,
     return;
   }
 
-  if (Array.getName() == "llvm.global_ctors") return;
-  if (!(ElemTy->isFloatingPointTy() ||
-              (ElemTy->isIntegerTy() && ElemTy->getIntegerBitWidth() == 32))) {
 
-
-      DEBUG(dbgs() << "Not rewriting (" << Array
-              << ") to managed memory "
-              "because "
-              "it is neither floating point nor i32");
+  bool SimpleInitializer = false;
+  if (!Array.hasInitializer() ||
+          !isa<ConstantAggregateZero>(Array.getInitializer())) {
       return;
+      SimpleInitializer = true;
+      if ( Array.getName() != "__m_MOD_srcarray") { return; }
   }
+
+  ReplacedGlobals.insert(&Array);
 
 
   std::string NewName = Array.getName();
@@ -286,11 +285,13 @@ replaceGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &Array,
   Value *AllocatedMemTyped =
       Builder.CreatePointerCast(AllocatedMemRaw, ElemPtrTy, "mem.typed");
   Builder.CreateStore(AllocatedMemTyped, ReplacementToArr);
-  CreateInitializerForArray(Array, AllocatedMemTyped, Builder, Start);
+  // CreateInitializerForArray(Array, AllocatedMemTyped, Builder, Start);
   Builder.CreateRetVoid();
 
   const int Priority = 0;
   appendToGlobalCtors(M, F, Priority, ReplacementToArr);
+
+  if (!SimpleInitializer) return;
 
   SmallVector<Instruction *, 4> ArrayUserInstructions;
   // Get all instructions that use array. We need to do this weird thing
@@ -302,13 +303,12 @@ replaceGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &Array,
     getInstructionUsersOfValue(ArrayUse.getUser(), ArrayUserInstructions);
 
   for (Instruction *UserOfArrayInst : ArrayUserInstructions) {
-
     Builder.SetInsertPoint(UserOfArrayInst);
     // <ty>** -> <ty>*
-    Value *ArrPtrLoaded = Builder.CreateLoad(ReplacementToArr, "arrptr.load");
+    Value *ArrPtrLoaded = Builder.CreateLoad(ReplacementToArr, Array.getName() +  ".arrptr.load");
     // <ty>* -> [ty]*
     Value *ArrPtrLoadedBitcasted = Builder.CreateBitCast(
-        ArrPtrLoaded, ArrayTy->getPointerTo(), "arrptr.bitcast");
+        ArrPtrLoaded, ArrayTy->getPointerTo(), Array.getName() +  "arrptr.bitcast");
     rewriteOldValToNew(UserOfArrayInst, &Array, ArrPtrLoadedBitcasted, Builder);
   }
 }
