@@ -192,6 +192,38 @@ static void getInstructionUsersOfValue(Value *V,
   }
 }
 
+// Create code needed to initialize the array using an initializer
+static void CreateInitializerForArray(GlobalVariable &Array, Value *NewDataPtr, PollyIRBuilder Builder, BasicBlock *CodeBlock) {
+  if (Array.hasInitializer()) {
+      Constant *RawInitializer = Array.getInitializer();
+      // we allow a constant array we know is legit: llvm.global_ctors.
+      // I have not thought about other cases yet.
+      if (ConstantArray *CA = dyn_cast<ConstantArray>(RawInitializer)) {
+          errs() << "Found unknown constant array:\n" << Array << "\n";
+          report_fatal_error("Encountered unknown array initializer when converting to managed memory.\n");
+      }
+
+      if (ConstantDataArray *CA = dyn_cast<ConstantDataArray>(RawInitializer)) {
+          const size_t numElements = CA->getNumElements();
+          for(size_t i = 0; i < numElements; i++) {
+              Constant *Element = CA->getElementAsConstant(i);
+              Value *Slot = Builder.CreateGEP(NewDataPtr, Builder.getInt64(i), std::to_string(i) + ".slot");
+              Builder.CreateStore(Element, Slot);
+          }
+
+      }
+      else if (isa<ConstantAggregateZero>(RawInitializer) || isa<UndefValue>(RawInitializer)) {
+          //no op.
+      }
+      else {
+          errs() << "Unknown initializer for array: " << Array << ".\n" << "Initializer: " << *RawInitializer << ".\n" << "ValueID of initializer: " << RawInitializer->getValueID() << "\n";
+          assert(false);
+          report_fatal_error("Encountered unknown array initializer when converting to managed memory.\n");
+      }
+      
+  }
+}
+
 static void
 replaceGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &Array,
                    SmallPtrSet<GlobalVariable *, 4> &ReplacedGlobals) {
@@ -216,17 +248,18 @@ replaceGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &Array,
     return;
   }
 
-  if (!Array.hasInitializer() ||
-      !isa<ConstantAggregateZero>(Array.getInitializer())) {
-    DEBUG(dbgs() << "Not rewriting (" << Array
-                 << ") to managed memory "
-                    "because it has an initializer which is "
-                    "not a zeroinitializer.\n");
-    return;
+  if (Array.getName() == "llvm.global_ctors") return;
+  if (!(ElemTy->isFloatingPointTy() ||
+              (ElemTy->isIntegerTy() && ElemTy->getIntegerBitWidth() == 32))) {
+
+
+      DEBUG(dbgs() << "Not rewriting (" << Array
+              << ") to managed memory "
+              "because "
+              "it is neither floating point nor i32");
+      return;
   }
 
-  // At this point, we have committed to replacing this array.
-  ReplacedGlobals.insert(&Array);
 
   std::string NewName = Array.getName();
   NewName += ".toptr";
@@ -253,6 +286,7 @@ replaceGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &Array,
   Value *AllocatedMemTyped =
       Builder.CreatePointerCast(AllocatedMemRaw, ElemPtrTy, "mem.typed");
   Builder.CreateStore(AllocatedMemTyped, ReplacementToArr);
+  CreateInitializerForArray(Array, AllocatedMemTyped, Builder, Start);
   Builder.CreateRetVoid();
 
   const int Priority = 0;
