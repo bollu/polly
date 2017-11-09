@@ -249,11 +249,8 @@ replaceGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &Array,
   }
 
 
-  bool SimpleInitializer = false;
   if (!Array.hasInitializer() ||
           !isa<ConstantAggregateZero>(Array.getInitializer())) {
-      return;
-      SimpleInitializer = true;
       if ( Array.getName() != "__m_MOD_srcarray") { return; }
   }
 
@@ -285,13 +282,12 @@ replaceGlobalArray(Module &M, const DataLayout &DL, GlobalVariable &Array,
   Value *AllocatedMemTyped =
       Builder.CreatePointerCast(AllocatedMemRaw, ElemPtrTy, "mem.typed");
   Builder.CreateStore(AllocatedMemTyped, ReplacementToArr);
-  // CreateInitializerForArray(Array, AllocatedMemTyped, Builder, Start);
+  CreateInitializerForArray(Array, AllocatedMemTyped, Builder, Start);
   Builder.CreateRetVoid();
 
   const int Priority = 0;
   appendToGlobalCtors(M, F, Priority, ReplacementToArr);
 
-  if (!SimpleInitializer) return;
 
   SmallVector<Instruction *, 4> ArrayUserInstructions;
   // Get all instructions that use array. We need to do this weird thing
