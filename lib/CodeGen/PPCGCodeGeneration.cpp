@@ -2385,7 +2385,7 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
 
     isl_id_free(Id);
 
-    // if (doesArrayHaveNonaffineAccess(SAI, &S)) {
+     if (S.getFunction().getName() == "__radiation_rg_org_MOD_radiation_rg_organize") {
         Value *NewBasePtr = Arg;
         if (PointerType *OriginalTy =
                 dyn_cast<PointerType>(SAI->getBasePtr()->getType())) {
@@ -2396,11 +2396,17 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
 
             errs() << __FUNCTION__ <<  "Remapped old: " << SAI->getBasePtr()->getName() << " to: " << *NewBasePtr << "\n";
         } else {
+            //errs() << "SAI->getBasePtr(): " << *SAI->getBasePtr() << "\n";
+            //errs() << "SAI: "; SAI->dump(); errs() << "\n";
             report_fatal_error(" I did not think about this case yet.");
 
         }
+        errs() << __LINE__ <<  "|Mapping: " << SAI->getBasePtr() << " => " << NewBasePtr << "\n";
         ValueMap[SAI->getBasePtr()] = NewBasePtr;
-    // };
+     }
+     else {
+        errs() << __LINE__ <<  "|Mapping: " << SAI->getBasePtr() << " => " << Arg << "\n";
+     }
 
     if (SAI->getNumberOfDimensions() > 0) {
       Arg++;
@@ -2414,7 +2420,6 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
       Type *TypePtr = SAI->getElementType()->getPointerTo();
       Value *TypedArgPtr = Builder.CreatePointerCast(Val, TypePtr);
       Val = Builder.CreateLoad(TypedArgPtr);
-    // };
     }
 
     Value *Alloca = BlockGen.getOrCreateAlloca(SAI);
@@ -2832,29 +2837,29 @@ void countNumUnusedParamsInFunction(Function *F) {
 
 std::string GPUNodeBuilder::finalizeKernelFunction() {
     //errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
-    //errs() << "Kernel Module (pre ADCE):\n";
-    //GPUModule->print(errs(), nullptr);
-    //errs() << "=====\n";
+    errs() << "Kernel Module (pre ADCE):\n";
+    GPUModule->print(errs(), nullptr);
+    errs() << "=====\n";
     //    
-    //errs() << "Host Module Function:\n";
-    //this->S.getFunction().print(errs());
-    //errs() << "======\n";
-
-  // {
-  //   // NOTE: We currently copy all uses of gfortran_polly_array_index.
-  //   // However, these are unsused, but they refer to host side values
-  //   // So, ADCE them out.
-  //   // For correctness, we should probably add these to
-  //   // BlockGenerators.cpp - polly::isIgnoredIntrinsic.
-  //   llvm::legacy::PassManager OptPasses;
-  //   OptPasses.add(createAggressiveDCEPass());
-  //   // Comment this to allow tests to pass:
-  //   // Polly :: GPGPU/host-control-flow.ll
-  //   // Polly :: GPGPU/kernel-params-only-some-arrays.ll
-  //   // Polly :: GPGPU/live-range-reordering-with-privatization.ll
-  //   // Polly :: GPGPU/phi-nodes-in-kernel.ll
-  //   OptPasses.run(*GPUModule);
-  // }
+    //    errs() << "Host Module:\n";
+    //    this->S.getFunction().getParent()->print(errs(), nullptr);
+    //    errs() << "======\n";
+    //
+  {
+    // NOTE: We currently copy all uses of gfortran_polly_array_index.
+    // However, these are unsused, but they refer to host side values
+    // So, ADCE them out.
+    // For correctness, we should probably add these to
+    // BlockGenerators.cpp - polly::isIgnoredIntrinsic.
+    llvm::legacy::PassManager OptPasses;
+    OptPasses.add(createAggressiveDCEPass());
+    // Comment this to allow tests to pass:
+    // Polly :: GPGPU/host-control-flow.ll
+    // Polly :: GPGPU/kernel-params-only-some-arrays.ll
+    // Polly :: GPGPU/live-range-reordering-with-privatization.ll
+    // Polly :: GPGPU/phi-nodes-in-kernel.ll
+    OptPasses.run(*GPUModule);
+  }
 
   if (verifyModule(*GPUModule)) {
     DEBUG(dbgs() << "verifyModule failed on module:\n";

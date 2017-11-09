@@ -839,22 +839,24 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
                        ArrayRef<const SCEV *> Sizes, Value *AccessValue);
  */
 
-  if (!IsAffine) {
-      errs() << "polly fortran index expr is nonaffine:\n";
-      errs() << *Inst << "\n";
-      errs() << *Call << "\n";
-      errs() << *BasePtr << "\n";
-      if (FAD) 
-          errs() << "FAD: " << *FAD << "\n";
-      errs() << "======\n";
-  }
-
   if (!FAD) {
       errs() << "Unable to find FAD for access:\n";
       errs() << *Inst << "\n";
       errs() << *Call << "\n";
       errs() << *BasePtr << "\n";
       errs() << "====\n";
+  }
+
+  // ONLY allow nonaffine in organize
+  if (!IsAffine && Inst->getParent()->getParent()->getName() != "__radiation_rg_org_MOD_radiation_rg_organize") {
+          errs() << "polly fortran index expr is nonaffine:\n";
+          errs() << *Inst << "\n";
+          errs() << *Call << "\n";
+          errs() << *BasePtr << "\n";
+          if (FAD) 
+              errs() << "FAD: " << *FAD << "\n";
+          errs() << "======\n";
+      scop->invalidate(DELINEARIZATION, Inst->getDebugLoc(), Inst->getParent());
   }
 
   // NOTE: this should be fromStrides.
