@@ -965,6 +965,19 @@ void ScopBuilder::buildAccessFunctions(ScopStmt *Stmt, BasicBlock &BB,
     }
 
     if (auto GEP = dyn_cast<GetElementPtrInst>(&Inst)) {
+      if (GEP->getNumOperands() == 4) {
+      	Value *V = GEP->getOperand(3);
+      
+	      if (auto C = dyn_cast<CallInst>(V)) {
+      		Function *MallocFn = C->getCalledFunction();
+      
+		if (/*C->getParent() == GEP->getParent() &&*/ (MallocFn && MallocFn->hasName() && MallocFn->getName().startswith("_gfortran_polly_array_index"))) {
+         		//errs() << "Ignoring: \n";
+		         //Inst.dump();
+		         continue;
+      		}
+             }
+      }
       if (GEP->getNumOperands() == 3) {
       	Value *V = GEP->getOperand(2);
       

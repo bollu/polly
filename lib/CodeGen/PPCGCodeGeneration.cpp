@@ -172,7 +172,7 @@ static Function *createPollyAbstractIndexFunction(Module &M,
       return Existing;
     };
 
-    GlobalValue::LinkageTypes Linkage = Function::ExternalLinkage;
+    GlobalValue::LinkageTypes Linkage = Function::InternalLinkage;
     IntegerType *I64Ty = Builder.getInt64Ty();
     std::vector<Type *> ParamTys;
     // offset(1) + stride(numdims) + ix(numdims) =  2 *numdims + 1)
@@ -2637,8 +2637,8 @@ std::string GPUNodeBuilder::createKernelASM() {
 
     PassBuilder.OptLevel = 3;
     //PassBuilder.SizeLevel = 0;
-    PassBuilder.LoopVectorize = true;
-    PassBuilder.SLPVectorize = true;
+    PassBuilder.LoopVectorize = false;
+    PassBuilder.SLPVectorize = false;
     PassBuilder.Inliner = createFunctionInliningPass(PassBuilder.OptLevel, 0, false);
 
     ModulePassManager.add(createTargetTransformInfoWrapperPass(TargetM->getTargetIRAnalysis()));
@@ -2657,12 +2657,12 @@ std::string GPUNodeBuilder::createKernelASM() {
     ModulePassManager.run(*GPUModule);
   }
 
-  if (DumpKernelIR)
-    outs() << *GPUModule << "\n";
-
   //for (Function &F : *GPUModule) {
   //  countNumUnusedParamsInFunction(&F);
   //};
+  if (DumpKernelIR)
+    outs() << *GPUModule << "\n";
+
 
 
   SmallString<0> ASMString;

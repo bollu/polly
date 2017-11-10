@@ -4019,7 +4019,7 @@ isl::set Scop::getNonHoistableCtx(MemoryAccess *Access, isl::union_map Writes) {
   isl::set SafeToLoad;
 
   auto &DL = getFunction().getParent()->getDataLayout();
-  if (isSafeToLoadUnconditionally(LI->getPointerOperand(), LI->getAlignment(),
+  if (true || isSafeToLoadUnconditionally(LI->getPointerOperand(), LI->getAlignment(),
                                   DL)) {
     SafeToLoad = isl::set::universe(AccessRelation.get_space().range());
   } else if (BB != LI->getParent()) {
