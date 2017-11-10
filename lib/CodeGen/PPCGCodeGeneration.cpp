@@ -172,7 +172,7 @@ static Function *createPollyAbstractIndexFunction(Module &M,
       return Existing;
     };
 
-    GlobalValue::LinkageTypes Linkage = Function::ExternalLinkage;
+    GlobalValue::LinkageTypes Linkage = Function::InternalLinkage;
     IntegerType *I64Ty = Builder.getInt64Ty();
     std::vector<Type *> ParamTys;
     // offset(1) + stride(numdims) + ix(numdims) =  2 *numdims + 1)
@@ -927,6 +927,12 @@ void GPUNodeBuilder::addCUDAAnnotations(Module *M, Value *BlockDimX,
   for (auto &F : *M) {
     if (F.getCallingConv() != CallingConv::PTX_Kernel)
       continue;
+
+    if (BlockDimX == Builder.getInt32(32) &&
+        BlockDimY == Builder.getInt32(1) &&
+        BlockDimZ == Builder.getInt32(1)) {
+      BlockDimX = Builder.getInt32(512);
+    }
 
     Value *V[] = {BlockDimX, BlockDimY, BlockDimZ};
 
@@ -2730,8 +2736,8 @@ std::string GPUNodeBuilder::createKernelASM() {
 
     PassBuilder.OptLevel = 3;
     //PassBuilder.SizeLevel = 0;
-    PassBuilder.LoopVectorize = true;
-    PassBuilder.SLPVectorize = true;
+    PassBuilder.LoopVectorize = false;
+    PassBuilder.SLPVectorize = false;
     PassBuilder.Inliner = createFunctionInliningPass(PassBuilder.OptLevel, 0, false);
 
     ModulePassManager.add(createTargetTransformInfoWrapperPass(TargetM->getTargetIRAnalysis()));
@@ -2750,15 +2756,13 @@ std::string GPUNodeBuilder::createKernelASM() {
     ModulePassManager.run(*GPUModule);
   }
 
-  if (DumpKernelIR) {
-      outs() << "vvvKernel IR:vvv\n";
-      outs() << *GPUModule << "\n";
-      outs() << "-----------\n";
-  }
 
   //for (Function &F : *GPUModule) {
   //  countNumUnusedParamsInFunction(&F);
   //};
+  if (DumpKernelIR)
+    outs() << *GPUModule << "\n";
+
 
 
   SmallString<0> ASMString;
@@ -2852,9 +2856,9 @@ void countNumUnusedParamsInFunction(Function *F) {
 
 std::string GPUNodeBuilder::finalizeKernelFunction() {
     //errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
-    errs() << "Kernel Module (pre ADCE):\n";
-    GPUModule->print(errs(), nullptr);
-    errs() << "=====\n";
+    // errs() << "Kernel Module (pre ADCE):\n";
+    // GPUModule->print(errs(), nullptr);
+    // errs() << "=====\n";
     //    
     //    errs() << "Host Module:\n";
     //    this->S.getFunction().getParent()->print(errs(), nullptr);

@@ -319,6 +319,9 @@ static void getAllocasToBeManaged(Function &F,
       if (!Alloca)
         continue;
       DEBUG(dbgs() << "Checking if (" << *Alloca << ") may be captured: ");
+	
+      if (Alloca->hasName() && Alloca->getName().startswith("polly"))
+        continue;
 
       if (true || PointerMayBeCaptured(Alloca, /* ReturnCaptures */ false,
                                /* StoreCaptures */ true)) {

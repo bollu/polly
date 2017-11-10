@@ -223,7 +223,7 @@ Value *BlockGenerator::getNewValue(ScopStmt &Stmt, Value *Old, ValueMapT &BBMap,
     New = BBMap.lookup(Old);
     break;
   }
-  assert(New && "Unexpected scalar dependence in region!");
+  // assert(New && "Unexpected scalar dependence in region!");
   return New;
 }
 
@@ -276,8 +276,27 @@ void BlockGenerator::copyInstScalarHacked(ScopStmt &Stmt, Instruction *Inst,
               LTS, getLoopForStmt(Stmt));
       SmallVector<Value *, 4> NewIxs;
 
+      errs() << "OldGEP: " << *GEP << "\n";
+      errs() << "NewGEPBase: " << *NewGEPBase << "\n";
       for(unsigned i = 1; i < GEP->getNumOperands(); i++) {
-          NewIxs.push_back(getNewValue(Stmt, GEP->getOperand(i), BBMap, LTS, getLoopForStmt(Stmt)));
+          Value *NewV = getNewValue(Stmt, GEP->getOperand(i), BBMap, LTS, getLoopForStmt(Stmt));
+          if (!NewV) {
+              return;
+          }
+
+          NewIxs.push_back(NewV);
+      }
+
+      errs() << "NEWGEPIxs: ";
+      for(Value *V: NewIxs) {
+          errs() << "\t-";
+          if (Instruction *I = dyn_cast<Instruction>(V)) {
+              errs() << *I;
+          }
+          else {
+              errs() << *V;
+          }
+          errs() << "\n";
       }
 
       NewInst = GetElementPtrInst::Create(/*PointeeType=*/nullptr, NewGEPBase, NewIxs, Inst->getName());
@@ -321,6 +340,7 @@ void BlockGenerator::copyInstScalarOrig(ScopStmt &Stmt, Instruction *Inst,
   Instruction *NewInst = Inst->clone();
   Module *curModule = Builder.GetInsertBlock()->getParent()->getParent();
 
+  Inst->dump();
   // Replace old operands with the new ones.
   for (Value *OldOperand : Inst->operands()) {
 
@@ -393,10 +413,9 @@ bool BlockGenerator::DoesInstNeedAddrspaceFixup(ScopStmt &Stmt, Instruction *Ins
 
     Value *NewOperand =
         getNewValue(Stmt, OldOperand, BBMap, LTS, getLoopForStmt(Stmt));
+    if (!NewOperand) return false;
 
     if (hasDifferentAddrspaces(OldOperand, NewOperand)) { 
-        // errs() << __PRETTY_FUNCTION__ << "\n\t Old Operand: " << *OldOperand << "\n\t New Operand: " << *NewOperand << "\n------\n";
-        // errs() << __PRETTY_FUNCTION__<< "\n\tInstruction: " << *Inst << "\n";
         return true;
     }
   }
@@ -407,7 +426,7 @@ bool BlockGenerator::DoesInstNeedAddrspaceFixup(ScopStmt &Stmt, Instruction *Ins
 void BlockGenerator::copyInstScalar(ScopStmt &Stmt, Instruction *Inst,
                                     ValueMapT &BBMap, LoopToScevMapT &LTS) {
 
-    errs() << "BlockGenerator copying: " << *Inst << "\n";
+    // errs() << "BlockGenerator copying: " << *Inst << "\n";
     if (DoesInstNeedAddrspaceFixup(Stmt, Inst, BBMap, LTS)) {
         if (!isa<GetElementPtrInst>(Inst) && !isa<BitCastInst>(Inst)) {
             errs() << "Instruction that needs address space handling but is currently unhandled: " << *Inst;
@@ -680,7 +699,7 @@ Value *BlockGenerator::getOrCreateAlloca(const ScopArrayInfo *Array) {
 
   const DataLayout &DL = Builder.GetInsertBlock()->getModule()->getDataLayout();
 
-  Addr = new AllocaInst(Ty, DL.getAllocaAddrSpace(),
+  Addr = new AllocaInst(Ty, DL.getAllocaAddrSpace(),// "polly." +
                         ScalarBase->getName() + NameExt);
   EntryBB = &Builder.GetInsertBlock()->getParent()->getEntryBlock();
   Addr->insertBefore(&*EntryBB->getFirstInsertionPt());

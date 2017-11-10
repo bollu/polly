@@ -148,9 +148,12 @@ void ScopBuilder::buildScalarDependences(ScopStmt *UserStmt,
                                          Instruction *Inst) {
   assert(!isa<PHINode>(Inst));
 
+  errs() << "Build scalar dependences\n";
   // Pull-in required operands.
   for (Use &Op : Inst->operands())
     ensureValueRead(Op.get(), UserStmt);
+
+  errs() << "Build scalar dependences end\n";
 }
 
 void ScopBuilder::buildEscapingDependences(Instruction *Inst) {
@@ -718,8 +721,9 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
     errs() << "GEP: " << *GEP << "\n";
   }
 
-  assert(Call->getNumArgOperands() % 2 == 1 &&
-         "expect offset, stride, index pairs\n");
+  if (Call->getNumArgOperands() % 2 != 1) {
+    return false;
+  }
   const int NArrayDims = Call->getNumArgOperands() / 2;
   if (AbstractMatrixDebug)
     errs() << "Num array dims: " << NArrayDims << "\n";
@@ -967,6 +971,60 @@ void ScopBuilder::buildAccessFunctions(ScopStmt *Stmt, BasicBlock &BB,
     if (isIgnoredIntrinsic(&Inst))
       continue;
 
+    errs() << "Instruction\n";
+    Inst.dump();
+
+    if (auto C = dyn_cast<CallInst>(&Inst)) {
+      Function *MallocFn = C->getCalledFunction();
+      if ((MallocFn && MallocFn->hasName() && MallocFn->getName().startswith("_gfortran_polly_array_index"))) {
+         //errs() << "Ignoring: \n";
+         //Inst.dump();
+         continue;
+      }
+    }
+
+    if (auto GEP = dyn_cast<GetElementPtrInst>(&Inst)) {
+      if (GEP->getNumOperands() == 4) {
+      	Value *V = GEP->getOperand(3);
+      
+	      if (auto C = dyn_cast<CallInst>(V)) {
+      		Function *MallocFn = C->getCalledFunction();
+      
+		if (/*C->getParent() == GEP->getParent() &&*/ (MallocFn && MallocFn->hasName() && MallocFn->getName().startswith("_gfortran_polly_array_index"))) {
+         		//errs() << "Ignoring: \n";
+		         //Inst.dump();
+		         continue;
+      		}
+             }
+      }
+      if (GEP->getNumOperands() == 3) {
+      	Value *V = GEP->getOperand(2);
+      
+	      if (auto C = dyn_cast<CallInst>(V)) {
+      		Function *MallocFn = C->getCalledFunction();
+      
+		if (/*C->getParent() == GEP->getParent() &&*/ (MallocFn && MallocFn->hasName() && MallocFn->getName().startswith("_gfortran_polly_array_index"))) {
+         		//errs() << "Ignoring: \n";
+		         //Inst.dump();
+		         continue;
+      		}
+             }
+      }
+      if (GEP->getNumOperands() == 2) {
+      	Value *V = GEP->getOperand(1);
+      
+	      if (auto C = dyn_cast<CallInst>(V)) {
+      		Function *MallocFn = C->getCalledFunction();
+      
+		if (C->getParent() == GEP->getParent() &&  (MallocFn && MallocFn->hasName() && MallocFn->getName().startswith("_gfortran_polly_array_index"))) {
+         		//errs() << "Ignoring: \n";
+		         //Inst.dump();
+		         continue;
+      		}
+             }
+      }
+    }
+
     // PHI nodes have already been modeled above and TerminatorInsts that are
     // not part of a non-affine subregion are fully modeled and regenerated
     // from the polyhedral domains. Hence, they do not need to be modeled as
@@ -985,6 +1043,10 @@ MemoryAccess *ScopBuilder::addMemoryAccess(
     ArrayRef<const SCEV *> Subscripts, ShapeInfo Shape, MemoryKind Kind) {
   bool isKnownMustAccess = false;
 
+  errs() << "Build access functions: " << (int) Kind << "\n";
+  BaseAddress->dump();
+  
+  
 
   // Accesses in single-basic block statements are always executed.
   if (Stmt->isBlockStmt())
@@ -1337,8 +1399,11 @@ void ScopBuilder::buildAccessRelations(ScopStmt &Stmt) {
 
 #ifndef NDEBUG
 static void verifyUse(Scop *S, Use &Op, LoopInfo &LI) {
+  return;
   auto PhysUse = VirtualUse::create(S, Op, &LI, false);
   auto VirtUse = VirtualUse::create(S, Op, &LI, true);
+  if (PhysUse.getKind() != VirtUse.getKind())
+  	Op.getUser()->dump();
   assert(PhysUse.getKind() == VirtUse.getKind());
 }
 
@@ -1417,6 +1482,7 @@ void ScopBuilder::buildScop(Region &R, AssumptionCache &AC,
                             OptimizationRemarkEmitter &ORE) {
   scop.reset(new Scop(R, SE, LI, *SD.getDetectionContext(&R), ORE));
 
+  R.getEntry()->getParent()->getParent()->dump();
   buildStmts(R);
   buildAccessFunctions();
 

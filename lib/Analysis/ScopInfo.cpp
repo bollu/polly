@@ -4068,7 +4068,7 @@ isl::set Scop::getNonHoistableCtx(MemoryAccess *Access, isl::union_map Writes) {
   isl::set SafeToLoad;
 
   auto &DL = getFunction().getParent()->getDataLayout();
-  if (isSafeToLoadUnconditionally(LI->getPointerOperand(), LI->getAlignment(),
+  if (true || isSafeToLoadUnconditionally(LI->getPointerOperand(), LI->getAlignment(),
                                   DL)) {
     SafeToLoad = isl::set::universe(AccessRelation.get_space().range());
   } else if (BB != LI->getParent()) {
@@ -4263,11 +4263,16 @@ ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
   auto &SAI = BasePtr ? ScopArrayInfoMap[std::make_pair(BasePtr, Kind)]
                       : ScopArrayNameMap[BaseName];
 
+  
+  // errs() << "Creating: " << (int)Kind << "\n";
+  // BasePtr->dump();
+
   if (!SAI) {
     auto &DL = getFunction().getParent()->getDataLayout();
     SAI.reset(new ScopArrayInfo(BasePtr, ElementType, getIslCtx(), Shape, Kind,
                                 DL, this, BaseName));
     ScopArrayInfoSet.insert(SAI.get());
+    SAI->dump();
   } else {
     SAI->updateElementType(ElementType);
     // In case of mismatching array sizes, we bail out by setting the run-time
@@ -4302,6 +4307,7 @@ ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
       if (!SAI->updateSizes(Shape.sizes()))
         invalidate(DELINEARIZATION, DebugLoc());
     }
+    SAI->dump();
   }
 
   return SAI.get();
