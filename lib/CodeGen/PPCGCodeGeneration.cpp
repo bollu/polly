@@ -1575,6 +1575,18 @@ getFunctionsFromRawSubtreeValues(SetVector<Value *> RawSubtreeValues,
   return SubtreeFunctions;
 }
 
+// return whether `Array` is used in `Kernel` or not.
+bool isArrayUsedInKernel(ScopArrayInfo *Array, ppcg_kernel *Kernel, gpu_prog *Prog) {
+    for(int i = 0; i < Prog->n_array; i++) {
+        isl_id *Id = isl_space_get_tuple_id(Prog->array[i].space, isl_dim_set);
+        const ScopArrayInfo *SAI = ScopArrayInfo::getFromId(isl::manage(Id));
+        if (SAI == Array)
+            return ppcg_kernel_requires_array_argument(Kernel, i);
+    }
+    // assert(false && "unable to find Array in known list of arrays");
+    return false; // Is this correct?
+}
+
 std::tuple<SetVector<Value *>, SetVector<Function *>, SetVector<const Loop *>,
            isl::space>
 GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
@@ -1609,8 +1621,11 @@ GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
     return S.contains(L) || L->contains(S.getEntry());
   });
 
-  for (auto &SAI : S.arrays())
-    SubtreeValues.remove(SAI->getBasePtr());
+  // Remove all SAIs that are used in the kernel.
+  for (auto &SAI : S.arrays()) {
+      if (isArrayUsedInKernel(SAI, Kernel, Prog))
+          SubtreeValues.remove(SAI->getBasePtr());
+  }
 
   isl_space *Space = S.getParamSpace().release();
   for (long i = 0, n = isl_space_dim(Space, isl_dim_param); i < n; i++) {
