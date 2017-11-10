@@ -7,7 +7,7 @@
 ; Verify that invariant loads used in a kernel statement are correctly forwarded
 ; as subtree value to the GPU kernel.
 
-; CHECK:  define ptx_kernel void @FUNC_foo_SCOP_0_KERNEL_0({{.*}} float %polly.access.p.load)
+; CHECK:  define ptx_kernel void @FUNC_foo_SCOP_0_KERNEL_0({{.*}} float %polly.access.p.load{{.*}})
 ; CHECK:   store float %polly.access.p.load, float* %indvar2f.phiops
 
 define void @foo(float* %A, float* %p) {

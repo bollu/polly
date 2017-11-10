@@ -17,10 +17,10 @@
 ; SCOP-NEXT:              [n, tmp12] -> { Stmt_for_body6[i0, i1, i2] -> MemRef_invariant[0] };
 ; SCOP-NEXT:          Execution Context: [n, tmp12] -> {  : n > 0 }
 ; SCOP-NEXT:  }
-; HOST-IR:      call void @polly_launchKernel(i8* %209, i32 %215, i32 1, i32 32, i32 1, i32 1, i8* %polly_launch_0_params_i8ptr)
-; HOST-IR-NEXT: call void @polly_freeKernel(i8* %209)
+; HOST-IR:      call void @polly_launchKernel(i8* %211, i32 %217, i32 1, i32 32, i32 1, i32 1, i8* %polly_launch_0_params_i8ptr)
+; HOST-IR-NEXT: call void @polly_freeKernel(i8* %211)
 
-; KERNEL-IR: define ptx_kernel void @FUNC_f_SCOP_0_KERNEL_0(i8 addrspace(1)* %MemRef_B, i8 addrspace(1)* %MemRef_A, i32 %n, i32 %tmp12, i32 %polly.preload.tmp21.merge)
+; KERNEL-IR: define ptx_kernel void @FUNC_f_SCOP_0_KERNEL_0(i8 addrspace(1)* %MemRef_B, i8 addrspace(1)* %MemRef_A, i32 %n, i32 %tmp12, i32* %invariant, i32 %polly.preload.tmp21.merge)
 
 
 ; Check that we generate correct GPU code in case of invariant load hoisting.
