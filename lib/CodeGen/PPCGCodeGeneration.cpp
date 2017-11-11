@@ -1477,6 +1477,28 @@ GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
       LI,         SE, S, ValueMap, SubtreeValues, SCEVs, getBlockGenerator(),
       &ParamSpace};
 
+  /// Check if a ScopArrayInfo is modelled by the `ppcg_kernel`.
+  ///
+  /// @param Needle The ScopArrayInfo to check whether the kernel models.
+  /// @param Kernel the PPCG representation of the current kernel.
+  /// @param Program the PPCG god object that knows about all arrays in the
+  /// scop.
+  /// @returns whether the ScopArrayInfo is referred to by the ppcg_kernel.
+  ///
+  /// Function is a local lambda because there is only one call site, which
+  /// is in this function.
+  auto isSAIModeledByKernel = [](const ScopArrayInfo *Needle,
+                                 ppcg_kernel *Kernel, gpu_prog *Prog) -> bool {
+    for (int i = 0; i < Prog->n_array; i++) {
+      isl_id *Id = isl_space_get_tuple_id(Prog->array[i].space, isl_dim_set);
+      const ScopArrayInfo *SAI = ScopArrayInfo::getFromId(isl::manage(Id));
+      if (SAI == Needle)
+        return ppcg_kernel_requires_array_argument(Kernel, i);
+    }
+    // assert(false && "unable to find Array in known list of arrays");
+    return false; // Is this correct?
+  };
+
   for (const auto &I : IDToValue)
     SubtreeValues.insert(I.second);
 
@@ -1497,8 +1519,16 @@ GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
     return S.contains(L) || L->contains(S.getEntry());
   });
 
-  for (auto &SAI : S.arrays())
-    SubtreeValues.remove(SAI->getBasePtr());
+  // Only remove those base pointers from SubtreeValues which are actually
+  // used by the kernel. That way, we don't double send base pointers.
+  // We do need to send base pointers of arrays that are _not directly used_
+  // in the kernel, because they can be involved in code that we don't model,
+  // such as ptrtoint.
+  // See: * test/GPGPU/
+  for (auto &SAI : S.arrays()) {
+    if (isSAIModeledByKernel(SAI, Kernel, Prog))
+      SubtreeValues.remove(SAI->getBasePtr());
+  }
 
   isl_space *Space = S.getParamSpace().release();
   for (long i = 0, n = isl_space_dim(Space, isl_dim_param); i < n; i++) {
