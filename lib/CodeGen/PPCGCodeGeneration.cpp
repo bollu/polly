@@ -2212,7 +2212,7 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
   {
       PassManagerBuilder PassBuilder;
       PassBuilder.OptLevel = 3;
-      PassBuilder.SizeLevel = 3;
+      PassBuilder.SizeLevel = 0;
       PassBuilder.LoopVectorize = false;
       PassBuilder.SLPVectorize = false;
       PassBuilder.Inliner = createFunctionInliningPass(PassBuilder.OptLevel, PassBuilder.SizeLevel, false);
@@ -2973,7 +2973,7 @@ std::string GPUNodeBuilder::createKernelASM() {
     TargetM->adjustPassManager(PassBuilder);
 
     PassBuilder.OptLevel = 3;
-    PassBuilder.SizeLevel = 3;
+    PassBuilder.SizeLevel = 0;
     PassBuilder.LoopVectorize = false;
     PassBuilder.SLPVectorize = false;
 
