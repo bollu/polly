@@ -2318,7 +2318,6 @@ static std::vector<isl::id> getFortranArrayIds(Scop::array_range Arrays) {
           isl::manage(isl_pw_aff_get_dim_id(PwAff.get(), isl_dim_param, 0));
       assert(!Id.is_null() &&
              "Invalid Id for PwAff expression in Fortran array");
-      Id.dump();
       OutermostSizeIds.push_back(Id);
     }
   }
@@ -4272,7 +4271,6 @@ ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
     SAI.reset(new ScopArrayInfo(BasePtr, ElementType, getIslCtx(), Shape, Kind,
                                 DL, this, BaseName));
     ScopArrayInfoSet.insert(SAI.get());
-    SAI->dump();
   } else {
     SAI->updateElementType(ElementType);
     // In case of mismatching array sizes, we bail out by setting the run-time
@@ -4307,7 +4305,6 @@ ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
       if (!SAI->updateSizes(Shape.sizes()))
         invalidate(DELINEARIZATION, DebugLoc());
     }
-    SAI->dump();
   }
 
   return SAI.get();

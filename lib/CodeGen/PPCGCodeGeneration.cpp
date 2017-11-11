@@ -1949,7 +1949,6 @@ void GPUNodeBuilder::setupKernelSubtreeFunctions(
   }
 }
 void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
-    errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
   isl_id *Id = isl_ast_node_get_annotation(KernelStmt);
   ppcg_kernel *Kernel = (ppcg_kernel *)isl_id_get_user(Id);
   isl_id_free(Id);
@@ -2134,7 +2133,6 @@ static std::string computeSPIRDataLayout(bool is64Bit) {
 Function *
 GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
                                          SetVector<Value *> &SubtreeValues) {
-    errs() << __PRETTY_FUNCTION__ << "\n";
   std::vector<Type *> Args;
   std::string Identifier = getKernelFuncName(Kernel->id);
 
@@ -2272,7 +2270,7 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_set, i);
     Arg->setName(isl_id_get_name(Id));
     IDToValue[Id] = &*Arg;
-    errs() << __LINE__ << "|DEALING WITH NON VALUE MAPPED PARAMETER: " << *Arg << "\n";
+    // errs() << __LINE__ << "|DEALING WITH NON VALUE MAPPED PARAMETER: " << *Arg << "\n";
     // ValueMap[Val] = &*Arg;
     KernelIDs.insert(std::unique_ptr<isl_id, IslIdDeleter>(Id));
     Arg++;
@@ -2282,7 +2280,7 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_param, i);
     Arg->setName(isl_id_get_name(Id));
     Value *Val = IDToValue[Id];
-    errs() << __LINE__ <<  "|Mapping: " << *Val << " => " << *Arg << "\n";
+    //errs() << __LINE__ <<  "|Mapping: " << *Val << " => " << *Arg << "\n";
     ValueMap[Val] = &*Arg;
     IDToValue[Id] = &*Arg;
     KernelIDs.insert(std::unique_ptr<isl_id, IslIdDeleter>(Id));
@@ -2291,11 +2289,11 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
 
   for (auto *V : SubtreeValues) {
     Arg->setName("subtree_" + V->getName());
-    errs() <<  __LINE__ << "|Mapping: " << *V << " => " << *Arg << "\n";
+    // errs() <<  __LINE__ << "|Mapping: " << *V << " => " << *Arg << "\n";
     ValueMap[V] = &*Arg;
     Arg++;
   }
-  errs() << "\n=======\n";
+  // errs() << "\n=======\n";
 
   return FN;
 }
@@ -2415,18 +2413,18 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
             NewBasePtr = Builder.CreateBitCast(
                     Arg, NewTy, Arg->getName() + "_hack_load_for_blockgen");
 
-            errs() << __FUNCTION__ <<  "Remapped old: " << SAI->getBasePtr()->getName() << " to: " << *NewBasePtr << "\n";
+            /// errs() << __FUNCTION__ <<  "Remapped old: " << SAI->getBasePtr()->getName() << " to: " << *NewBasePtr << "\n";
         } else {
             //errs() << "SAI->getBasePtr(): " << *SAI->getBasePtr() << "\n";
             //errs() << "SAI: "; SAI->dump(); errs() << "\n";
             report_fatal_error(" I did not think about this case yet.");
 
         }
-        errs() << __LINE__ <<  "|Mapping: " << SAI->getBasePtr() << " => " << NewBasePtr << "\n";
+        // errs() << __LINE__ <<  "|Mapping: " << SAI->getBasePtr() << " => " << NewBasePtr << "\n";
         ValueMap[SAI->getBasePtr()] = NewBasePtr;
      }
      else {
-        errs() << __LINE__ <<  "|Mapping: " << SAI->getBasePtr() << " => " << Arg << "\n";
+        // errs() << __LINE__ <<  "|Mapping: " << SAI->getBasePtr() << " => " << Arg << "\n";
      }
 
     if (SAI->getNumberOfDimensions() > 0) {
@@ -2434,7 +2432,7 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
       continue;
     }
     
-    errs() << __LINE__ << "|" << "DEALING WITH NON VALUE MAPPED PARAMETER: " << *Arg << "\n";
+    // errs() << __LINE__ << "|" << "DEALING WITH NON VALUE MAPPED PARAMETER: " << *Arg << "\n";
     Value *Val = &*Arg;
 
     if (!gpu_array_is_read_only_scalar(&Prog->array[i])) {
@@ -2613,7 +2611,7 @@ void GPUNodeBuilder::createKernelVariables(ppcg_kernel *Kernel, Function *FN) {
     KernelIds.push_back(Id);
     IDToSAI[Id] = SAI;
 
-    errs() << __LINE__ << "|DEALING WITH NON VALUE MAPPED PARAMETER: " << SAI->getBasePtr()->getName() << "\n";
+    // errs() << __LINE__ << "|DEALING WITH NON VALUE MAPPED PARAMETER: " << SAI->getBasePtr()->getName() << "\n";
   }
 }
 
@@ -2624,7 +2622,7 @@ void GPUNodeBuilder::createKernelFunction(
   GPUModule.reset(new Module(Identifier, Builder.getContext()));
 
   Function *FN = createKernelFunctionDecl(Kernel, SubtreeValues);
-  errs() << "KernelFunction: " << *FN << "\n";
+  // errs() << "KernelFunction: " << *FN << "\n";
 
   switch (Arch) {
   case GPUArch::NVPTX64:
@@ -3305,12 +3303,12 @@ public:
     isl::pw_aff Val = isl::aff::var_on_domain(LS, isl::dim::set, 0);
     if (!AccessSet.dim_has_lower_bound(isl::dim::set, 0)) {
         assert(Array->hasStrides() && "found nonaffine access to non-fortran array in PPCGCodeGen!");
-        errs()<< "=== no lower bound found, setting lower bound to 0===\n";
-        errs() << "AccessSet(prev): "; AccessSet.dump();
+        //errs()<< "=== no lower bound found, setting lower bound to 0===\n";
+        //errs() << "AccessSet(prev): "; AccessSet.dump();
         isl::constraint LB = isl::constraint::alloc_inequality(isl::local_space(AccessSet.get_space()));
         LB = LB.set_coefficient_si(isl::dim::set, 0, 1);
         AccessSet = AccessSet.add_constraint(LB);
-        errs() << "AccessSet(new): "; AccessSet.dump();
+        //errs() << "AccessSet(new): "; AccessSet.dump();
     }
     isl::pw_aff OuterMin = AccessSet.dim_min(0);
 
@@ -3320,13 +3318,13 @@ public:
 
 
         isl::constraint C = isl::constraint::alloc_inequality(isl::local_space(AccessSet.get_space()));
-        errs() << "Constraint: "; C.dump(); errs() << "\n";
+        //errs() << "Constraint: "; C.dump(); errs() << "\n";
         C = C.set_coefficient_si(isl::dim::set, 0, -1);
         C = C.set_constant_si(std::numeric_limits<int>().max());
 
-        errs() << "AccessSet(old): "; AccessSet.dump();
+        //errs() << "AccessSet(old): "; AccessSet.dump();
         AccessSet = AccessSet.add_constraint(C);
-        errs() << "AccessSet(new): "; AccessSet.dump();
+        //errs() << "AccessSet(new): "; AccessSet.dump();
     } 
     isl::pw_aff OuterMax = AccessSet.dim_max(0);
 
@@ -3934,7 +3932,6 @@ public:
   /// @param Root An isl_ast_node pointing to the root of the GPU AST.
   /// @param Prog The GPU Program to generate code for.
   void generateCode(__isl_take isl_ast_node *Root, gpu_prog *Prog) {
-      errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n\n";
     ScopAnnotator Annotator;
     Annotator.buildAliasScopes(*S);
 
@@ -4008,8 +4005,6 @@ public:
       isl_ast_node_free(Root);
     } else {
 
-      errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n\n";
-      errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n\n";
 
       NodeBuilder.addParameters(S->getContext().release());
       Value *RTC = NodeBuilder.createRTC(Condition);
@@ -4018,13 +4013,9 @@ public:
       Builder.SetInsertPoint(&*StartBlock->begin());
 
       NodeBuilder.initializeAfterRTH();
-      errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "| Root:\n";
       isl_ast_node_dump(Root);
       NodeBuilder.create(Root);
       NodeBuilder.finalize();
-      errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n\n";
-      errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n\n";
-      errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n\n";
     }
 
     /// In case a sequential kernel has more surrounding loops as any parallel
@@ -4116,11 +4107,9 @@ public:
 
 
     if (PPCGGen->tree) {
-      errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
       generateCode(isl_ast_node_copy(PPCGGen->tree), PPCGProg);
       CurrentScop.markAsToBeSkipped();
     } else {
-      errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
       DEBUG(dbgs() << getUniqueScopName(S)
                    << " has empty PPCGGen->tree. Bailing out.\n");
       report_fatal_error("empty PPCGGen->tree.");

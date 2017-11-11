@@ -325,7 +325,6 @@ void BlockGenerator::copyInstScalarOrig(ScopStmt &Stmt, Instruction *Inst,
   Instruction *NewInst = Inst->clone();
   Module *curModule = Builder.GetInsertBlock()->getParent()->getParent();
 
-  Inst->dump();
   // Replace old operands with the new ones.
   for (Value *OldOperand : Inst->operands()) {
 
@@ -333,8 +332,6 @@ void BlockGenerator::copyInstScalarOrig(ScopStmt &Stmt, Instruction *Inst,
     if (isa<GlobalValue>(OldOperand) && !isa<Function>(OldOperand)) {
       GlobalValue *GV = cast<GlobalValue>(OldOperand);
       if (GV->getParent() != curModule) {
-        errs() << __PRETTY_FUNCTION__ << " global value across module:\n"
-               << *GV << "\n";
         ValueAcrossModules = true;
       }
     }
@@ -349,10 +346,7 @@ void BlockGenerator::copyInstScalarOrig(ScopStmt &Stmt, Instruction *Inst,
                "find any.\n";
         errs() << *OldOperand << "\n";
         report_fatal_error("value expected across modules not found.\n");
-      } else {
-        errs() << "NewOperand:\n" << *NewOperand << "\n";
-        errs() << "---\n";
-      }
+      } 
     }
 
     if (!NewOperand) {
@@ -818,9 +812,7 @@ void BlockGenerator::generateConditionalExecution(
   // Put the client code into the conditional block and continue in the merge
   // block afterwards.
   Builder.SetInsertPoint(ThenBlock, ThenBlock->getFirstInsertionPt());
-  errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
   GenThenFunc();
-  errs() << __FUNCTION__ << ":" << __LINE__ << "\n";
   Builder.SetInsertPoint(TailBlock, TailBlock->getFirstInsertionPt());
 }
 

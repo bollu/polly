@@ -148,12 +148,10 @@ void ScopBuilder::buildScalarDependences(ScopStmt *UserStmt,
                                          Instruction *Inst) {
   assert(!isa<PHINode>(Inst));
 
-  errs() << "Build scalar dependences\n";
   // Pull-in required operands.
   for (Use &Op : Inst->operands())
     ensureValueRead(Op.get(), UserStmt);
 
-  errs() << "Build scalar dependences end\n";
 }
 
 void ScopBuilder::buildEscapingDependences(Instruction *Inst) {
@@ -843,16 +841,9 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
                        ArrayRef<const SCEV *> Sizes, Value *AccessValue);
  */
 
-  if (!FAD) {
-      errs() << "Unable to find FAD for access:\n";
-      errs() << *Inst << "\n";
-      errs() << *Call << "\n";
-      errs() << *BasePtr << "\n";
-      errs() << "====\n";
-  }
-
   // ONLY allow nonaffine in organize
   if (!IsAffine && Inst->getParent()->getParent()->getName() != "__radiation_rg_org_MOD_radiation_rg_organize") {
+      if (AbstractMatrixDebug) {
           errs() << "polly fortran index expr is nonaffine:\n";
           errs() << *Inst << "\n";
           errs() << *Call << "\n";
@@ -860,6 +851,7 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
           if (FAD) 
               errs() << "FAD: " << *FAD << "\n";
           errs() << "======\n";
+      }
       scop->invalidate(DELINEARIZATION, Inst->getDebugLoc(), Inst->getParent());
   }
 
@@ -971,8 +963,6 @@ void ScopBuilder::buildAccessFunctions(ScopStmt *Stmt, BasicBlock &BB,
     if (isIgnoredIntrinsic(&Inst))
       continue;
 
-    errs() << "Instruction\n";
-    Inst.dump();
 
     if (auto C = dyn_cast<CallInst>(&Inst)) {
       Function *MallocFn = C->getCalledFunction();
@@ -1043,9 +1033,6 @@ MemoryAccess *ScopBuilder::addMemoryAccess(
     ArrayRef<const SCEV *> Subscripts, ShapeInfo Shape, MemoryKind Kind) {
   bool isKnownMustAccess = false;
 
-  errs() << "Build access functions: " << (int) Kind << "\n";
-  BaseAddress->dump();
-  
   
 
   // Accesses in single-basic block statements are always executed.
@@ -1482,7 +1469,6 @@ void ScopBuilder::buildScop(Region &R, AssumptionCache &AC,
                             OptimizationRemarkEmitter &ORE) {
   scop.reset(new Scop(R, SE, LI, *SD.getDetectionContext(&R), ORE));
 
-  R.getEntry()->getParent()->getParent()->dump();
   buildStmts(R);
   buildAccessFunctions();
 
