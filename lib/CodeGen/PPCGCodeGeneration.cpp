@@ -1495,8 +1495,7 @@ GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
       if (SAI == Needle)
         return ppcg_kernel_requires_array_argument(Kernel, i);
     }
-    // assert(false && "unable to find Array in known list of arrays");
-    return false; // Is this correct?
+    return false;
   };
 
   for (const auto &I : IDToValue)
