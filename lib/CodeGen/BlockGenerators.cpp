@@ -274,35 +274,20 @@ void BlockGenerator::copyInstScalarHacked(ScopStmt &Stmt, Instruction *Inst,
   if (auto GEP = dyn_cast<GetElementPtrInst>(Inst)) {
       Value *NewGEPBase = getNewValue(Stmt, GEP->getOperand(0), BBMap,
               LTS, getLoopForStmt(Stmt));
+      if (!NewGEPBase) return;
+
       SmallVector<Value *, 4> NewIxs;
-
-      errs() << "OldGEP: " << *GEP << "\n";
-      errs() << "NewGEPBase: " << *NewGEPBase << "\n";
       for(unsigned i = 1; i < GEP->getNumOperands(); i++) {
-          Value *NewV = getNewValue(Stmt, GEP->getOperand(i), BBMap, LTS, getLoopForStmt(Stmt));
-          if (!NewV) {
-              return;
-          }
-
-          NewIxs.push_back(NewV);
+          Value *NewIx = getNewValue(Stmt, GEP->getOperand(i), BBMap, LTS, getLoopForStmt(Stmt));
+          if (!NewIx) return;
+          NewIxs.push_back(NewIx);
       }
-
-      errs() << "NEWGEPIxs: ";
-      for(Value *V: NewIxs) {
-          errs() << "\t-";
-          if (Instruction *I = dyn_cast<Instruction>(V)) {
-              errs() << *I;
-          }
-          else {
-              errs() << *V;
-          }
-          errs() << "\n";
-      }
-
       NewInst = GetElementPtrInst::Create(/*PointeeType=*/nullptr, NewGEPBase, NewIxs, Inst->getName());
   }
+
   else if(auto Bitcast = dyn_cast<BitCastInst>(Inst)) {
       Value *NewSrc = BBMap[Bitcast->getOperand(0)];
+      if (!NewSrc) return;
       PointerType *OldDestTy = cast<PointerType>(Bitcast->getDestTy());
       int NewAddrspace = NewSrc->getType()->getPointerAddressSpace();
       PointerType *NewDestTy = PointerType::get(OldDestTy->getElementType(), NewAddrspace);
@@ -411,8 +396,7 @@ bool BlockGenerator::DoesInstNeedAddrspaceFixup(ScopStmt &Stmt, Instruction *Ins
 
   for (Value *OldOperand : Inst->operands()) {
 
-    Value *NewOperand =
-        getNewValue(Stmt, OldOperand, BBMap, LTS, getLoopForStmt(Stmt));
+    Value *NewOperand = getNewValue(Stmt, OldOperand, BBMap, LTS, getLoopForStmt(Stmt));
     if (!NewOperand) return false;
 
     if (hasDifferentAddrspaces(OldOperand, NewOperand)) { 
@@ -426,7 +410,6 @@ bool BlockGenerator::DoesInstNeedAddrspaceFixup(ScopStmt &Stmt, Instruction *Ins
 void BlockGenerator::copyInstScalar(ScopStmt &Stmt, Instruction *Inst,
                                     ValueMapT &BBMap, LoopToScevMapT &LTS) {
 
-    // errs() << "BlockGenerator copying: " << *Inst << "\n";
     if (DoesInstNeedAddrspaceFixup(Stmt, Inst, BBMap, LTS)) {
         if (!isa<GetElementPtrInst>(Inst) && !isa<BitCastInst>(Inst)) {
             errs() << "Instruction that needs address space handling but is currently unhandled: " << *Inst;
