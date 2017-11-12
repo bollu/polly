@@ -2209,30 +2209,6 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
     S.invalidateScopArrayInfo(BasePtr, MemoryKind::Array);
   LocalArrays.clear();
 
-  {
-      PassManagerBuilder PassBuilder;
-      PassBuilder.OptLevel = 3;
-      PassBuilder.SizeLevel = 0;
-      PassBuilder.LoopVectorize = false;
-      PassBuilder.SLPVectorize = false;
-      PassBuilder.Inliner = createFunctionInliningPass(PassBuilder.OptLevel, PassBuilder.SizeLevel, false);
-
-      llvm::legacy::PassManager ModulePassManager;
-      legacy::FunctionPassManager FPM(GPUModule.get());
-      ModulePassManager.add(createAggressiveDCEPass());
-      ModulePassManager.add(createAlwaysInlinerLegacyPass());
-      PassBuilder.populateModulePassManager(ModulePassManager);
-      PassBuilder.populateFunctionPassManager(FPM);
-
-      FPM.doInitialization();
-      for (llvm::Module::iterator i = GPUModule->begin(); i != GPUModule->end(); i++) {
-          FPM.run(*i);
-      }
-
-      FPM.doFinalization();
-      ModulePassManager.run(*GPUModule);
-  }
-
   // Look for dead parameters and prune them among SubtreeValues
   LiveArrayIdxsTy LiveArrayIdxs;
   LiveVarIdxsTy LiveVarIdxs;
@@ -3120,22 +3096,22 @@ std::string GPUNodeBuilder::finalizeKernelFunction() {
   addCUDALibDevice();
 
 
-  // llvm::legacy::PassManager OptPasses;
-  // PassManagerBuilder PassBuilder;
-  // PassBuilder.OptLevel = 1;
-  // PassBuilder.SizeLevel = 3;
+  llvm::legacy::PassManager OptPasses;
+  PassManagerBuilder PassBuilder;
+  PassBuilder.OptLevel = 3;
+  PassBuilder.SizeLevel = 0;
 
-  // // TODO: put this in the correct place.
-  // static const bool HACK_DENORMALIZE = true;
-  // if (HACK_DENORMALIZE) {
-  //   GPUModule->addModuleFlag(Module::Override, "nvvm-reflect-ftz", 1);
+  // TODO: put this in the correct place.
+  static const bool HACK_DENORMALIZE = true;
+  if (HACK_DENORMALIZE) {
+    GPUModule->addModuleFlag(Module::Override, "nvvm-reflect-ftz", 1);
 
-  //   for (llvm::Function &CurF : *GPUModule) {
-  //     CurF.addFnAttr("nvptx-f32ftz", "true");
-  //   }
-  // }
-  // PassBuilder.populateModulePassManager(OptPasses);
-  // OptPasses.run(*GPUModule);
+    for (llvm::Function &CurF : *GPUModule) {
+      CurF.addFnAttr("nvptx-f32ftz", "true");
+    }
+  }
+  PassBuilder.populateModulePassManager(OptPasses);
+  OptPasses.run(*GPUModule);
 
 
   for (Function &F : *GPUModule) {
