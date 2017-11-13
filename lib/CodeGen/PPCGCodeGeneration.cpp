@@ -3424,24 +3424,29 @@ public:
     PPCGScop->end = 0;
 
     PPCGScop->context = S->getContext().release();
-    for(unsigned i = 0; i < isl_set_n_param(PPCGScop->context); i++) {
-        assert(!isl_set_is_empty(PPCGScop->context) && "recieved empty context.");
-        isl_id *ParamId = isl_set_get_dim_id(PPCGScop->context, isl_dim_param, i);
-        isl_id_free(ParamId);
-        isl_constraint *LB = isl_inequality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
-        LB = isl_constraint_set_constant_si(LB, 0);
-        LB = isl_constraint_set_coefficient_si(LB, isl_dim_param, i, 1);
-        PPCGScop->context = isl_set_add_constraint(PPCGScop->context, LB);
-        assert(!isl_set_is_empty(PPCGScop->context) && "context empty after adding LB");
+    if (S->getFunction().getName() == "__radiation_rg_MOD_inv_so" && false) {
+        errs() << "\n\n\n" << __PRETTY_FUNCTION__ << " | SETTING LOWER AND UPPER BOUND FOR PARAMS!\n\n\n";
+        for(unsigned i = 0; i < isl_set_n_param(PPCGScop->context); i++) {
+            assert(!isl_set_is_empty(PPCGScop->context) && "recieved empty context.");
+            isl_id *ParamId = isl_set_get_dim_id(PPCGScop->context, isl_dim_param, i);
+            isl_id_free(ParamId);
+            isl_constraint *LB = isl_inequality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
+            LB = isl_constraint_set_constant_si(LB, 0);
+            LB = isl_constraint_set_coefficient_si(LB, isl_dim_param, i, 1);
+            //PPCGScop->context = isl_set_add_constraint(PPCGScop->context, LB);
+            isl_constraint_free(LB);
+            assert(!isl_set_is_empty(PPCGScop->context) && "context empty after adding LB");
 
-        isl_constraint *UB = isl_inequality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
-        uint64_t UB_VAL = 100000; //std::numeric_limits<uint32_t>().max() - 1;
-        UB = isl_constraint_set_constant_si(UB, UB_VAL);
-        UB = isl_constraint_set_coefficient_si(UB, isl_dim_param, i, -1);
-        //PPCGScop->context = isl_set_add_constraint(PPCGScop->context, UB);
-        isl_constraint_free(UB);
+            isl_constraint *UB = isl_inequality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
+            uint64_t UB_VAL = 100000; //std::numeric_limits<uint32_t>().max() - 1;
+            UB = isl_constraint_set_constant_si(UB, UB_VAL);
+            UB = isl_constraint_set_coefficient_si(UB, isl_dim_param, i, -1);
+            PPCGScop->context = isl_set_add_constraint(PPCGScop->context, UB);
+            //isl_constraint_free(UB);
 
-        assert(!isl_set_is_empty(PPCGScop->context) && "context empty after adding UB");
+            assert(!isl_set_is_empty(PPCGScop->context) && "context empty after adding UB");
+        }
+        errs() << "DONE SETTING UPPER AND LOWER BOUND FOR PARAMS\n";
     }
 
     PPCGScop->domain = S->getDomains().release();

@@ -2296,8 +2296,9 @@ void Scop::addParameterBounds() {
       errs() << "Parameter: " << *Parameter << "\n";
     ConstantRange SRange = [&] () {
         ConstantRange Raw = SE->getSignedRange(Parameter);
-        uint64_t upperBoundLimited = Raw.getUpper().getLimitedValue((1ull << 32ull) - 1ull);
-        return ConstantRange(APInt(32, 0), APInt(32, upperBoundLimited));
+        return Raw;
+        //uint64_t upperBoundLimited = Raw.getUpper().getLimitedValue((1ull << 32ull) - 1ull);
+        //return ConstantRange(APInt(32, 0), APInt(32, upperBoundLimited));
     }();
     Context =
         addRangeBoundsToSet(give(Context), SRange, PDim++, isl::dim::param)
