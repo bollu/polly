@@ -3424,6 +3424,26 @@ public:
     PPCGScop->end = 0;
 
     PPCGScop->context = S->getContext().release();
+    for(unsigned i = 0; i < isl_set_n_param(PPCGScop->context); i++) {
+        assert(!isl_set_is_empty(PPCGScop->context) && "recieved empty context.");
+        isl_id *ParamId = isl_set_get_dim_id(PPCGScop->context, isl_dim_param, i);
+        isl_id_free(ParamId);
+        isl_constraint *LB = isl_inequality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
+        LB = isl_constraint_set_constant_si(LB, 0);
+        LB = isl_constraint_set_coefficient_si(LB, isl_dim_param, i, 1);
+        PPCGScop->context = isl_set_add_constraint(PPCGScop->context, LB);
+        assert(!isl_set_is_empty(PPCGScop->context) && "context empty after adding LB");
+
+        isl_constraint *UB = isl_inequality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
+        uint64_t UB_VAL = 100000; //std::numeric_limits<uint32_t>().max() - 1;
+        UB = isl_constraint_set_constant_si(UB, UB_VAL);
+        UB = isl_constraint_set_coefficient_si(UB, isl_dim_param, i, -1);
+        //PPCGScop->context = isl_set_add_constraint(PPCGScop->context, UB);
+        isl_constraint_free(UB);
+
+        assert(!isl_set_is_empty(PPCGScop->context) && "context empty after adding UB");
+    }
+
     PPCGScop->domain = S->getDomains().release();
     // TODO: investigate this further. PPCG calls collect_call_domains.
     PPCGScop->call = isl_union_set_from_set(S->getContext().release());
