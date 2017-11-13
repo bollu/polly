@@ -2293,7 +2293,12 @@ void Scop::buildContext() {
 void Scop::addParameterBounds() {
   unsigned PDim = 0;
   for (auto *Parameter : Parameters) {
-    ConstantRange SRange = SE->getSignedRange(Parameter);
+      errs() << "Parameter: " << *Parameter << "\n";
+    ConstantRange SRange = [&] () {
+        ConstantRange Raw = SE->getSignedRange(Parameter);
+        uint64_t upperBoundLimited = Raw.getUpper().getLimitedValue((1ull << 32ull) - 1ull);
+        return ConstantRange(APInt(32, 0), APInt(32, upperBoundLimited));
+    }();
     Context =
         addRangeBoundsToSet(give(Context), SRange, PDim++, isl::dim::param)
             .release();
@@ -2327,16 +2332,26 @@ static std::vector<isl::id> getFortranArrayIds(Scop::array_range Arrays) {
 // The FORTRAN array size parameters are known to be non-negative.
 static isl_set *boundFortranArrayParams(__isl_give isl_set *Context,
                                         Scop::array_range Arrays) {
-  std::vector<isl::id> OutermostSizeIds;
-  OutermostSizeIds = getFortranArrayIds(Arrays);
+    for(ScopArrayInfo *SAI : Arrays) {
+        if (SAI->hasStrides()) {
+            for(unsigned i = 0; i < SAI->getNumberOfDimensions(); i++) {
+                isl::id Id = SAI->getDimensionSizeId(i);
+                int dim = isl_set_find_dim_by_id(Context, isl_dim_param, Id.get());
+                Context = isl_set_lower_bound_si(Context, isl_dim_param, dim, 0);
+            }
+        }
+    }
+  //std::vector<isl::id> OutermostSizeIds;
+  //OutermostSizeIds = getFortranArrayIds(Arrays);
 
-  for (isl::id Id : OutermostSizeIds) {
-    int dim = isl_set_find_dim_by_id(Context, isl_dim_param, Id.get());
-    Context = isl_set_lower_bound_si(Context, isl_dim_param, dim, 0);
-  }
+  //for (isl::id Id : OutermostSizeIds) {
+  //  int dim = isl_set_find_dim_by_id(Context, isl_dim_param, Id.get());
+  //  Context = isl_set_lower_bound_si(Context, isl_dim_param, dim, 0);
+  //}
 
   return Context;
 }
+
 
 void Scop::realignParams() {
   if (PollyIgnoreParamBounds)
