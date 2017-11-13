@@ -225,7 +225,9 @@ using LiveArrayIdxsTy = std::vector<bool>;
 using LiveVarIdxsTy = std::vector<bool>;
 std::tuple<Function *, SetVector<Value *>, LiveArrayIdxsTy, LiveVarIdxsTy>
 removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
-                        SetVector<Value *> SubtreeValues) {
+                        SetVector<Value *> SubtreeValues,
+                        IslExprBuilder::IDToValueTy &IDToValue,
+                        const DataLayout &DL) {
 
 
   // // Run -O3 against F so we can check which parameters are unused.
@@ -246,6 +248,7 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
 
   // PassBuilder.populateModulePassManager(OptPasses);
   // OptPasses.run(*F->getParent());
+    std::map<Argument *, Constant*> ConstantArgumentReplacement;
 
   const unsigned NumUsedArrays = [&] {
     unsigned n = 0;
@@ -274,7 +277,7 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
   {
     unsigned oldidx = 0, newidx = 0;
 
-    for (int i = 0; i < NumUsedArrays; i++, oldidx++) {
+    for (unsigned i = 0; i < NumUsedArrays; i++, oldidx++) {
       Argument *A = OldArgs[oldidx];
       if (A->user_empty()) {
         liveArrayIdxs[oldidx] = false;
@@ -287,30 +290,68 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
     // Step 1. Setup a 1:1 mapping between old to new indeces.
     // If an old index does not exist as a key, then this means that
     // it is no longer required (is dead)
-    for (int i = 0; i < NumHostIters; i++, oldidx++) {
+    for (unsigned i = 0; i < NumHostIters; i++, oldidx++) {
       OldToNewIndex[oldidx] = newidx++;
     }
 
-    for (int i = 0; i < NumVars; i++, oldidx++) {
-      Argument *A = OldArgs[oldidx];
-      if (A->user_empty()) {
-        LiveVarIdxs[i] = false;
-      } else {
-          LiveVarIdxs[i] = true;
-          OldToNewIndex[oldidx] = newidx++;
+
+
+    static int nConstantVarsTotal = 0;
+    static int sizeConstantVarsTotal = 0;
+    int nConstantVarsCur = 0;
+    for (unsigned i = 0; i < NumVars; i++, oldidx++) {
+        Argument *A = OldArgs[oldidx];
+        if (A->user_empty()) {
+            LiveVarIdxs[i] = false;
+        } else {
+            isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_param, i);
+            assert(IDToValue.find(Id) != IDToValue.end());
+            Value *Val = IDToValue[Id];
+            isl_id_free(Id);
+            if (isa<Constant>(Val)) {
+                LiveVarIdxs[i] = false;
+                nConstantVarsCur++;
+                sizeConstantVarsTotal += DL.getTypeAllocSize(Val->getType());
+                ConstantArgumentReplacement[A] = cast<Constant>(Val);
+                continue;
+            }
+            else {
+                LiveVarIdxs[i] = true;
+                OldToNewIndex[oldidx] = newidx++;
+            }
         }
-      }
-
-    for (int i = 0; i < SubtreeValues.size(); oldidx++, i++) {
-      assert(oldidx < OldArgs.size() && "invalid index");
-      assert(oldidx >= 0 && "invalid index");
-
-      Argument *A = OldArgs[oldidx];
-      if (!A->user_empty()) {
-        NewSubtreeValues.insert(SubtreeValues[i]);
-        OldToNewIndex[oldidx] = newidx++;
-      } 
     }
+    nConstantVarsTotal += nConstantVarsCur;
+    errs() << "**** NUM CONSTANT VARS: " << nConstantVarsCur << "\n";
+    errs() << "**** NUM CONSTANT VARS(TOTAL): " << nConstantVarsTotal << "\n";
+    errs() << "**** SIZE CONSTANT VARS(TOTAL): " << sizeConstantVarsTotal << "\n";
+
+    int nConstantSubtreeValsCur = 0;
+    static int nConstantSubtreeValsTotal = 0;
+    static int sizeConstantSubtreeValsTotal = 0;
+    for (unsigned i = 0; i < SubtreeValues.size(); oldidx++, i++) {
+        assert(oldidx < OldArgs.size() && "invalid index");
+        Argument *A = OldArgs[oldidx];
+        if (!A->user_empty()) {
+            Value *V = SubtreeValues[i];
+            if (isa<Constant>(V)) {
+                ConstantArgumentReplacement[A] = cast<Constant>(V);
+                nConstantSubtreeValsCur++;
+                sizeConstantSubtreeValsTotal += DL.getTypeAllocSize(V->getType());
+                continue;
+            }
+            else {
+                NewSubtreeValues.insert(SubtreeValues[i]);
+                OldToNewIndex[oldidx] = newidx++;
+            }
+        }
+
+    }
+    nConstantSubtreeValsTotal += nConstantSubtreeValsCur;
+
+    errs() << "**** NUM CONSTANT SUBTREE VALS:"  << nConstantSubtreeValsCur << "\n";
+    errs() << "**** NUM CONSTANT SUBTREE VALS(TOTAL):"  << nConstantSubtreeValsTotal << "\n";
+    errs() << "**** SIZE OF CONSTANT SUBTREE VALS(TOTAL):"  << sizeConstantSubtreeValsTotal << "\n";
 
     assert(oldidx == OldArgs.size());
     assert(newidx <= OldArgs.size());
@@ -373,6 +414,20 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
     auto INew = FNew->arg_begin() + newidx;
     IOld->replaceAllUsesWith(&*INew);
     INew->takeName(&*IOld);
+
+    // if (ConstantArgumentReplacement.find(IOld) != ConstantValueReplacement.end()) {
+    //     InstructionsToReplace.insert(std::make_pair(INew, ConstantArgumentReplacement.find(IOld)->second));
+    //     // InstructionsToReplace[INew] = ConstantArgumentReplacement.find(IOld)->second;
+    // } else {
+    //     IOld->replaceAllUsesWith(&*INew);
+    //     INew->takeName(&*IOld);
+    // }
+  }
+  for (auto It : ConstantArgumentReplacement) {
+      Value *IOld = It.first;
+      Value *C = It.second;
+
+      IOld->replaceAllUsesWith(C);
   }
 
   FNew->setSubprogram(F->getSubprogram());
@@ -2214,11 +2269,10 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
   LiveVarIdxsTy LiveVarIdxs;
   if (BoolRemoveDeadSubtreeValues) {
 
-
       SetVector<Value *> NewSubtreeValues;
       Function *FNew;
     std::tie(FNew, NewSubtreeValues, LiveArrayIdxs, LiveVarIdxs) =
-        removeDeadSubtreeValues(F, Prog, Kernel, SubtreeValues);
+        removeDeadSubtreeValues(F, Prog, Kernel, SubtreeValues, IDToValue, DL);
 
     errs() << "*** OLD V/S NEW SUBTREE VALUES SIZE: " << "Old:" << SubtreeValues.size() << " | NEW: " << NewSubtreeValues.size() << "\n";
     int nArgsOld = F->getFunctionType()->getNumParams();
