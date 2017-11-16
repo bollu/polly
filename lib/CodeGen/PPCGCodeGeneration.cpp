@@ -1524,10 +1524,9 @@ GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
   // in the kernel, because they can be involved in code that we don't model,
   // such as ptrtoint.
   // See: * test/GPGPU/
-  for (auto &SAI : S.arrays()) {
+  for (auto &SAI : S.arrays())
     if (isSAIModeledByKernel(SAI, Kernel, Prog))
       SubtreeValues.remove(SAI->getBasePtr());
-  }
 
   isl_space *Space = S.getParamSpace().release();
   for (long i = 0, n = isl_space_dim(Space, isl_dim_param); i < n; i++) {
