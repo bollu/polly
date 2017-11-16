@@ -3424,7 +3424,7 @@ public:
     PPCGScop->end = 0;
 
     PPCGScop->context = S->getContext().release();
-    if (S->getFunction().getName() == "__radiation_rg_MOD_inv_so" && false) {
+    if (S->getFunction().getName().count("f")) {
         errs() << "\n\n\n" << __PRETTY_FUNCTION__ << " | SETTING LOWER AND UPPER BOUND FOR PARAMS!\n\n\n";
         for(unsigned i = 0; i < isl_set_n_param(PPCGScop->context); i++) {
             assert(!isl_set_is_empty(PPCGScop->context) && "recieved empty context.");
@@ -3433,8 +3433,8 @@ public:
             isl_constraint *LB = isl_inequality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
             LB = isl_constraint_set_constant_si(LB, 0);
             LB = isl_constraint_set_coefficient_si(LB, isl_dim_param, i, 1);
-            //PPCGScop->context = isl_set_add_constraint(PPCGScop->context, LB);
-            isl_constraint_free(LB);
+            PPCGScop->context = isl_set_add_constraint(PPCGScop->context, LB);
+            // isl_constraint_free(LB);
             assert(!isl_set_is_empty(PPCGScop->context) && "context empty after adding LB");
 
             isl_constraint *UB = isl_inequality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
@@ -3448,6 +3448,11 @@ public:
         }
         errs() << "DONE SETTING UPPER AND LOWER BOUND FOR PARAMS\n";
     }
+    else {
+        assert(false && "dead");
+    }
+
+    errs() << "\n\nContext: "; isl_set_dump(PPCGScop->context); errs() << "\n\n";
 
     PPCGScop->domain = S->getDomains().release();
     // TODO: investigate this further. PPCG calls collect_call_domains.
