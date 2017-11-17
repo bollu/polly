@@ -631,6 +631,12 @@ static int computeSizeInBytes(const Type *T) {
   return bytes;
 }
 
+static isl_stat AddConstraintToSet(isl_constraint *c, void *vs) {
+    isl_set *s = (isl_set*)vs;
+    isl_set_add_constraint(s, c);
+    return isl_stat_ok;
+}
+
 /// Generate code for a GPU specific isl AST.
 ///
 /// The GPUNodeBuilder augments the general existing IslNodeBuilder, which
@@ -3424,11 +3430,19 @@ public:
     PPCGScop->end = 0;
 
     PPCGScop->context = S->getContext().release();
+    std::vector<std::pair<unsigned, unsigned>> paramIdxsLoopLowerUpperBounds;
     if (S->getFunction().getName().count("f")) {
         errs() << "\n\n\n" << __PRETTY_FUNCTION__ << " | SETTING LOWER AND UPPER BOUND FOR PARAMS!\n\n\n";
+        int tmpidx = -42, tmp4idx = -42;
         for(unsigned i = 0; i < isl_set_n_param(PPCGScop->context); i++) {
             assert(!isl_set_is_empty(PPCGScop->context) && "recieved empty context.");
             isl_id *ParamId = isl_set_get_dim_id(PPCGScop->context, isl_dim_param, i);
+            if (!strcmp(isl_id_get_name(ParamId), "tmp")){
+                tmpidx = i;
+            }
+            else if (!strcmp(isl_id_get_name(ParamId), "tmp4")) {
+                tmp4idx = i;
+            }
             isl_id_free(ParamId);
             isl_constraint *LB = isl_inequality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
             LB = isl_constraint_set_constant_si(LB, 0);
@@ -3446,10 +3460,23 @@ public:
 
             assert(!isl_set_is_empty(PPCGScop->context) && "context empty after adding UB");
         }
+
+        // Add all constraints from the domain of each scopstmt into the context.
+        // That way, all our domains become non-empty.
+        // We project out all set dimensions to leave relationships betweem
+        // parameter dimensions.
+        for(ScopStmt &Stmt : *S) {
+            isl::set ParamSet = Stmt.getDomain();
+            const int ndims = ParamSet.dim(isl::dim::set);
+            ParamSet = ParamSet.project_out(isl::dim::set, 0, ndims);
+            
+            // isl_set_foreach_constraint(ParamSet, AddConstraintToSet, (void *)PPCGScop->Context);
+            ParamSet = ParamSet.align_params(isl::manage(isl_set_get_space(PPCGScop->context)));
+            PPCGScop->context = isl_set_intersect_params(PPCGScop->context, ParamSet.release());
+        }
+
+
         errs() << "DONE SETTING UPPER AND LOWER BOUND FOR PARAMS\n";
-    }
-    else {
-        assert(false && "dead");
     }
 
     errs() << "\n\nContext: "; isl_set_dump(PPCGScop->context); errs() << "\n\n";
