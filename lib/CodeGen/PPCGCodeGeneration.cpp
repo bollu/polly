@@ -61,6 +61,8 @@ extern "C" {
 using namespace polly;
 using namespace llvm;
 
+static const bool USE_ASSUMPTIONS_IN_PPCG_CONTEXT = true;
+
 #define DEBUG_TYPE "polly-codegen-ppcg"
 static cl::list<int> AllowedScops(
     "polly-acc-hack-allowed-scops",
@@ -322,9 +324,9 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
         }
     }
     nConstantVarsTotal += nConstantVarsCur;
-    errs() << "**** NUM CONSTANT VARS: " << nConstantVarsCur << "\n";
-    errs() << "**** NUM CONSTANT VARS(TOTAL): " << nConstantVarsTotal << "\n";
-    errs() << "**** SIZE CONSTANT VARS(TOTAL): " << sizeConstantVarsTotal << "\n";
+    dbgs() << "**** NUM CONSTANT VARS: " << nConstantVarsCur << "\n";
+    dbgs() << "**** NUM CONSTANT VARS(TOTAL): " << nConstantVarsTotal << "\n";
+    dbgs() << "**** SIZE CONSTANT VARS(TOTAL): " << sizeConstantVarsTotal << "\n";
 
     int nConstantSubtreeValsCur = 0;
     static int nConstantSubtreeValsTotal = 0;
@@ -349,9 +351,9 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
     }
     nConstantSubtreeValsTotal += nConstantSubtreeValsCur;
 
-    errs() << "**** NUM CONSTANT SUBTREE VALS:"  << nConstantSubtreeValsCur << "\n";
-    errs() << "**** NUM CONSTANT SUBTREE VALS(TOTAL):"  << nConstantSubtreeValsTotal << "\n";
-    errs() << "**** SIZE OF CONSTANT SUBTREE VALS(TOTAL):"  << sizeConstantSubtreeValsTotal << "\n";
+    dbgs() << "**** NUM CONSTANT SUBTREE VALS:"  << nConstantSubtreeValsCur << "\n";
+    dbgs() << "**** NUM CONSTANT SUBTREE VALS(TOTAL):"  << nConstantSubtreeValsTotal << "\n";
+    dbgs() << "**** SIZE OF CONSTANT SUBTREE VALS(TOTAL):"  << sizeConstantSubtreeValsTotal << "\n";
 
     assert(oldidx == OldArgs.size());
     assert(newidx <= OldArgs.size());
@@ -600,7 +602,7 @@ static __isl_give isl_id_to_ast_expr *pollyBuildAstExprForStmt(
 
   for (MemoryAccess *Acc : *Stmt) {
     if (!Acc->isAffine()) {
-      errs() << __PRETTY_FUNCTION__ << "\n" <<
+      dbgs() << __PRETTY_FUNCTION__ << "\n" <<
              ":skipping materializing the stmt's memory access because it's "
                 "nonaffine\n";
       continue;
@@ -1123,7 +1125,7 @@ void GPUNodeBuilder::allocateDeviceArrays() {
     // choose to be defensive and catch this at the compile phase. It is
     // most likely that we are doing something wrong with size computation.
     if (SizeSCEV->isZero()) {
-      errs() << getUniqueScopName(&S) << " has array size 0.\n "
+      dbgs() << getUniqueScopName(&S) << " has array size 0.\n "
              << "Array with size 0: " << *(ScopArray->getBasePtr())
              << "Size expression: " << *ArraySize
              << "\nThis is illegal, exiting.\n";
@@ -2022,7 +2024,7 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     if (!ppcg_kernel_requires_array_argument(Kernel, i))
       continue;
     if (BoolRemoveDeadSubtreeValues && !LiveArrayIdxs[IndexUsedArray]) {
-      errs() << __PRETTY_FUNCTION__ << " |Skipping array : " << IndexUsedArray
+      dbgs() << __PRETTY_FUNCTION__ << " |Skipping array : " << IndexUsedArray
              << "\n";
       IndexUsedArray++;
       continue;
@@ -2280,10 +2282,10 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
     std::tie(FNew, NewSubtreeValues, LiveArrayIdxs, LiveVarIdxs) =
         removeDeadSubtreeValues(F, Prog, Kernel, SubtreeValues, IDToValue, DL);
 
-    errs() << "*** OLD V/S NEW SUBTREE VALUES SIZE: " << "Old:" << SubtreeValues.size() << " | NEW: " << NewSubtreeValues.size() << "\n";
+    dbgs() << "*** OLD V/S NEW SUBTREE VALUES SIZE: " << "Old:" << SubtreeValues.size() << " | NEW: " << NewSubtreeValues.size() << "\n";
     int nArgsOld = F->getFunctionType()->getNumParams();
     int nArgsNew = FNew->getFunctionType()->getNumParams();
-    errs() << "*** OLD V/S NEW NARGS: " << "Old: " << nArgsOld << " | New: " << nArgsNew << "\n";
+    dbgs() << "*** OLD V/S NEW NARGS: " << "Old: " << nArgsOld << " | New: " << nArgsNew << "\n";
     assert(NewSubtreeValues.size() <= SubtreeValues.size());
     SubtreeValues.clear();
     for(Value *NV : NewSubtreeValues) SubtreeValues.insert(NV);
@@ -2352,9 +2354,9 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
       ParamsSize += DL.getTypeStoreSize(Arg.getType());
       if (ParamsSize >= 4096) {
         BuildSuccessful = 0;
-        errs().changeColor(raw_ostream::RED)
+        dbgs().changeColor(raw_ostream::RED)
             << "*** Bailing out: size of parameters is > 4K.\n";
-        errs().resetColor();
+        dbgs().resetColor();
         break;
       }
     }
@@ -2547,7 +2549,7 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_set, i);
     Arg->setName(isl_id_get_name(Id));
     IDToValue[Id] = &*Arg;
-    // errs() << __LINE__ << "|DEALING WITH NON VALUE MAPPED PARAMETER: " << *Arg << "\n";
+    // dbgs() << __LINE__ << "|DEALING WITH NON VALUE MAPPED PARAMETER: " << *Arg << "\n";
     // ValueMap[Val] = &*Arg;
     KernelIDs.insert(std::unique_ptr<isl_id, IslIdDeleter>(Id));
     Arg++;
@@ -2557,7 +2559,7 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_param, i);
     Arg->setName(isl_id_get_name(Id));
     Value *Val = IDToValue[Id];
-    //errs() << __LINE__ <<  "|Mapping: " << *Val << " => " << *Arg << "\n";
+    //dbgs() << __LINE__ <<  "|Mapping: " << *Val << " => " << *Arg << "\n";
     ValueMap[Val] = &*Arg;
     IDToValue[Id] = &*Arg;
     KernelIDs.insert(std::unique_ptr<isl_id, IslIdDeleter>(Id));
@@ -2566,11 +2568,11 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
 
   for (auto *V : SubtreeValues) {
     Arg->setName("subtree_" + V->getName());
-    // errs() <<  __LINE__ << "|Mapping: " << *V << " => " << *Arg << "\n";
+    // dbgs() <<  __LINE__ << "|Mapping: " << *V << " => " << *Arg << "\n";
     ValueMap[V] = &*Arg;
     Arg++;
   }
-  // errs() << "\n=======\n";
+  // dbgs() << "\n=======\n";
 
   return FN;
 }
@@ -2690,18 +2692,18 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
             NewBasePtr = Builder.CreateBitCast(
                     Arg, NewTy, Arg->getName() + "_hack_load_for_blockgen");
 
-            /// errs() << __FUNCTION__ <<  "Remapped old: " << SAI->getBasePtr()->getName() << " to: " << *NewBasePtr << "\n";
+            /// dbgs() << __FUNCTION__ <<  "Remapped old: " << SAI->getBasePtr()->getName() << " to: " << *NewBasePtr << "\n";
         } else {
-            //errs() << "SAI->getBasePtr(): " << *SAI->getBasePtr() << "\n";
-            //errs() << "SAI: "; SAI->dump(); errs() << "\n";
+            //dbgs() << "SAI->getBasePtr(): " << *SAI->getBasePtr() << "\n";
+            //dbgs() << "SAI: "; SAI->dump(); dbgs() << "\n";
             report_fatal_error(" I did not think about this case yet.");
 
         }
-        // errs() << __LINE__ <<  "|Mapping: " << SAI->getBasePtr() << " => " << NewBasePtr << "\n";
+        // dbgs() << __LINE__ <<  "|Mapping: " << SAI->getBasePtr() << " => " << NewBasePtr << "\n";
         ValueMap[SAI->getBasePtr()] = NewBasePtr;
      }
      else {
-        // errs() << __LINE__ <<  "|Mapping: " << SAI->getBasePtr() << " => " << Arg << "\n";
+        // dbgs() << __LINE__ <<  "|Mapping: " << SAI->getBasePtr() << " => " << Arg << "\n";
      }
 
     if (SAI->getNumberOfDimensions() > 0) {
@@ -2709,7 +2711,7 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
       continue;
     }
     
-    // errs() << __LINE__ << "|" << "DEALING WITH NON VALUE MAPPED PARAMETER: " << *Arg << "\n";
+    // dbgs() << __LINE__ << "|" << "DEALING WITH NON VALUE MAPPED PARAMETER: " << *Arg << "\n";
     Value *Val = &*Arg;
 
     if (!gpu_array_is_read_only_scalar(&Prog->array[i])) {
@@ -2802,9 +2804,9 @@ void GPUNodeBuilder::castKernelArrays(ppcg_kernel *Kernel, Function *FN, PollyIR
         PointerType *SAIOriginalType = cast<PointerType>(SAI->getBasePtr()->getType());
         PointerType *SAINewType = PointerType::get(SAIOriginalType->getElementType(), GlobalAddressSpace);
 
-        errs() << "Arg type: " << *Arg->getType() << "\n";
-        errs() << "original SAI type: " << *SAIOriginalType << "\n";
-        errs() << "new SAI type: " << *SAINewType << "\n";
+        dbgs() << "Arg type: " << *Arg->getType() << "\n";
+        dbgs() << "original SAI type: " << *SAIOriginalType << "\n";
+        dbgs() << "new SAI type: " << *SAINewType << "\n";
         Value *SAITyped = Builder.CreateBitCast(Arg, SAINewType);
         ValueMap[Arg]  = SAITyped;
         ArgIdx++;
@@ -2888,7 +2890,7 @@ void GPUNodeBuilder::createKernelVariables(ppcg_kernel *Kernel, Function *FN) {
     KernelIds.push_back(Id);
     IDToSAI[Id] = SAI;
 
-    // errs() << __LINE__ << "|DEALING WITH NON VALUE MAPPED PARAMETER: " << SAI->getBasePtr()->getName() << "\n";
+    // dbgs() << __LINE__ << "|DEALING WITH NON VALUE MAPPED PARAMETER: " << SAI->getBasePtr()->getName() << "\n";
   }
 }
 
@@ -2971,7 +2973,7 @@ std::string GPUNodeBuilder::createKernelASM() {
   auto GPUTarget = TargetRegistry::lookupTarget(GPUTriple.getTriple(), ErrMsg);
 
   if (!GPUTarget) {
-    errs() << ErrMsg << "\n";
+    dbgs() << ErrMsg << "\n";
     return "";
   }
 
@@ -3030,7 +3032,7 @@ std::string GPUNodeBuilder::createKernelASM() {
 
 
   if (DumpKernelIR)
-    outs() << *GPUModule << "\n";
+    dbgs() << *GPUModule << "\n";
 
 
 
@@ -3042,7 +3044,7 @@ std::string GPUNodeBuilder::createKernelASM() {
 
   if (TargetM->addPassesToEmitFile(
           PM, ASMStream, TargetMachine::CGFT_AssemblyFile, true /* verify */)) {
-    errs() << "The target does not support generation of this file type!\n";
+    dbgs() << "The target does not support generation of this file type!\n";
     return "";
   }
 
@@ -3087,7 +3089,7 @@ void GPUNodeBuilder::addCUDALibDevice() {
   if (requiresCUDALibDevice()) {
     SMDiagnostic Error;
 
-    errs() << CUDALibDevice << "\n";
+    dbgs() << CUDALibDevice << "\n";
     auto LibDeviceModule =
         parseIRFile(CUDALibDevice, Error, GPUModule->getContext());
 
@@ -3119,7 +3121,7 @@ void countNumUnusedParamsInFunction(Function *F) {
       numUnusedParams++;
     }
   }
-  errs() << "*****" << __PRETTY_FUNCTION__
+  dbgs() << "*****" << __PRETTY_FUNCTION__
          << "numUnusedParams(after): " << numUnusedParams << "\n";
 }
 
@@ -3181,7 +3183,7 @@ std::string GPUNodeBuilder::finalizeKernelFunction() {
   std::string Assembly = createKernelASM();
 
   if (DumpKernelASM)
-    outs() << Assembly << "\n";
+    dbgs() << Assembly << "\n";
 
   GPUModule.release();
   KernelIDs.clear();
@@ -3431,32 +3433,34 @@ public:
 
     PPCGScop->context = S->getContext().release();
     std::vector<std::pair<unsigned, unsigned>> paramIdxsLoopLowerUpperBounds;
-    if (S->getFunction().getName().count("f")) {
-        errs() << "\n\n\n" << __PRETTY_FUNCTION__ << " | SETTING LOWER AND UPPER BOUND FOR PARAMS!\n\n\n";
-        int tmpidx = -42, tmp4idx = -42;
+    if (S->getFunction().getName().count("inv_th") || true) {
         for(unsigned i = 0; i < isl_set_n_param(PPCGScop->context); i++) {
             assert(!isl_set_is_empty(PPCGScop->context) && "recieved empty context.");
             isl_id *ParamId = isl_set_get_dim_id(PPCGScop->context, isl_dim_param, i);
-            if (!strcmp(isl_id_get_name(ParamId), "tmp")){
-                tmpidx = i;
-            }
-            else if (!strcmp(isl_id_get_name(ParamId), "tmp4")) {
-                tmp4idx = i;
-            }
             isl_id_free(ParamId);
             isl_constraint *LB = isl_inequality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
             LB = isl_constraint_set_constant_si(LB, 0);
             LB = isl_constraint_set_coefficient_si(LB, isl_dim_param, i, 1);
-            PPCGScop->context = isl_set_add_constraint(PPCGScop->context, LB);
-            // isl_constraint_free(LB);
+            if (USE_ASSUMPTIONS_IN_PPCG_CONTEXT) {
+                PPCGScop->context = isl_set_add_constraint(PPCGScop->context, LB);
+                dbgs() << " *** NOT ADDING LOWER BOUND ***\n";
+            } else {
+                isl_constraint_free(LB);
+            }
+
             assert(!isl_set_is_empty(PPCGScop->context) && "context empty after adding LB");
 
             isl_constraint *UB = isl_inequality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
             uint64_t UB_VAL = 100000; //std::numeric_limits<uint32_t>().max() - 1;
             UB = isl_constraint_set_constant_si(UB, UB_VAL);
             UB = isl_constraint_set_coefficient_si(UB, isl_dim_param, i, -1);
-            PPCGScop->context = isl_set_add_constraint(PPCGScop->context, UB);
-            //isl_constraint_free(UB);
+            if (USE_ASSUMPTIONS_IN_PPCG_CONTEXT) {
+                PPCGScop->context = isl_set_add_constraint(PPCGScop->context, UB);
+            }
+            else {
+                dbgs() << " *** NOT ADDING  UPPER BOUND ***\n";
+                isl_constraint_free(UB);
+            }
 
             assert(!isl_set_is_empty(PPCGScop->context) && "context empty after adding UB");
         }
@@ -3472,14 +3476,16 @@ public:
             
             // isl_set_foreach_constraint(ParamSet, AddConstraintToSet, (void *)PPCGScop->Context);
             ParamSet = ParamSet.align_params(isl::manage(isl_set_get_space(PPCGScop->context)));
-            PPCGScop->context = isl_set_intersect_params(PPCGScop->context, ParamSet.release());
+            dbgs() << "*** NOT ADDING ASSUMPTION THAT ALL LOOPS ARE NON-EMPTY\n";
+            if (USE_ASSUMPTIONS_IN_PPCG_CONTEXT) {
+                PPCGScop->context = isl_set_intersect_params(PPCGScop->context, ParamSet.release());
+            }
         }
-
-
-        errs() << "DONE SETTING UPPER AND LOWER BOUND FOR PARAMS\n";
+        assert(!isl_set_is_empty(PPCGScop->context) && "context empty after adding UB");
+        dbgs() << "DONE SETTING UPPER AND LOWER BOUND FOR PARAMS\n";
     }
 
-    errs() << "\n\nContext: "; isl_set_dump(PPCGScop->context); errs() << "\n\n";
+    dbgs() << "\n\nContext: "; isl_set_dump(PPCGScop->context); dbgs() << "\n\n";
 
     PPCGScop->domain = S->getDomains().release();
     // TODO: investigate this further. PPCG calls collect_call_domains.
@@ -3614,28 +3620,28 @@ public:
     isl::pw_aff Val = isl::aff::var_on_domain(LS, isl::dim::set, 0);
     if (!AccessSet.dim_has_lower_bound(isl::dim::set, 0)) {
         assert(Array->hasStrides() && "found nonaffine access to non-fortran array in PPCGCodeGen!");
-        //errs()<< "=== no lower bound found, setting lower bound to 0===\n";
-        //errs() << "AccessSet(prev): "; AccessSet.dump();
+        //dbgs()<< "=== no lower bound found, setting lower bound to 0===\n";
+        //dbgs() << "AccessSet(prev): "; AccessSet.dump();
         isl::constraint LB = isl::constraint::alloc_inequality(isl::local_space(AccessSet.get_space()));
         LB = LB.set_coefficient_si(isl::dim::set, 0, 1);
         AccessSet = AccessSet.add_constraint(LB);
-        //errs() << "AccessSet(new): "; AccessSet.dump();
+        //dbgs() << "AccessSet(new): "; AccessSet.dump();
     }
     isl::pw_aff OuterMin = AccessSet.dim_min(0);
 
     if (!AccessSet.dim_has_upper_bound(isl::dim::set, 0)) {
         assert(Array->hasStrides() && "found nonaffine access to non-fortran array in PPCGCodeGen!");
-        errs()<< "=== no upper bound found, setting upper bound to array size===\n";
+        dbgs()<< "=== no upper bound found, setting upper bound to array size===\n";
 
 
         isl::constraint C = isl::constraint::alloc_inequality(isl::local_space(AccessSet.get_space()));
-        //errs() << "Constraint: "; C.dump(); errs() << "\n";
+        //dbgs() << "Constraint: "; C.dump(); dbgs() << "\n";
         C = C.set_coefficient_si(isl::dim::set, 0, -1);
         C = C.set_constant_si(std::numeric_limits<int>().max());
 
-        //errs() << "AccessSet(old): "; AccessSet.dump();
+        //dbgs() << "AccessSet(old): "; AccessSet.dump();
         AccessSet = AccessSet.add_constraint(C);
-        //errs() << "AccessSet(new): "; AccessSet.dump();
+        //dbgs() << "AccessSet(new): "; AccessSet.dump();
     } 
     isl::pw_aff OuterMax = AccessSet.dim_max(0);
 
@@ -3954,7 +3960,7 @@ public:
     auto *Options = isl_ast_print_options_alloc(S->getIslCtx());
     P = isl_ast_node_print(Kernel->tree, P, Options);
     char *String = isl_printer_get_str(P);
-    outs() << String << "\n";
+    dbgs() << String << "\n";
     free(String);
     isl_printer_free(P);
   }
@@ -3975,13 +3981,13 @@ public:
         isl_ast_print_options_set_print_user(Options, printHostUser, &Data);
     P = isl_ast_node_print(Tree, P, Options);
     char *String = isl_printer_get_str(P);
-    outs() << "# host\n";
-    outs() << String << "\n";
+    dbgs() << "# host\n";
+    dbgs() << String << "\n";
     free(String);
     isl_printer_free(P);
 
     for (auto Kernel : Data.Kernels) {
-      outs() << "# kernel" << Kernel->id << "\n";
+      dbgs() << "# kernel" << Kernel->id << "\n";
       printKernel(Kernel);
     }
   }
@@ -4025,7 +4031,7 @@ public:
 
     Schedule =
         isl_schedule_align_params(Schedule, S->getFullParamSpace().release());
-    // errs() << S->getFullParamSpace() << "\n";
+    // dbgs() << S->getFullParamSpace() << "\n";
     // report_fatal_error("see full param space");
     //
 
@@ -4035,8 +4041,8 @@ public:
                    << " does not have permutable bands. Bailing out\n";);
     } else {
       const bool CreateTransferToFromDevice = !PollyManagedMemory;
-      // errs() << "\n" << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
-      // errs() << "\t-disabled map_to_device.\n";
+      // dbgs() << "\n" << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
+      // dbgs() << "\t-disabled map_to_device.\n";
       Schedule = map_to_device(PPCGGen, Schedule, CreateTransferToFromDevice);
       PPCGGen->tree = generate_code(PPCGGen, isl_schedule_copy(Schedule));
     }
@@ -4051,17 +4057,17 @@ public:
       else
         P = isl_printer_print_str(P, "No schedule found\n");
 
-      outs() << isl_printer_get_str(P) << "\n";
+      dbgs() << isl_printer_get_str(P) << "\n";
       isl_printer_free(P);
     }
 
     if (DumpCode) {
-      outs() << "Code\n";
-      outs() << "====\n";
+      dbgs() << "Code\n";
+      dbgs() << "====\n";
       if (PPCGGen->tree)
         printGPUTree(PPCGGen->tree, PPCGProg);
       else
-        outs() << "No code generated\n";
+        dbgs() << "No code generated\n";
     }
 
     isl_schedule_free(Schedule);
@@ -4287,7 +4293,7 @@ public:
     // preload invariant loads. Note: This should happen before the RTC
     // because the RTC may depend on values that are invariant load hoisted.
     if (!NodeBuilder.preloadInvariantLoads()) {
-      errs() << __PRETTY_FUNCTION__ << "\n"
+      dbgs() << __PRETTY_FUNCTION__ << "\n"
              << "***** preloading invariant loads failed in function: ";
       assert(false);
       // Patch the introduced branch condition to ensure that we always
@@ -4336,14 +4342,14 @@ public:
     /// kernel, the SCoP is probably mostly sequential. Hence, there is no
     /// point in running it on a GPU.
     if (NodeBuilder.DeepestSequential > NodeBuilder.DeepestParallel) {
-      errs() << "HACK: NOT DOING: NodeBuilder.DeepestSequential > "
+      dbgs() << "HACK: NOT DOING: NodeBuilder.DeepestSequential > "
                 "NodeBuilder.DeepestParallel. Setting build success to 0";
       // report_fatal_error("dying because branch set to 0");
       // CondBr->setOperand(0, Builder.getFalse());
     }
 
     if (!NodeBuilder.BuildSuccessful) {
-        errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
+        dbgs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
         CondBr->setOperand(0, Builder.getFalse());
         report_fatal_error("!NodeBuilder.BuildSuccessful");
     }
@@ -4361,12 +4367,12 @@ public:
 
   bool runOnScop(Scop &CurrentScop) override {
     if (HackBailPPCGCodeGenRunOnScop) {
-      errs() << __PRETTY_FUNCTION__ << " | bailing out of runOnScop()\n";
-      errs().flush();
+      dbgs() << __PRETTY_FUNCTION__ << " | bailing out of runOnScop()\n";
+      dbgs().flush();
       return true;
     } else {
-      errs() << __PRETTY_FUNCTION__ << " |**RUNNING** on runOnScop()\n";
-      errs().flush();
+      dbgs() << __PRETTY_FUNCTION__ << " |**RUNNING** on runOnScop()\n";
+      dbgs().flush();
     }
     S = &CurrentScop;
     LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
@@ -4378,28 +4384,28 @@ public:
     static int ScopNumber = 0;
     ScopNumber++;
 
-    errs() << "PPCGCodeGen running on : " << getUniqueScopName(S)
+    dbgs() << "PPCGCodeGen running on : " << getUniqueScopName(S)
            << " | count: " << ScopNumber << " "
            << " | loop depth: " << S->getMaxLoopDepth() << "\n";
 
-    if (S->getMaxLoopDepth() < 1) {
-        errs() << "Scop has loop depth < 1. Bailing out!\n\n";
-        return false;
-    }
+    // if (S->getMaxLoopDepth() < 1) {
+    //     dbgs() << "Scop has loop depth < 1. Bailing out!\n\n";
+    //     return false;
+    // }
 
     if (!isAllowedScop(ScopNumber)) {
-      errs() << "Scop not allowed (" << getUniqueScopName(S)
+      dbgs() << "Scop not allowed (" << getUniqueScopName(S)
              << "). Skipping!\n";
       return false;
     } else {
-      errs() << "Scop allowed (" << getUniqueScopName(S)
+      dbgs() << "Scop allowed (" << getUniqueScopName(S)
              << "). Continuing...\n";
-      // errs() << CurrentScop << "\n";
-      // errs() << "\n====\n";
+      // dbgs() << CurrentScop << "\n";
+      // dbgs() << "\n====\n";
     }
 
     if (DumpScop)
-      errs() << "\n====\n" << CurrentScop << "\n=====\n";
+      dbgs() << "\n====\n" << CurrentScop << "\n=====\n";
 
     // We currently do not support functions other than intrinsics inside
     // kernels, as code generation will need to offload function calls to the
