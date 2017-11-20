@@ -1352,8 +1352,12 @@ static PollyGPUFunction *getKernelCUDA(const char *BinaryBuffer,
     exit(-1);
   }
 
-  debug_print("CUDA Link Completed in %fms. Linker Output:\n%s\n", Walltime,
+  //debug_print("CUDA Link Completed in %fms. Linker Output:\n%s\n", Walltime,
+  //            InfoLog);
+
+  fprintf(stderr, "CUDA Link Completed in %fms. Linker Output:\n%s\n", Walltime,
               InfoLog);
+  
 
   Res = CuModuleLoadDataFcnPtr(&(((CUDAKernel *)Function->Kernel)->CudaModule),
                                CuOut);
