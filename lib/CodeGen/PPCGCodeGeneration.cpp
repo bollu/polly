@@ -61,7 +61,9 @@ extern "C" {
 using namespace polly;
 using namespace llvm;
 
-static const bool USE_ASSUMPTIONS_IN_PPCG_CONTEXT = false;
+// Use assumptions to set lower and upper bounds.
+static const bool USE_ASSUMPTIONS_IN_PPCG_CONTEXT = true;
+// Set all parameters to constant values (this is stupid, don't use).
 static const bool SET_PARAMS_TO_CONSTANT = false;
 
 #define DEBUG_TYPE "polly-codegen-ppcg"
