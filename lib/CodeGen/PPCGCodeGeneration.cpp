@@ -63,6 +63,7 @@ using namespace llvm;
 
 // Use assumptions to set lower and upper bounds.
 static const bool USE_ASSUMPTIONS_IN_PPCG_CONTEXT = true;
+static const int LB_VAL = 0, UB_VAL = 50000;
 // Set all parameters to constant values (this is stupid, don't use).
 static const bool SET_PARAMS_TO_CONSTANT = false;
 
@@ -3451,7 +3452,6 @@ public:
             }
             else {
                 isl_constraint *LB = isl_inequality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
-                const int LB_VAL = 0, UB_VAL = 100;
                 LB = isl_constraint_set_constant_si(LB, LB_VAL);
                 LB = isl_constraint_set_coefficient_si(LB, isl_dim_param, i, 1);
                 if (USE_ASSUMPTIONS_IN_PPCG_CONTEXT) {
