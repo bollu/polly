@@ -1276,9 +1276,43 @@ static void freeKernelCUDA(PollyGPUFunction *Kernel) {
     free(Kernel);
 }
 
+
+void hackDumpKernelPTX(const char *BinaryBuffer, 
+        const char *KernelName) {
+
+    char filename[512];
+    strcpy(filename, "polly_kernel_dump_ptx_");
+    // Check that we don't go out of bounds
+    const unsigned SAFETY = 100;
+    assert(strlen(KernelName) + strlen(filename) + SAFETY < 512 && "overflow in file name");
+    strcat(filename, KernelName);
+
+    FILE *fp = fopen(filename, "wb");
+    assert(fp != NULL && "unable to open file");
+    fwrite(BinaryBuffer, strlen(BinaryBuffer), 1, fp);
+    fclose(fp);
+
+
+}
+
+void hackDumpCubin(void *cubinOut, size_t size, const char *KernelName) {
+    char filename[512];
+    strcpy(filename, "polly_kernel_dump_ptx_");
+    // Check that we don't go out of bounds
+    const unsigned SAFETY = 100;
+    assert(strlen(KernelName) + strlen(filename) + SAFETY < 512 && "overflow in file name");
+    strcat(filename, KernelName);
+
+    FILE *fp = fopen(filename, "wb");
+    assert(fp != NULL && "unable to open file");
+    fwrite(cubinOut, size, 1, fp);
+    fclose(fp);
+
+}
 static PollyGPUFunction *getKernelCUDA(const char *BinaryBuffer,
                                        const char *KernelName) {
   dump_function();
+
 
   static __thread PollyGPUFunction *KernelCache[KERNEL_CACHE_SIZE];
   static __thread int NextCacheItem = 0;
@@ -1293,6 +1327,8 @@ static PollyGPUFunction *getKernelCUDA(const char *BinaryBuffer,
       return KernelCache[i];
     }
   }
+
+  // hackDumpKernelPTX(BinaryBuffer, KernelName);
 
   PollyGPUFunction *Function = malloc(sizeof(PollyGPUFunction));
   if (Function == 0) {
@@ -1351,6 +1387,7 @@ static PollyGPUFunction *getKernelCUDA(const char *BinaryBuffer,
     fprintf(stderr, "\n%s\n", ErrorLog);
     exit(-1);
   }
+  // hackDumpCubin(CuOut, OutSize, KernelName);
 
   //debug_print("CUDA Link Completed in %fms. Linker Output:\n%s\n", Walltime,
   //            InfoLog);
