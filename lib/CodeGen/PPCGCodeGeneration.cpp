@@ -46,6 +46,8 @@
 
 #include "polly/Support/ISLOStream.h"
 #include "isl/union_map.h"
+#include <iostream>
+#include <fstream>
 
 
 extern "C" {
@@ -62,7 +64,10 @@ using namespace polly;
 using namespace llvm;
 
 // Use assumptions to set lower and upper bounds.
-static const bool USE_ASSUMPTIONS_IN_PPCG_CONTEXT = true;
+static bool useAssumptionsInContext(const Scop &S) {
+    return S.getFunction().getName() != "__radiation_rg_org_MOD_radiation_rg_organize";
+}
+
 static const int LB_VAL = 0, UB_VAL = 50000;
 // Set all parameters to constant values (this is stupid, don't use).
 static const bool SET_PARAMS_TO_CONSTANT = false;
@@ -150,7 +155,7 @@ static cl::opt<std::string> CUDALibDevice(
 static cl::opt<std::string>
     CudaVersion("polly-acc-cuda-version",
                 cl::desc("The CUDA version to compile for"), cl::Hidden,
-                cl::init("sm_30"), cl::ZeroOrMore, cl::cat(PollyCategory));
+                cl::init("sm_60"), cl::ZeroOrMore, cl::cat(PollyCategory));
 
 static cl::opt<int>
     MinCompute("polly-acc-mincompute",
@@ -2466,6 +2471,7 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
       if (!isa<PointerType>(FT->getParamType(i))) continue;
       FN->addParamAttr(i, llvm::Attribute::NonNull);
       FN->addParamAttr(i, llvm::Attribute::NoCapture);
+      FN->addParamAttr(i, llvm::Attribute::NoAlias);
   }
 
   std::vector<Metadata *> EmptyStrings;
@@ -3186,8 +3192,14 @@ std::string GPUNodeBuilder::finalizeKernelFunction() {
 
   std::string Assembly = createKernelASM();
 
-  if (DumpKernelASM)
+  if (DumpKernelASM) {
     dbgs() << Assembly << "\n";
+    std::ofstream asmfile;
+    const std::string filename = std::string(this->S.getFunction().getName()) + "_asm.ptx";
+    asmfile.open(filename.c_str());
+    asmfile << Assembly;
+    asmfile.close();
+  }
 
   GPUModule.release();
   KernelIDs.clear();
@@ -3454,7 +3466,7 @@ public:
                 isl_constraint *LB = isl_inequality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
                 LB = isl_constraint_set_constant_si(LB, LB_VAL);
                 LB = isl_constraint_set_coefficient_si(LB, isl_dim_param, i, 1);
-                if (USE_ASSUMPTIONS_IN_PPCG_CONTEXT) {
+                if (useAssumptionsInContext(*S)) {
                     PPCGScop->context = isl_set_add_constraint(PPCGScop->context, LB);
                     dbgs() << " *** NOT ADDING LOWER BOUND ***\n";
                 } else {
@@ -3466,7 +3478,7 @@ public:
                 isl_constraint *UB = isl_inequality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
                 UB = isl_constraint_set_constant_si(UB, UB_VAL);
                 UB = isl_constraint_set_coefficient_si(UB, isl_dim_param, i, -1);
-                if (USE_ASSUMPTIONS_IN_PPCG_CONTEXT) {
+                if (useAssumptionsInContext(*S)) {
                     PPCGScop->context = isl_set_add_constraint(PPCGScop->context, UB);
                 }
                 else {
@@ -3490,7 +3502,7 @@ public:
             // isl_set_foreach_constraint(ParamSet, AddConstraintToSet, (void *)PPCGScop->Context);
             ParamSet = ParamSet.align_params(isl::manage(isl_set_get_space(PPCGScop->context)));
             dbgs() << "*** NOT ADDING ASSUMPTION THAT ALL LOOPS ARE NON-EMPTY\n";
-            if (USE_ASSUMPTIONS_IN_PPCG_CONTEXT) {
+            if (useAssumptionsInContext(*S)) {
                 PPCGScop->context = isl_set_intersect_params(PPCGScop->context, ParamSet.release());
             }
         }
