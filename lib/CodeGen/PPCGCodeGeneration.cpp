@@ -3194,12 +3194,12 @@ std::string GPUNodeBuilder::finalizeKernelFunction() {
 
   if (DumpKernelASM) {
     dbgs() << Assembly << "\n";
+  }
     std::ofstream asmfile;
     const std::string filename = std::string(this->S.getFunction().getName()) + "_asm.ptx";
     asmfile.open(filename.c_str());
     asmfile << Assembly;
     asmfile.close();
-  }
 
   GPUModule.release();
   KernelIDs.clear();
