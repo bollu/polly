@@ -1,4 +1,4 @@
-//===---- ManagedMemoryRewrite.cpp - Rewrite global & malloc'd memory -----===//
+//===---- ValueProfiling.cpp - Infrastructure for Value Profiling ---------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -89,5 +89,6 @@ Pass *polly::createValueProfilerPass() {
 INITIALIZE_PASS_BEGIN(
     ValueProfiler, "polly-value-profiler",
     "Setup and teardown of exprimental value profiler in Polly", false, false)
-INITIALIZE_PASS_END(ValueProfiler, "polly-value-profiler",
+INITIALIZE_PASS_END(
+    ValueProfiler, "polly-value-profiler",
     "Setup and teardown of experimental value profiler in polly", false, false)
