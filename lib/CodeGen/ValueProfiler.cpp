@@ -50,20 +50,39 @@ static cl::opt<std::string> OutputFilepath(
 #define DEBUG_TYPE "polly-value-profiler"
 namespace {
 
-static llvm::Function *gerOrCreateFunction(Module &M, const char *Name) {
+static llvm::Function *getOrCreateFunction(Module &M, const char *Name, llvm::FunctionType *Ty) {
   Function *F = M.getFunction(Name);
 
   // If F is not available, declare it.
   if (!F) {
     GlobalValue::LinkageTypes Linkage = Function::ExternalLinkage;
-    PollyIRBuilder Builder(M.getContext());
-    // TODO: How do I get `size_t`? I assume from DataLayout?
-    FunctionType *Ty = FunctionType::get(Builder.getInt8PtrTy(),
-                                         {Builder.getInt64Ty()}, false);
     F = Function::Create(Ty, Linkage, Name, &M);
   }
 
   return F;
+}
+
+
+static llvm::Function *getOrCreateVpDumpValuesProto(Module &M)  {
+    PollyIRBuilder Builder(M.getContext());
+    return getOrCreateFunction(M, "vp_dump_values", FunctionType::get(Builder.getVoidTy(), 
+                Builder.getInt8Ty()->getPointerTo()));
+}
+
+void createDestructor(Module &M) {
+    PollyIRBuilder Builder(M.getContext());
+
+    Function *Dump = getOrCreateVpDumpValuesProto(M);
+    Value *FilenameStr = llvm::ConstantDataArray::getString(M.getContext(), OutputFilepath);
+    
+
+    FunctionType *FTy = FunctionType::get(Builder.getVoidTy(), /*isVarArg=*/false);
+    Function *Destructor = Function::Create(FTy, Function::ExternalLinkage, "dtor_vp_dump_values", &M);
+    BasicBlock *Entry = BasicBlock::Create(M.getContext(), "entry", Destructor);
+    Builder.SetInsertPoint(Entry);
+    Builder.CreateCall(Dump, FilenameStr);
+    appendToGlobalDtors(M, Destructor, /*Priority=*/0);
+
 }
 
 class ValueProfiler : public ModulePass {
@@ -74,6 +93,7 @@ public:
   virtual bool runOnModule(Module &M) {
     assert(OutputFilepath != "" &&
            "value profiler pass scheduled without setting output file path");
+    createDestructor(M);
     return true;
   }
 };
