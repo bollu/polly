@@ -50,6 +50,7 @@ llvm::Pass *createScopInfoWrapperPassPass();
 llvm::Pass *createRewriteByrefParamsPass();
 llvm::Pass *createIslAstInfoWrapperPassPass();
 llvm::Pass *createCodeGenerationPass();
+llvm::Pass *createValueProfilerPass();
 #ifdef GPU_CODEGEN
 llvm::Pass *createPPCGCodeGenerationPass(GPUArch Arch = GPUArch::NVPTX64,
                                          GPURuntime Runtime = GPURuntime::CUDA);
@@ -91,6 +92,7 @@ struct PollyForcePassLinking {
     polly::createPolyhedralInfoPass();
     polly::createIslAstInfoWrapperPassPass();
     polly::createCodeGenerationPass();
+    polly::createValueProfilerPass();
 #ifdef GPU_CODEGEN
     polly::createPPCGCodeGenerationPass();
     polly::createManagedMemoryRewritePassPass();
@@ -125,6 +127,7 @@ void initializeMaximalStaticExpanderPass(llvm::PassRegistry &);
 void initializePollyCanonicalizePass(llvm::PassRegistry &);
 void initializeFlattenSchedulePass(llvm::PassRegistry &);
 void initializeDeLICMPass(llvm::PassRegistry &);
+void initializeValueProfilerPass(llvm::PassRegistry &);
 } // namespace llvm
 
 #endif
