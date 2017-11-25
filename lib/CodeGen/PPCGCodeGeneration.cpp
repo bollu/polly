@@ -65,7 +65,8 @@ using namespace llvm;
 
 // Use assumptions to set lower and upper bounds.
 static bool useAssumptionsInContext(const Scop &S) {
-    return S.getFunction().getName() != "__radiation_rg_org_MOD_radiation_rg_organize";
+    return false;
+    //return S.getFunction().getName() != "__radiation_rg_org_MOD_radiation_rg_organize";
 }
 
 static const int LB_VAL = 0, UB_VAL = 50000;
@@ -2701,19 +2702,11 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
                     Arg->getType()->getPointerAddressSpace());
             NewBasePtr = Builder.CreateBitCast(
                     Arg, NewTy, Arg->getName() + "_hack_load_for_blockgen");
-
-            /// dbgs() << __FUNCTION__ <<  "Remapped old: " << SAI->getBasePtr()->getName() << " to: " << *NewBasePtr << "\n";
         } else {
-            //dbgs() << "SAI->getBasePtr(): " << *SAI->getBasePtr() << "\n";
-            //dbgs() << "SAI: "; SAI->dump(); dbgs() << "\n";
             report_fatal_error(" I did not think about this case yet.");
 
         }
-        // dbgs() << __LINE__ <<  "|Mapping: " << SAI->getBasePtr() << " => " << NewBasePtr << "\n";
         ValueMap[SAI->getBasePtr()] = NewBasePtr;
-     }
-     else {
-        // dbgs() << __LINE__ <<  "|Mapping: " << SAI->getBasePtr() << " => " << Arg << "\n";
      }
 
     if (SAI->getNumberOfDimensions() > 0) {
@@ -3455,39 +3448,30 @@ public:
             isl_id *ParamId = isl_set_get_dim_id(PPCGScop->context, isl_dim_param, i);
             isl_id_free(ParamId);
 
-            if (SET_PARAMS_TO_CONSTANT)  {
-                static const int EQUALITY_VAL = 100;
-                isl_constraint *EQ = isl_equality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
-                EQ = isl_constraint_set_constant_si(EQ, EQUALITY_VAL);
-                EQ = isl_constraint_set_coefficient_si(EQ, isl_dim_param, i, 1);
-                isl_set_add_constraint(PPCGScop->context, EQ);
+            isl_constraint *LB = isl_inequality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
+            LB = isl_constraint_set_constant_si(LB, LB_VAL);
+            LB = isl_constraint_set_coefficient_si(LB, isl_dim_param, i, 1);
+            if (useAssumptionsInContext(*S)) {
+                PPCGScop->context = isl_set_add_constraint(PPCGScop->context, LB);
+            } else {
+                dbgs() << " *** NOT ADDING LOWER BOUND ***\n";
+                isl_constraint_free(LB);
+            }
+
+            assert(!isl_set_is_empty(PPCGScop->context) && "context empty after adding LB");
+
+            isl_constraint *UB = isl_inequality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
+            UB = isl_constraint_set_constant_si(UB, UB_VAL);
+            UB = isl_constraint_set_coefficient_si(UB, isl_dim_param, i, -1);
+            if (useAssumptionsInContext(*S)) {
+                PPCGScop->context = isl_set_add_constraint(PPCGScop->context, UB);
             }
             else {
-                isl_constraint *LB = isl_inequality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
-                LB = isl_constraint_set_constant_si(LB, LB_VAL);
-                LB = isl_constraint_set_coefficient_si(LB, isl_dim_param, i, 1);
-                if (useAssumptionsInContext(*S)) {
-                    PPCGScop->context = isl_set_add_constraint(PPCGScop->context, LB);
-                    dbgs() << " *** NOT ADDING LOWER BOUND ***\n";
-                } else {
-                    isl_constraint_free(LB);
-                }
-
-                assert(!isl_set_is_empty(PPCGScop->context) && "context empty after adding LB");
-
-                isl_constraint *UB = isl_inequality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
-                UB = isl_constraint_set_constant_si(UB, UB_VAL);
-                UB = isl_constraint_set_coefficient_si(UB, isl_dim_param, i, -1);
-                if (useAssumptionsInContext(*S)) {
-                    PPCGScop->context = isl_set_add_constraint(PPCGScop->context, UB);
-                }
-                else {
-                    dbgs() << " *** NOT ADDING  UPPER BOUND ***\n";
-                    isl_constraint_free(UB);
-                }
-
-                assert(!isl_set_is_empty(PPCGScop->context) && "context empty after adding UB");
+                dbgs() << " *** NOT ADDING  UPPER BOUND ***\n";
+                isl_constraint_free(UB);
             }
+
+            assert(!isl_set_is_empty(PPCGScop->context) && "context empty after adding UB");
         }
 
         // Add all constraints from the domain of each scopstmt into the context.
@@ -3505,8 +3489,8 @@ public:
             if (useAssumptionsInContext(*S)) {
                 PPCGScop->context = isl_set_intersect_params(PPCGScop->context, ParamSet.release());
             }
+            assert(!isl_set_is_empty(PPCGScop->context) && "context empty after adding UB");
         }
-        assert(!isl_set_is_empty(PPCGScop->context) && "context empty after adding UB");
         dbgs() << "DONE SETTING UPPER AND LOWER BOUND FOR PARAMS\n";
     }
 
