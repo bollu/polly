@@ -63,9 +63,15 @@ extern "C" {
 using namespace polly;
 using namespace llvm;
 
+enum PollyAssumptionsKind {
+    PAK_NonemptyLoops = 1,
+    PAK_ContextLowerBound = 2,
+    PAK_ContextUpperBound = 4
+};
+
 // Use assumptions to set lower and upper bounds.
-static bool useAssumptionsInContext(const Scop &S) {
-    return false;
+static PollyAssumptionsKind useAssumptionsInContext(const Scop &S) {
+    return PAK_NonemptyLoops;
     //return S.getFunction().getName() != "__radiation_rg_org_MOD_radiation_rg_organize";
 }
 
@@ -3451,7 +3457,7 @@ public:
             isl_constraint *LB = isl_inequality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
             LB = isl_constraint_set_constant_si(LB, LB_VAL);
             LB = isl_constraint_set_coefficient_si(LB, isl_dim_param, i, 1);
-            if (useAssumptionsInContext(*S)) {
+            if (useAssumptionsInContext(*S) & PAK_ContextLowerBound) {
                 PPCGScop->context = isl_set_add_constraint(PPCGScop->context, LB);
             } else {
                 dbgs() << " *** NOT ADDING LOWER BOUND ***\n";
@@ -3463,7 +3469,7 @@ public:
             isl_constraint *UB = isl_inequality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
             UB = isl_constraint_set_constant_si(UB, UB_VAL);
             UB = isl_constraint_set_coefficient_si(UB, isl_dim_param, i, -1);
-            if (useAssumptionsInContext(*S)) {
+            if (useAssumptionsInContext(*S) & PAK_ContextUpperBound) {
                 PPCGScop->context = isl_set_add_constraint(PPCGScop->context, UB);
             }
             else {
@@ -3485,9 +3491,11 @@ public:
             
             // isl_set_foreach_constraint(ParamSet, AddConstraintToSet, (void *)PPCGScop->Context);
             ParamSet = ParamSet.align_params(isl::manage(isl_set_get_space(PPCGScop->context)));
-            dbgs() << "*** NOT ADDING ASSUMPTION THAT ALL LOOPS ARE NON-EMPTY\n";
-            if (useAssumptionsInContext(*S)) {
+            if (useAssumptionsInContext(*S) & PAK_NonemptyLoops) {
                 PPCGScop->context = isl_set_intersect_params(PPCGScop->context, ParamSet.release());
+            }
+            else {
+                dbgs() << "*** NOT ADDING ASSUMPTION THAT ALL LOOPS ARE NON-EMPTY\n";
             }
             assert(!isl_set_is_empty(PPCGScop->context) && "context empty after adding UB");
         }
