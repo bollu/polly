@@ -64,15 +64,18 @@ using namespace polly;
 using namespace llvm;
 
 enum PollyAssumptionsKind {
+    PAK_None = 0,
     PAK_NonemptyLoops = 1,
     PAK_ContextLowerBound = 2,
     PAK_ContextUpperBound = 4
 };
 
 // Use assumptions to set lower and upper bounds.
+// We cannot assume that all loops are nonempty, this is bad for performance.
 static PollyAssumptionsKind useAssumptionsInContext(const Scop &S) {
-    return PAK_NonemptyLoops;
-    //return S.getFunction().getName() != "__radiation_rg_org_MOD_radiation_rg_organize";
+   if (S.getFunction().getName() == "__radiation_rg_org_MOD_radiation_rg_organize")
+       return PAK_None; 
+   return PAK_None;
 }
 
 static const int LB_VAL = 0, UB_VAL = 50000;
