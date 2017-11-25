@@ -174,6 +174,35 @@ static cl::opt<int>
 
 extern bool polly::PerfMonitoring;
 
+
+
+std::string exec(const char* cmd) {
+    std::array<char, 128> buffer;
+    std::string result;
+    std::shared_ptr<FILE> pipe(popen(cmd, "r"), pclose);
+    while (!feof(pipe.get())) {
+        if (fgets(buffer.data(), 128, pipe.get()) != nullptr)
+            result += buffer.data();
+    }
+    return result;
+}
+
+static std::vector<char> ReadAllBytes(char const* filename)
+{
+    using namespace std;
+    ifstream ifs(filename, ios::binary|ios::ate);
+    ifstream::pos_type pos = ifs.tellg();
+
+    std::vector<char>  result(pos);
+
+    ifs.seekg(0, ios::beg);
+    ifs.read(&result[0], pos);
+
+    return result;
+}
+
+
+
 /// Return  a unique name for a Scop, which is the scop region with the
 /// function name.
 std::string getUniqueScopName(const Scop *S) {
@@ -966,7 +995,7 @@ private:
   /// Create a PTX assembly string for the current GPU kernel.
   ///
   /// @returns A string containing the corresponding PTX assembly code.
-  std::string createKernelASM();
+  std::vector<char> createKernelASM();
 
   /// Remove references from the dominator tree to the kernel function @p F.
   ///
@@ -994,8 +1023,8 @@ private:
   /// Free the LLVM-IR module corresponding to the kernel and -- if requested
   /// -- dump its IR to stderr.
   ///
-  /// @returns The Assembly string of the kernel.
-  std::string finalizeKernelFunction();
+  /// @returns The cubin of the kernel.
+  std::vector<char> finalizeKernelFunction();
 
   /// Finalize the generation of the kernel arguments.
   ///
@@ -2315,7 +2344,7 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
   if (Arch == GPUArch::NVPTX64)
       addCUDAAnnotations(F->getParent(), BlockDimX, BlockDimY, BlockDimZ);
 
-  std::string ASMString = finalizeKernelFunction();
+  std::vector<char> ASMString = finalizeKernelFunction();
   Builder.SetInsertPoint(&HostInsertPoint);
   Value *Parameters;
 
@@ -2337,7 +2366,16 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
   //}
 
   std::string Name = getKernelFuncName(Kernel->id);
-  Value *KernelString = Builder.CreateGlobalStringPtr(ASMString, Name);
+
+  std::vector<uint8_t> elts;
+  for(char c : ASMString) elts.push_back(c);
+
+  Constant *KernelCubinConstant = ConstantDataArray::get(Builder.getContext(), elts);
+  GlobalVariable gv(*F->getParent(), KernelCubinConstant->getType()->getPointerTo(), true, llvm::GlobalValue::InternalLinkage, KernelCubinConstant, Name + "_cubin_data");
+  Value *zero = ConstantInt::get(Type::getInt32Ty(Builder.getContext()), 0);
+  Value *Args[] = { zero, zero };
+  Value *KernelString =  Builder.CreateInBoundsGEP(gv.getValueType(), &gv, Args, Name);
+
   Value *NameString = Builder.CreateGlobalStringPtr(Name, Name + "_name");
   Value *GPUKernel = createCallGetKernel(KernelString, NameString);
 
@@ -2958,7 +2996,7 @@ void GPUNodeBuilder::createKernelFunction(
   }
 }
 
-std::string GPUNodeBuilder::createKernelASM() {
+std::vector<char> GPUNodeBuilder::createKernelASM() {
   llvm::Triple GPUTriple;
 
   switch (Arch) {
@@ -2978,7 +3016,8 @@ std::string GPUNodeBuilder::createKernelASM() {
     raw_string_ostream IROstream(SPIRAssembly);
     IROstream << *GPUModule;
     IROstream.flush();
-    return SPIRAssembly;
+    assert(false && "should not reach here.");
+    return {};
   }
 
   std::string ErrMsg;
@@ -2986,7 +3025,7 @@ std::string GPUNodeBuilder::createKernelASM() {
 
   if (!GPUTarget) {
     dbgs() << ErrMsg << "\n";
-    return "";
+    return {};
   }
 
   TargetOptions Options;
@@ -3057,12 +3096,26 @@ std::string GPUNodeBuilder::createKernelASM() {
   if (TargetM->addPassesToEmitFile(
           PM, ASMStream, TargetMachine::CGFT_AssemblyFile, true /* verify */)) {
     dbgs() << "The target does not support generation of this file type!\n";
-    return "";
+    assert(false && "should not reach here");
+    return {};
   }
 
   PM.run(*GPUModule);
 
-  return ASMStream.str();
+  const std::string PTXString =  ASMStream.str();
+
+  std::ofstream asmfile;
+  const std::string ptxFilename = std::string(getUniqueScopName(&S)) + ".ptx";
+  asmfile.open(ptxFilename.c_str());
+  asmfile << PTXString;
+  asmfile.close();
+
+  const std::string cubinFilename = std::string(getUniqueScopName(&S)) + ".cubin";
+  const std::string nvccCubinCreateCommand = std::string("nvcc " + ptxFilename + " -arch " + CudaVersion + " -o" +  cubinFilename + "--resource-usage");
+  const std::string resourceUsage = exec(nvccCubinCreateCommand.c_str());
+  dbgs() << resourceUsage;
+
+  return ReadAllBytes(cubinFilename.c_str());
 }
 
 bool GPUNodeBuilder::requiresCUDALibDevice() {
@@ -3137,7 +3190,7 @@ void countNumUnusedParamsInFunction(Function *F) {
          << "numUnusedParams(after): " << numUnusedParams << "\n";
 }
 
-std::string GPUNodeBuilder::finalizeKernelFunction() {
+std::vector<char> GPUNodeBuilder::finalizeKernelFunction() {
   {
     // NOTE: We currently copy all uses of gfortran_polly_array_index.
     // However, these are unsused, but they refer to host side values
@@ -3164,7 +3217,7 @@ std::string GPUNodeBuilder::finalizeKernelFunction() {
       llvm_unreachable("VerifyModule failed.");
 
     BuildSuccessful = false;
-    return "";
+    return {};
   }
 
   addCUDALibDevice();
@@ -3192,16 +3245,9 @@ std::string GPUNodeBuilder::finalizeKernelFunction() {
     countNumUnusedParamsInFunction(&F);
   };
 
-  std::string Assembly = createKernelASM();
+  std::vector<char> Assembly = createKernelASM();
 
-  if (DumpKernelASM) {
-    dbgs() << Assembly << "\n";
-  }
-    std::ofstream asmfile;
-    const std::string filename = std::string(this->S.getFunction().getName()) + "_asm.ptx";
-    asmfile.open(filename.c_str());
-    asmfile << Assembly;
-    asmfile.close();
+
 
   GPUModule.release();
   KernelIDs.clear();
