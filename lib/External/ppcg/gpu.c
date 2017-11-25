@@ -3021,8 +3021,8 @@ static __isl_give isl_union_set *set_schedule_modulo(
 
 	mupa = isl_schedule_node_band_get_partial_schedule(node);
     // Do not even construct the modulo.
-	// mv = construct_band_tiles_sizes(node, size + n_zero);
-	// mupa = isl_multi_union_pw_aff_mod_multi_val(mupa, mv);
+	mv = construct_band_tiles_sizes(node, size + n_zero);
+	mupa = isl_multi_union_pw_aff_mod_multi_val(mupa, mv);
 
 	space = isl_multi_union_pw_aff_get_space(mupa);
 	space = isl_space_params(space);

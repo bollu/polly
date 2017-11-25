@@ -63,9 +63,19 @@ extern "C" {
 using namespace polly;
 using namespace llvm;
 
+enum PollyAssumptionsKind {
+    PAK_None = 0,
+    PAK_NonemptyLoops = 1,
+    PAK_ContextLowerBound = 2,
+    PAK_ContextUpperBound = 4
+};
+
 // Use assumptions to set lower and upper bounds.
-static bool useAssumptionsInContext(const Scop &S) {
-    return S.getFunction().getName() != "__radiation_rg_org_MOD_radiation_rg_organize";
+// We cannot assume that all loops are nonempty, this is bad for performance.
+static PollyAssumptionsKind useAssumptionsInContext(const Scop &S) {
+   if (S.getFunction().getName() == "__radiation_rg_org_MOD_radiation_rg_organize")
+       return PAK_None; 
+   return PAK_None;
 }
 
 static const int LB_VAL = 0, UB_VAL = 50000;
@@ -163,6 +173,35 @@ static cl::opt<int>
                cl::Hidden, cl::init(10 * 512 * 512));
 
 extern bool polly::PerfMonitoring;
+
+
+
+std::string exec(const char* cmd) {
+    std::array<char, 128> buffer;
+    std::string result;
+    std::shared_ptr<FILE> pipe(popen(cmd, "r"), pclose);
+    while (!feof(pipe.get())) {
+        if (fgets(buffer.data(), 128, pipe.get()) != nullptr)
+            result += buffer.data();
+    }
+    return result;
+}
+
+static std::vector<char> ReadAllBytes(char const* filename)
+{
+    using namespace std;
+    ifstream ifs(filename, ios::binary|ios::ate);
+    ifstream::pos_type pos = ifs.tellg();
+
+    std::vector<char>  result(pos);
+
+    ifs.seekg(0, ios::beg);
+    ifs.read(&result[0], pos);
+
+    return result;
+}
+
+
 
 /// Return  a unique name for a Scop, which is the scop region with the
 /// function name.
@@ -956,7 +995,7 @@ private:
   /// Create a PTX assembly string for the current GPU kernel.
   ///
   /// @returns A string containing the corresponding PTX assembly code.
-  std::string createKernelASM();
+  std::vector<char> createKernelASM(std::string kernelFunctionName);
 
   /// Remove references from the dominator tree to the kernel function @p F.
   ///
@@ -984,8 +1023,8 @@ private:
   /// Free the LLVM-IR module corresponding to the kernel and -- if requested
   /// -- dump its IR to stderr.
   ///
-  /// @returns The Assembly string of the kernel.
-  std::string finalizeKernelFunction();
+  /// @returns The cubin of the kernel.
+  std::vector<char> finalizeKernelFunction(std::string kernelFunctionName);
 
   /// Finalize the generation of the kernel arguments.
   ///
@@ -2305,7 +2344,7 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
   if (Arch == GPUArch::NVPTX64)
       addCUDAAnnotations(F->getParent(), BlockDimX, BlockDimY, BlockDimZ);
 
-  std::string ASMString = finalizeKernelFunction();
+  std::vector<char> ASMString = finalizeKernelFunction(F->getName());
   Builder.SetInsertPoint(&HostInsertPoint);
   Value *Parameters;
 
@@ -2327,7 +2366,20 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
   //}
 
   std::string Name = getKernelFuncName(Kernel->id);
-  Value *KernelString = Builder.CreateGlobalStringPtr(ASMString, Name);
+
+  Value *KernelString = [&] {
+      std::vector<uint8_t> elts;
+      for(char c : ASMString) elts.push_back(c);
+
+      Constant *KernelCubinConstant = ConstantDataArray::get(Builder.getContext(), elts);
+      GlobalVariable *gv = new GlobalVariable(*HostInsertPoint.getModule(),  KernelCubinConstant->getType(), true, llvm::GlobalValue::InternalLinkage, KernelCubinConstant, Name + "_cubin_data");
+      Value *zero = ConstantInt::get(Type::getInt32Ty(Builder.getContext()), 0);
+      Value *Args[] = { zero, zero };
+      return Builder.CreateInBoundsGEP(gv->getValueType(), gv, Args, Name);
+  }();
+
+errs() << "KernelString: " << *KernelString << "\n";
+
   Value *NameString = Builder.CreateGlobalStringPtr(Name, Name + "_name");
   Value *GPUKernel = createCallGetKernel(KernelString, NameString);
 
@@ -2701,19 +2753,11 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
                     Arg->getType()->getPointerAddressSpace());
             NewBasePtr = Builder.CreateBitCast(
                     Arg, NewTy, Arg->getName() + "_hack_load_for_blockgen");
-
-            /// dbgs() << __FUNCTION__ <<  "Remapped old: " << SAI->getBasePtr()->getName() << " to: " << *NewBasePtr << "\n";
         } else {
-            //dbgs() << "SAI->getBasePtr(): " << *SAI->getBasePtr() << "\n";
-            //dbgs() << "SAI: "; SAI->dump(); dbgs() << "\n";
             report_fatal_error(" I did not think about this case yet.");
 
         }
-        // dbgs() << __LINE__ <<  "|Mapping: " << SAI->getBasePtr() << " => " << NewBasePtr << "\n";
         ValueMap[SAI->getBasePtr()] = NewBasePtr;
-     }
-     else {
-        // dbgs() << __LINE__ <<  "|Mapping: " << SAI->getBasePtr() << " => " << Arg << "\n";
      }
 
     if (SAI->getNumberOfDimensions() > 0) {
@@ -2956,7 +3000,7 @@ void GPUNodeBuilder::createKernelFunction(
   }
 }
 
-std::string GPUNodeBuilder::createKernelASM() {
+std::vector<char> GPUNodeBuilder::createKernelASM(std::string kernelFunctionName) {
   llvm::Triple GPUTriple;
 
   switch (Arch) {
@@ -2976,7 +3020,8 @@ std::string GPUNodeBuilder::createKernelASM() {
     raw_string_ostream IROstream(SPIRAssembly);
     IROstream << *GPUModule;
     IROstream.flush();
-    return SPIRAssembly;
+    assert(false && "should not reach here.");
+    return {};
   }
 
   std::string ErrMsg;
@@ -2984,7 +3029,7 @@ std::string GPUNodeBuilder::createKernelASM() {
 
   if (!GPUTarget) {
     dbgs() << ErrMsg << "\n";
-    return "";
+    return {};
   }
 
   TargetOptions Options;
@@ -3055,12 +3100,27 @@ std::string GPUNodeBuilder::createKernelASM() {
   if (TargetM->addPassesToEmitFile(
           PM, ASMStream, TargetMachine::CGFT_AssemblyFile, true /* verify */)) {
     dbgs() << "The target does not support generation of this file type!\n";
-    return "";
+    assert(false && "should not reach here");
+    return {};
   }
 
   PM.run(*GPUModule);
 
-  return ASMStream.str();
+  const std::string PTXString =  ASMStream.str();
+
+  std::ofstream asmfile;
+  const std::string ptxFilename = kernelFunctionName + ".ptx";
+  asmfile.open(ptxFilename.c_str());
+  asmfile << PTXString;
+  asmfile.close();
+
+  const std::string cubinFilename = kernelFunctionName + "_dump_cubin.cubin";
+  const std::string nvccCubinCreateCommand = std::string("nvcc --cubin " + ptxFilename + " -arch " + CudaVersion + " -o " +  cubinFilename + " --resource-usage");
+  errs() << "Running NVCC Command: " << nvccCubinCreateCommand << "\b";
+  const std::string resourceUsage = exec(nvccCubinCreateCommand.c_str());
+  dbgs() << resourceUsage;
+
+  return ReadAllBytes(cubinFilename.c_str());
 }
 
 bool GPUNodeBuilder::requiresCUDALibDevice() {
@@ -3135,7 +3195,7 @@ void countNumUnusedParamsInFunction(Function *F) {
          << "numUnusedParams(after): " << numUnusedParams << "\n";
 }
 
-std::string GPUNodeBuilder::finalizeKernelFunction() {
+std::vector<char> GPUNodeBuilder::finalizeKernelFunction(std::string kernelFunctionName) {
   {
     // NOTE: We currently copy all uses of gfortran_polly_array_index.
     // However, these are unsused, but they refer to host side values
@@ -3162,7 +3222,7 @@ std::string GPUNodeBuilder::finalizeKernelFunction() {
       llvm_unreachable("VerifyModule failed.");
 
     BuildSuccessful = false;
-    return "";
+    return {};
   }
 
   addCUDALibDevice();
@@ -3190,16 +3250,9 @@ std::string GPUNodeBuilder::finalizeKernelFunction() {
     countNumUnusedParamsInFunction(&F);
   };
 
-  std::string Assembly = createKernelASM();
+  std::vector<char> Assembly = createKernelASM(kernelFunctionName);
 
-  if (DumpKernelASM) {
-    dbgs() << Assembly << "\n";
-  }
-    std::ofstream asmfile;
-    const std::string filename = std::string(this->S.getFunction().getName()) + "_asm.ptx";
-    asmfile.open(filename.c_str());
-    asmfile << Assembly;
-    asmfile.close();
+
 
   GPUModule.release();
   KernelIDs.clear();
@@ -3455,39 +3508,30 @@ public:
             isl_id *ParamId = isl_set_get_dim_id(PPCGScop->context, isl_dim_param, i);
             isl_id_free(ParamId);
 
-            if (SET_PARAMS_TO_CONSTANT)  {
-                static const int EQUALITY_VAL = 100;
-                isl_constraint *EQ = isl_equality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
-                EQ = isl_constraint_set_constant_si(EQ, EQUALITY_VAL);
-                EQ = isl_constraint_set_coefficient_si(EQ, isl_dim_param, i, 1);
-                isl_set_add_constraint(PPCGScop->context, EQ);
+            isl_constraint *LB = isl_inequality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
+            LB = isl_constraint_set_constant_si(LB, LB_VAL);
+            LB = isl_constraint_set_coefficient_si(LB, isl_dim_param, i, 1);
+            if (useAssumptionsInContext(*S) & PAK_ContextLowerBound) {
+                PPCGScop->context = isl_set_add_constraint(PPCGScop->context, LB);
+            } else {
+                dbgs() << " *** NOT ADDING LOWER BOUND ***\n";
+                isl_constraint_free(LB);
+            }
+
+            assert(!isl_set_is_empty(PPCGScop->context) && "context empty after adding LB");
+
+            isl_constraint *UB = isl_inequality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
+            UB = isl_constraint_set_constant_si(UB, UB_VAL);
+            UB = isl_constraint_set_coefficient_si(UB, isl_dim_param, i, -1);
+            if (useAssumptionsInContext(*S) & PAK_ContextUpperBound) {
+                PPCGScop->context = isl_set_add_constraint(PPCGScop->context, UB);
             }
             else {
-                isl_constraint *LB = isl_inequality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
-                LB = isl_constraint_set_constant_si(LB, LB_VAL);
-                LB = isl_constraint_set_coefficient_si(LB, isl_dim_param, i, 1);
-                if (useAssumptionsInContext(*S)) {
-                    PPCGScop->context = isl_set_add_constraint(PPCGScop->context, LB);
-                    dbgs() << " *** NOT ADDING LOWER BOUND ***\n";
-                } else {
-                    isl_constraint_free(LB);
-                }
-
-                assert(!isl_set_is_empty(PPCGScop->context) && "context empty after adding LB");
-
-                isl_constraint *UB = isl_inequality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
-                UB = isl_constraint_set_constant_si(UB, UB_VAL);
-                UB = isl_constraint_set_coefficient_si(UB, isl_dim_param, i, -1);
-                if (useAssumptionsInContext(*S)) {
-                    PPCGScop->context = isl_set_add_constraint(PPCGScop->context, UB);
-                }
-                else {
-                    dbgs() << " *** NOT ADDING  UPPER BOUND ***\n";
-                    isl_constraint_free(UB);
-                }
-
-                assert(!isl_set_is_empty(PPCGScop->context) && "context empty after adding UB");
+                dbgs() << " *** NOT ADDING  UPPER BOUND ***\n";
+                isl_constraint_free(UB);
             }
+
+            assert(!isl_set_is_empty(PPCGScop->context) && "context empty after adding UB");
         }
 
         // Add all constraints from the domain of each scopstmt into the context.
@@ -3501,12 +3545,14 @@ public:
             
             // isl_set_foreach_constraint(ParamSet, AddConstraintToSet, (void *)PPCGScop->Context);
             ParamSet = ParamSet.align_params(isl::manage(isl_set_get_space(PPCGScop->context)));
-            dbgs() << "*** NOT ADDING ASSUMPTION THAT ALL LOOPS ARE NON-EMPTY\n";
-            if (useAssumptionsInContext(*S)) {
+            if (useAssumptionsInContext(*S) & PAK_NonemptyLoops) {
                 PPCGScop->context = isl_set_intersect_params(PPCGScop->context, ParamSet.release());
             }
+            else {
+                dbgs() << "*** NOT ADDING ASSUMPTION THAT ALL LOOPS ARE NON-EMPTY\n";
+            }
+            assert(!isl_set_is_empty(PPCGScop->context) && "context empty after adding UB");
         }
-        assert(!isl_set_is_empty(PPCGScop->context) && "context empty after adding UB");
         dbgs() << "DONE SETTING UPPER AND LOWER BOUND FOR PARAMS\n";
     }
 

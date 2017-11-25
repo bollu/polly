@@ -1341,67 +1341,68 @@ static PollyGPUFunction *getKernelCUDA(const char *BinaryBuffer,
     exit(-1);
   }
 
-  CUresult Res;
-  CUlinkState LState;
-  CUjit_option Options[6];
-  void *OptionVals[6];
-  float Walltime = 0;
-  unsigned long LogSize = 8192;
-  char ErrorLog[8192], InfoLog[8192];
-  void *CuOut;
-  size_t OutSize;
+   CUresult Res;
+   // CUlinkState LState;
+   // CUjit_option Options[6];
+   // void *OptionVals[6];
+   // float Walltime = 0;
+   // unsigned long LogSize = 8192;
+   // char ErrorLog[8192], InfoLog[8192];
+   // void *CuOut;
+   // size_t OutSize;
 
-  // Setup linker options
-  // Return walltime from JIT compilation
-  Options[0] = CU_JIT_WALL_TIME;
-  OptionVals[0] = (void *)&Walltime;
-  // Pass a buffer for info messages
-  Options[1] = CU_JIT_INFO_LOG_BUFFER;
-  OptionVals[1] = (void *)InfoLog;
-  // Pass the size of the info buffer
-  Options[2] = CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES;
-  OptionVals[2] = (void *)LogSize;
-  // Pass a buffer for error message
-  Options[3] = CU_JIT_ERROR_LOG_BUFFER;
-  OptionVals[3] = (void *)ErrorLog;
-  // Pass the size of the error buffer
-  Options[4] = CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES;
-  OptionVals[4] = (void *)LogSize;
-  // Make the linker verbose
-  Options[5] = CU_JIT_LOG_VERBOSE;
-  OptionVals[5] = (void *)1;
+   // // Setup linker options
+   // // Return walltime from JIT compilation
+   // Options[0] = CU_JIT_WALL_TIME;
+   // OptionVals[0] = (void *)&Walltime;
+   // // Pass a buffer for info messages
+   // Options[1] = CU_JIT_INFO_LOG_BUFFER;
+   // OptionVals[1] = (void *)InfoLog;
+   // // Pass the size of the info buffer
+   // Options[2] = CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES;
+   // OptionVals[2] = (void *)LogSize;
+   // // Pass a buffer for error message
+   // Options[3] = CU_JIT_ERROR_LOG_BUFFER;
+   // OptionVals[3] = (void *)ErrorLog;
+   // // Pass the size of the error buffer
+   // Options[4] = CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES;
+   // OptionVals[4] = (void *)LogSize;
+   // // Make the linker verbose
+   // Options[5] = CU_JIT_LOG_VERBOSE;
+   // OptionVals[5] = (void *)1;
 
-  memset(ErrorLog, 0, sizeof(ErrorLog));
+   // memset(ErrorLog, 0, sizeof(ErrorLog));
 
-  CuLinkCreateFcnPtr(6, Options, OptionVals, &LState);
-  Res = CuLinkAddDataFcnPtr(LState, CU_JIT_INPUT_PTX, (void *)BinaryBuffer,
-                            strlen(BinaryBuffer) + 1, 0, 0, 0, 0);
-  if (Res != CUDA_SUCCESS) {
-    fprintf(stderr, "PTX Linker Error:\n%s\n%s", ErrorLog, InfoLog);
-    exit(-1);
-  }
+   // CuLinkCreateFcnPtr(6, Options, OptionVals, &LState);
+   // Res = CuLinkAddDataFcnPtr(LState, CU_JIT_INPUT_PTX, (void *)BinaryBuffer,
+   //                           strlen(BinaryBuffer) + 1, 0, 0, 0, 0);
+   // if (Res != CUDA_SUCCESS) {
+   //   fprintf(stderr, "PTX Linker Error:\n%s\n%s", ErrorLog, InfoLog);
+   //   exit(-1);
+   // }
 
-  Res = CuLinkCompleteFcnPtr(LState, &CuOut, &OutSize);
-  if (Res != CUDA_SUCCESS) {
-    fprintf(stderr, "Complete ptx linker step failed.\n");
-    fprintf(stderr, "\n%s\n", ErrorLog);
-    exit(-1);
-  }
+   // Res = CuLinkCompleteFcnPtr(LState, &CuOut, &OutSize);
+   // if (Res != CUDA_SUCCESS) {
+   //   fprintf(stderr, "Complete ptx linker step failed.\n");
+   //   fprintf(stderr, "\n%s\n", ErrorLog);
+   //   exit(-1);
+   // }
   // hackDumpCubin(CuOut, OutSize, KernelName);
 
   //debug_print("CUDA Link Completed in %fms. Linker Output:\n%s\n", Walltime,
   //            InfoLog);
 
-  fprintf(stderr, "CUDA Link Completed in %fms. Linker Output:\n%s\n", Walltime,
-              InfoLog);
-  
+  //fprintf(stderr, "CUDA Link Completed in %fms. Linker Output:\n%s\n", Walltime,
+  //            InfoLog);
+  //
 
+  void *CuOut = (void *)BinaryBuffer;
   Res = CuModuleLoadDataFcnPtr(&(((CUDAKernel *)Function->Kernel)->CudaModule),
                                CuOut);
-  if (Res != CUDA_SUCCESS) {
-    fprintf(stderr, "Loading ptx assembly text failed.\n");
-    exit(-1);
-  }
+  //if (Res != CUDA_SUCCESS) {
+  //  fprintf(stderr, "Loading ptx assembly text failed.\n");
+  //  exit(-1);
+  //}
 
   Res = CuModuleGetFunctionFcnPtr(&(((CUDAKernel *)Function->Kernel)->Cuda),
                                   ((CUDAKernel *)Function->Kernel)->CudaModule,
@@ -1411,7 +1412,7 @@ static PollyGPUFunction *getKernelCUDA(const char *BinaryBuffer,
     exit(-1);
   }
 
-  CuLinkDestroyFcnPtr(LState);
+  // CuLinkDestroyFcnPtr(LState);
 
   ((CUDAKernel *)Function->Kernel)->BinaryString = BinaryBuffer;
 
