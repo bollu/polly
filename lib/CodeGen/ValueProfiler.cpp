@@ -46,8 +46,9 @@ std::string polly::PollyValueProfilerInputFilepath;
 static cl::opt<std::string, true> XInputFilepath(
     "polly-value-profiler-input-filepath",
     cl::desc("file path of the JSON output from the value profiler"),
-    cl::Hidden, cl::init(""), cl::ZeroOrMore, cl::cat(PollyCategory), cl::location(polly::PollyValueProfilerInputFilepath));
-
+    cl::Hidden, cl::ZeroOrMore, cl::cat(PollyCategory),
+    cl::location(polly::PollyValueProfilerInputFilepath),
+    cl::init(""));
 
 static cl::opt<std::string> OutputFilepath(
     "polly-value-profiler-output-filepath",
@@ -57,7 +58,8 @@ static cl::opt<std::string> OutputFilepath(
 #define DEBUG_TYPE "polly-value-profiler"
 namespace {
 
-static llvm::Function *getOrCreateFunction(Module &M, const char *Name, llvm::FunctionType *Ty) {
+static llvm::Function *getOrCreateFunction(Module &M, const char *Name,
+                                           llvm::FunctionType *Ty) {
   Function *F = M.getFunction(Name);
 
   // If F is not available, declare it.
@@ -69,33 +71,45 @@ static llvm::Function *getOrCreateFunction(Module &M, const char *Name, llvm::Fu
   return F;
 }
 
+llvm::Function *getOrCreateVpProfileValueProto(llvm::Module &M) {
+  PollyIRBuilder Builder(M.getContext());
+  return getOrCreateFunction(
+      M, "vp_profile_value",
+      FunctionType::get(
+          Builder.getVoidTy(),
+          {Builder.getInt8Ty()->getPointerTo(), Builder.getInt64Ty()},
+          /*isVarArg=*/false));
+}
 
-static llvm::Function *getOrCreateVpDumpValuesProto(Module &M)  {
-    PollyIRBuilder Builder(M.getContext());
-    return getOrCreateFunction(M, "vp_dump_values", FunctionType::get(Builder.getVoidTy(), 
-                Builder.getInt8Ty()->getPointerTo(), /*isVarArg=*/false));
+static llvm::Function *getOrCreateVpDumpValuesProto(Module &M) {
+  PollyIRBuilder Builder(M.getContext());
+  return getOrCreateFunction(
+      M, "vp_dump_values",
+      FunctionType::get(Builder.getVoidTy(),
+                        Builder.getInt8Ty()->getPointerTo(),
+                        /*isVarArg=*/false));
 }
 
 void createDestructor(Module &M) {
-    PollyIRBuilder Builder(M.getContext());
+  PollyIRBuilder Builder(M.getContext());
 
-    Function *Dump = getOrCreateVpDumpValuesProto(M);
+  Function *Dump = getOrCreateVpDumpValuesProto(M);
 
-    FunctionType *FTy = FunctionType::get(Builder.getVoidTy(), {},  /*isVarArg=*/false);
-    Function *Destructor = Function::Create(FTy, Function::ExternalLinkage, "dtor_vp_dump_values", &M);
-    BasicBlock *Entry = BasicBlock::Create(M.getContext(), "entry", Destructor);
-    Builder.SetInsertPoint(Entry);
+  FunctionType *FTy =
+      FunctionType::get(Builder.getVoidTy(), {}, /*isVarArg=*/false);
+  Function *Destructor = Function::Create(FTy, Function::ExternalLinkage,
+                                          "dtor_vp_dump_values", &M);
+  BasicBlock *Entry = BasicBlock::Create(M.getContext(), "entry", Destructor);
+  Builder.SetInsertPoint(Entry);
 
-    Value *FilenameStr = Builder.CreateGlobalStringPtr(OutputFilepath);
-    
-    Builder.CreateCall(Dump, FilenameStr);
-    Builder.CreateRetVoid();
-    appendToGlobalDtors(M, Destructor, /*Priority=*/0);
+  Value *FilenameStr = Builder.CreateGlobalStringPtr(OutputFilepath);
 
+  Builder.CreateCall(Dump, FilenameStr);
+  Builder.CreateRetVoid();
+  appendToGlobalDtors(M, Destructor, /*Priority=*/0);
 }
 
-void readInput() {
-}
+void readInput() {}
 
 class ValueProfiler : public ModulePass {
 public:
@@ -105,13 +119,14 @@ public:
   virtual bool runOnModule(Module &M) {
     // assert(OutputFilepath != "" &&
     //        "value profiler pass scheduled without setting output file path");
-      if (PollyValueProfilerInputFilepath != "")
-          readInput();
+    if (PollyValueProfilerInputFilepath != "")
+      readInput();
 
-      if (OutputFilepath != "")
-          createDestructor(M);
+    if (OutputFilepath != "")
+      createDestructor(M);
 
-      assert((OutputFilepath != "" || PollyValueProfilerInputFilepath != "") && "value profiler run with neither input nor output pass scheduled");
+    assert((OutputFilepath != "" || PollyValueProfilerInputFilepath != "") &&
+           "value profiler run with neither input nor output pass scheduled");
     return true;
   }
 };
