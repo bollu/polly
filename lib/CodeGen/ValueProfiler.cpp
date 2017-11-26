@@ -42,10 +42,11 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 
-static cl::opt<std::string> InputFilepath(
+std::string polly::PollyValueProfilerInputFilepath;
+static cl::opt<std::string, true> XInputFilepath(
     "polly-value-profiler-input-filepath",
     cl::desc("file path of the JSON output from the value profiler"),
-    cl::Hidden, cl::init(""), cl::ZeroOrMore, cl::cat(PollyCategory));
+    cl::Hidden, cl::init(""), cl::ZeroOrMore, cl::cat(PollyCategory), cl::location(polly::PollyValueProfilerInputFilepath));
 
 
 static cl::opt<std::string> OutputFilepath(
@@ -104,13 +105,13 @@ public:
   virtual bool runOnModule(Module &M) {
     // assert(OutputFilepath != "" &&
     //        "value profiler pass scheduled without setting output file path");
-      if (InputFilepath != "")
+      if (PollyValueProfilerInputFilepath != "")
           readInput();
 
       if (OutputFilepath != "")
           createDestructor(M);
 
-      assert((OutputFilepath != "" || InputFilepath != "") && "value profiler run with neither input nor output pass scheduled");
+      assert((OutputFilepath != "" || PollyValueProfilerInputFilepath != "") && "value profiler run with neither input nor output pass scheduled");
     return true;
   }
 };

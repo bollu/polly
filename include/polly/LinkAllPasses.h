@@ -16,6 +16,7 @@
 #define POLLY_LINKALLPASSES_H
 
 #include "polly/CodeGen/PPCGCodeGeneration.h"
+#include "polly/CodeGen/ValueProfiler.h"
 #include "polly/Config/config.h"
 #include "polly/PruneUnprofitable.h"
 #include "polly/Simplify.h"
