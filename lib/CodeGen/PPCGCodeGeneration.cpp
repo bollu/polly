@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "polly/CodeGen/ValueProfiler.h"
 #include "polly/CodeGen/PPCGCodeGeneration.h"
 #include "polly/CodeGen/CodeGeneration.h"
 #include "polly/CodeGen/IslAst.h"
@@ -2043,6 +2044,30 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
   const int NumArgs = F->arg_size();
   std::vector<int> ArgSizes(NumArgs);
 
+
+  // Get a hold of the VpDumpValues function, and use it to setup
+  // helper functions for creating a call to the profiler.
+  Function *VpProfileValue = polly::getOrCreateVpProfileValueProto(*Builder.GetInsertPoint()->getModule());
+
+  auto CreateCallProfileVal = [&VpProfileValue](const char *Name, Value *Val, PollyIRBuilder &Builder) {
+      static int count = 0;
+      Value *NameVal = Builder.CreateGlobalStringPtr(std::string(Name) + "_" + std::to_string(count));
+      count++;
+      Value *ValSExt = Builder.CreateSExt(Val,
+              Builder.getInt64Ty(), Val->getName() + ".sext");
+
+      errs() << "VpProfileValue: " << *VpProfileValue << " | " << "NameVal: " << *NameVal << " | " << "ValSExt: "<< *ValSExt << "\n";
+      Builder.CreateCall(VpProfileValue, {NameVal, ValSExt});
+
+  };
+  auto CreateCallProfileBasePtr = [&CreateCallProfileVal](const char *Name, Value *Base, PollyIRBuilder &Builder) {
+      errs() << __PRETTY_FUNCTION__ << ":"<<  __LINE__ << "\n";
+      Value *ValLoaded = Builder.CreateLoad(Base, "vp.profiler.load." + Base->getName());
+      CreateCallProfileVal(Name, ValLoaded, Builder);
+
+  };
+
+
   // If we are using the OpenCL Runtime, we need to add the kernel argument
   // sizes to the end of the launch-parameter list, so OpenCL can determine
   // how big the respective kernel arguments are.
@@ -2119,8 +2144,13 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
       assert(ValPtr != nullptr && "ValPtr that should point to a valid object"
                                   " to be stored into Parameters");
       Value *ValPtrCast = Builder.CreatePointerCast(
-          ValPtr, Builder.getInt8PtrTy(), "ValPtrCast");
+              ValPtr, Builder.getInt8PtrTy(), "ValPtrCast");
       Builder.CreateStore(ValPtrCast, Slot);
+
+
+        std::string name = getKernelFuncName(Kernel->id) + "_scalar_array_" + std::string(ValPtr->getName());
+      CreateCallProfileBasePtr(name.c_str(), ValPtr, Builder);
+
     } else {
       Instruction *Param =
           new AllocaInst(Builder.getInt8PtrTy(), AddressSpace,
@@ -2179,6 +2209,14 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
                        EntryBlock->getTerminator());
     Builder.CreateStore(Val, Param);
     insertStoreParameter(Parameters, Param, Index);
+
+
+    // Only profile those values that are not pointers.
+    if (!isa<PointerType>(Val->getType())) {
+
+        std::string name = getKernelFuncName(Kernel->id) + "_subtreee_" + std::string(Val->getName());
+        CreateCallProfileVal(name.c_str(), Val, Builder);
+    }
     Index++;
   }
 

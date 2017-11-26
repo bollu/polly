@@ -47,8 +47,7 @@ static cl::opt<std::string, true> XInputFilepath(
     "polly-value-profiler-input-filepath",
     cl::desc("file path of the JSON output from the value profiler"),
     cl::Hidden, cl::ZeroOrMore, cl::cat(PollyCategory),
-    cl::location(polly::PollyValueProfilerInputFilepath),
-    cl::init(""));
+    cl::location(polly::PollyValueProfilerInputFilepath), cl::init(""));
 
 static cl::opt<std::string> OutputFilepath(
     "polly-value-profiler-output-filepath",
@@ -56,7 +55,6 @@ static cl::opt<std::string> OutputFilepath(
     cl::Hidden, cl::init(""), cl::ZeroOrMore, cl::cat(PollyCategory));
 
 #define DEBUG_TYPE "polly-value-profiler"
-namespace {
 
 static llvm::Function *getOrCreateFunction(Module &M, const char *Name,
                                            llvm::FunctionType *Ty) {
@@ -71,6 +69,7 @@ static llvm::Function *getOrCreateFunction(Module &M, const char *Name,
   return F;
 }
 
+namespace polly {
 llvm::Function *getOrCreateVpProfileValueProto(llvm::Module &M) {
   PollyIRBuilder Builder(M.getContext());
   return getOrCreateFunction(
@@ -80,6 +79,8 @@ llvm::Function *getOrCreateVpProfileValueProto(llvm::Module &M) {
           {Builder.getInt8Ty()->getPointerTo(), Builder.getInt64Ty()},
           /*isVarArg=*/false));
 }
+} // namespace polly
+namespace {
 
 static llvm::Function *getOrCreateVpDumpValuesProto(Module &M) {
   PollyIRBuilder Builder(M.getContext());
