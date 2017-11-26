@@ -269,7 +269,40 @@ static Function *createPollyAbstractIndexFunction(Module &M,
   return F;
 }
 
-void optimizeFunction(Function *F) {
+
+void replaceConstantsFromValueProfile(Function *F) {
+  const std::map<std::string, uint64_t> vpNameToConstantValue = polly::getConstantValuesFromProfile();
+  auto getProfilerName = [&F](std::string name) -> std::string {
+      size_t hash = std::hash<std::string>{}(name);
+      return std::string(F->getName()) + name + "_" + std::to_string(hash);
+  };
+
+  auto vpGetOptionalValue = [&vpNameToConstantValue, &getProfilerName](std::string name) -> llvm::Optional<uint64_t> {
+      auto it = vpNameToConstantValue.find(getProfilerName(name));
+      if (it == vpNameToConstantValue.end()) return Optional<uint64_t>(None);
+          return Optional<uint64_t>(it->second);
+  };
+
+  PollyIRBuilder Builder(F->getContext());
+  for(Argument &Arg : F->args()) {
+      Optional<uint64_t> maybeVal = vpGetOptionalValue(Arg.getName());
+      if (!maybeVal) continue;
+      Builder.SetInsertPoint(&F->getEntryBlock());
+      Value *New = nullptr;
+      Constant *RawInt = ConstantInt::get(Builder.getInt64Ty(), *maybeVal);
+      if (Arg.getType()->isIntegerTy()) {
+          New = Builder.CreateSExtOrTrunc(RawInt, Arg.getType());
+      }
+      else if(Arg.getType()->isFloatingPointTy()) {
+          New = Builder.CreateSIToFP(RawInt, Arg.getType());
+      }
+      else {
+          report_fatal_error("unknown type of profiled argument.\n");
+      }
+      assert(New && "New uninitialized");
+      Arg.replaceAllUsesWith(New);
+
+  }
 }
 
 // Large parts stolen from DeadArgumentElimination
@@ -282,17 +315,6 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
                         const DataLayout &DL) {
 
 
-  const std::map<std::string, uint64_t> vpNameToConstantValue = polly::getConstantValuesFromProfile();
-  auto getProfilerName = [&F](std::string name) -> std::string {
-      size_t hash = std::hash<std::string>{}(name);
-      return std::string(F->getName()) + name + "_" + std::to_string(hash);
-  };
-
-  auto vpGetOptionalValue = [&vpNameToConstantValue, &getProfilerName](std::string name) -> llvm::Optional<uint64_t> {
-      auto it = vpNameToConstantValue.find(getProfilerName(name));
-      if (it == vpNameToConstantValue.end()) return Optional<uint64_t>(None);
-          return Optional<uint64_t>(it->second);
-  };
 
   // // Run -O3 against F so we can check which parameters are unused.
   // llvm::legacy::PassManager OptPasses;
@@ -317,9 +339,11 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
   const unsigned NumUsedArrays = [&] {
     unsigned n = 0;
     for (int i = 0; i < Prog->n_array; i++) {
-      if (ppcg_kernel_requires_array_argument(Kernel, i)) {
-        n++;
-      }
+        if (!ppcg_kernel_requires_array_argument(Kernel, i)) continue;
+
+      // if (ppcg_kernel_requires_array_argument(Kernel, i)) {
+      //   n++;
+      // }
     };
     return n;
   }();
@@ -2388,6 +2412,12 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
     for(Value *NV : NewSubtreeValues) SubtreeValues.insert(NV);
     F = FNew;
   };
+
+  // value profile
+  static const bool ValueProfilingEnabled = false;
+  if (ValueProfilingEnabled) {
+      replaceConstantsFromValueProfile(F);
+  }
 
 
   if (Arch == GPUArch::NVPTX64)
