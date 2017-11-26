@@ -49,6 +49,7 @@
 #include "isl/union_map.h"
 #include <iostream>
 #include <fstream>
+#include <functional>
 
 
 extern "C" {
@@ -280,6 +281,18 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
                         IslExprBuilder::IDToValueTy &IDToValue,
                         const DataLayout &DL) {
 
+
+  const std::map<std::string, uint64_t> vpNameToConstantValue = polly::getConstantValuesFromProfile();
+  auto getProfilerName = [&F](std::string name) -> std::string {
+      size_t hash = std::hash<std::string>{}(name);
+      return std::string(F->getName()) + name + "_" + std::to_string(hash);
+  };
+
+  auto vpGetOptionalValue = [&vpNameToConstantValue, &getProfilerName](std::string name) -> llvm::Optional<uint64_t> {
+      auto it = vpNameToConstantValue.find(getProfilerName(name));
+      if (it == vpNameToConstantValue.end()) return Optional<uint64_t>(None);
+          return Optional<uint64_t>(it->second);
+  };
 
   // // Run -O3 against F so we can check which parameters are unused.
   // llvm::legacy::PassManager OptPasses;
@@ -2049,19 +2062,16 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
   // helper functions for creating a call to the profiler.
   Function *VpProfileValue = polly::getOrCreateVpProfileValueProto(*Builder.GetInsertPoint()->getModule());
 
-  auto CreateCallProfileVal = [&VpProfileValue](const char *Name, Value *Val, PollyIRBuilder &Builder) {
-      static int count = 0;
-      Value *NameVal = Builder.CreateGlobalStringPtr(std::string(Name) + "_" + std::to_string(count));
-      count++;
+  const std::string kernelFuncName = getKernelFuncName(Kernel->id);
+  auto CreateCallProfileVal = [&VpProfileValue, kernelFuncName](const char *Name, Value *Val, PollyIRBuilder &Builder) {
+      size_t hash =  std::hash<std::string>{}(std::string(Name));
+      Value *NameVal = Builder.CreateGlobalStringPtr(kernelFuncName + std::string(Name) + "_" + std::to_string(hash));
       Value *ValSExt = Builder.CreateSExt(Val,
               Builder.getInt64Ty(), Val->getName() + ".sext");
-
-      errs() << "VpProfileValue: " << *VpProfileValue << " | " << "NameVal: " << *NameVal << " | " << "ValSExt: "<< *ValSExt << "\n";
       Builder.CreateCall(VpProfileValue, {NameVal, ValSExt});
 
   };
   auto CreateCallProfileBasePtr = [&CreateCallProfileVal](const char *Name, Value *Base, PollyIRBuilder &Builder) {
-      errs() << __PRETTY_FUNCTION__ << ":"<<  __LINE__ << "\n";
       Value *ValLoaded = Builder.CreateLoad(Base, "vp.profiler.load." + Base->getName());
       CreateCallProfileVal(Name, ValLoaded, Builder);
 
@@ -2148,7 +2158,7 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
       Builder.CreateStore(ValPtrCast, Slot);
 
 
-        std::string name = getKernelFuncName(Kernel->id) + "_scalar_array_" + std::string(ValPtr->getName());
+      const std::string name = std::string(ValPtr->getName());
       CreateCallProfileBasePtr(name.c_str(), ValPtr, Builder);
 
     } else {
@@ -2214,7 +2224,7 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     // Only profile those values that are not pointers.
     if (!isa<PointerType>(Val->getType())) {
 
-        std::string name = getKernelFuncName(Kernel->id) + "_subtreee_" + std::string(Val->getName());
+        const std::string name =  std::string(Val->getName());
         CreateCallProfileVal(name.c_str(), Val, Builder);
     }
     Index++;
@@ -2357,6 +2367,7 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
   for (auto &BasePtr : LocalArrays)
     S.invalidateScopArrayInfo(BasePtr, MemoryKind::Array);
   LocalArrays.clear();
+
 
   // Look for dead parameters and prune them among SubtreeValues
   LiveArrayIdxsTy LiveArrayIdxs;
