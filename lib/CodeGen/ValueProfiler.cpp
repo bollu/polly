@@ -94,9 +94,9 @@ std::map<std::string, HistogramTy> getHistogramFromProfile() {
     assert(rawinput != "" && "unable to read data from input file");
 
   Json::Reader reader;
-  Json::Value j;
+  Json::Value root;
 
-  bool parsingSuccessful = reader.parse(rawinput, j);
+  bool parsingSuccessful = reader.parse(rawinput, root);
   if (!parsingSuccessful) {
     errs() << "unable to parse json from file: "
            << polly::PollyValueProfilerInputFilepath << "\n";
@@ -105,16 +105,19 @@ std::map<std::string, HistogramTy> getHistogramFromProfile() {
 
   std::map<std::string, HistogramTy> nameToHistogram;
 
-  for(unsigned i = 0; i < j.size(); i++) {
+  for(unsigned i = 0; i < root.size(); i++) {
+      // TODO: make this the iterator.
+      Json::Value j = root[i];
+
       std::string name = j["name"].asString();
       Json::Value jsonHistogram = j["histogram"];
 
       std::map<uint64_t, uint64_t> histogram;
       for(unsigned i = 0; i < jsonHistogram.size(); i++) {
-          Json::Value jsonValue = histogram[i]["value"];
-          Json::Value jsonFrequency = histogram[i]["frequency"];
+          Json::Value jsonValue = jsonHistogram[i]["value"];
+          Json::Value jsonFrequency = jsonHistogram[i]["frequency"];
 
-          histogram[jsonValue.asInt()] = jsonFrequency.asInt();
+          histogram[jsonValue.asUInt()] = jsonFrequency.asUInt();
 
 
       }
@@ -183,7 +186,7 @@ void readInput() {
     for(auto n2hist: nameToHistogram) {
         dbgs() << "name: " << n2hist.first << "\n";
         for(auto val2freq: n2hist.second) {
-            dbgs() << "\t" << val2freq.first << " : " << val2freq.second << "\n";
+            dbgs() << "\t val(" << val2freq.first << ") : freq(" << val2freq.second << ")\n";
         }
         
     });
