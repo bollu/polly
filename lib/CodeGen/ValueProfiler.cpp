@@ -42,6 +42,12 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 
+static cl::opt<std::string> InputFilepath(
+    "polly-value-profiler-input-filepath",
+    cl::desc("file path of the JSON output from the value profiler"),
+    cl::Hidden, cl::init(""), cl::ZeroOrMore, cl::cat(PollyCategory));
+
+
 static cl::opt<std::string> OutputFilepath(
     "polly-value-profiler-output-filepath",
     cl::desc("file path of the JSON output from the value profiler"),
@@ -66,23 +72,28 @@ static llvm::Function *getOrCreateFunction(Module &M, const char *Name, llvm::Fu
 static llvm::Function *getOrCreateVpDumpValuesProto(Module &M)  {
     PollyIRBuilder Builder(M.getContext());
     return getOrCreateFunction(M, "vp_dump_values", FunctionType::get(Builder.getVoidTy(), 
-                Builder.getInt8Ty()->getPointerTo()));
+                Builder.getInt8Ty()->getPointerTo(), /*isVarArg=*/false));
 }
 
 void createDestructor(Module &M) {
     PollyIRBuilder Builder(M.getContext());
 
     Function *Dump = getOrCreateVpDumpValuesProto(M);
-    Value *FilenameStr = llvm::ConstantDataArray::getString(M.getContext(), OutputFilepath);
-    
 
-    FunctionType *FTy = FunctionType::get(Builder.getVoidTy(), /*isVarArg=*/false);
+    FunctionType *FTy = FunctionType::get(Builder.getVoidTy(), {},  /*isVarArg=*/false);
     Function *Destructor = Function::Create(FTy, Function::ExternalLinkage, "dtor_vp_dump_values", &M);
     BasicBlock *Entry = BasicBlock::Create(M.getContext(), "entry", Destructor);
     Builder.SetInsertPoint(Entry);
+
+    Value *FilenameStr = Builder.CreateGlobalStringPtr(OutputFilepath);
+    
     Builder.CreateCall(Dump, FilenameStr);
+    Builder.CreateRetVoid();
     appendToGlobalDtors(M, Destructor, /*Priority=*/0);
 
+}
+
+void readInput() {
 }
 
 class ValueProfiler : public ModulePass {
@@ -91,9 +102,15 @@ public:
 
   ValueProfiler() : ModulePass(ID) {}
   virtual bool runOnModule(Module &M) {
-    assert(OutputFilepath != "" &&
-           "value profiler pass scheduled without setting output file path");
-    createDestructor(M);
+    // assert(OutputFilepath != "" &&
+    //        "value profiler pass scheduled without setting output file path");
+      if (InputFilepath != "")
+          readInput();
+
+      if (OutputFilepath != "")
+          createDestructor(M);
+
+      assert((OutputFilepath != "" || InputFilepath != "") && "value profiler run with neither input nor output pass scheduled");
     return true;
   }
 };
