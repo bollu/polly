@@ -41,6 +41,9 @@
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
+#include "json/reader.h"
+#include "json/writer.h"
+#include <fstream>
 
 std::string polly::PollyValueProfilerInputFilepath;
 static cl::opt<std::string, true> XInputFilepath(
@@ -79,6 +82,68 @@ llvm::Function *getOrCreateVpProfileValueProto(llvm::Module &M) {
           {Builder.getInt8Ty()->getPointerTo(), Builder.getInt64Ty()},
           /*isVarArg=*/false));
 }
+
+using HistogramTy =std::map<uint64_t, uint64_t>;
+
+
+std::map<std::string, HistogramTy> getHistogramFromProfile() {
+    std::ifstream file(PollyValueProfilerInputFilepath);
+    std::string rawinput((std::istreambuf_iterator<char>(file)),
+            std::istreambuf_iterator<char>());
+
+    assert(rawinput != "" && "unable to read data from input file");
+
+  Json::Reader reader;
+  Json::Value j;
+
+  bool parsingSuccessful = reader.parse(rawinput, j);
+  if (!parsingSuccessful) {
+    errs() << "unable to parse json from file: "
+           << polly::PollyValueProfilerInputFilepath << "\n";
+    report_fatal_error("unable to parse JSON for value profiler input.\n");
+  }
+
+  std::map<std::string, HistogramTy> nameToHistogram;
+
+  for(unsigned i = 0; i < j.size(); i++) {
+      std::string name = j["name"].asString();
+      Json::Value jsonHistogram = j["histogram"];
+
+      std::map<uint64_t, uint64_t> histogram;
+      for(unsigned i = 0; i < jsonHistogram.size(); i++) {
+          Json::Value jsonValue = histogram[i]["value"];
+          Json::Value jsonFrequency = histogram[i]["frequency"];
+
+          histogram[jsonValue.asInt()] = jsonFrequency.asInt();
+
+
+      }
+      nameToHistogram[name] = histogram;
+  }
+
+  return nameToHistogram;
+
+} // end getConstantValuesFromProfile
+
+
+std::map<std::string, uint64_t> getConstantValuesFromProfile() {
+  std::map<std::string, HistogramTy> nameToHistogram = getHistogramFromProfile();
+  std::map<std::string, uint64_t> nameToConstantValue;
+
+  for(auto it: nameToHistogram) {
+      const std::string name = it.first;
+      const HistogramTy hist = it.second;
+      assert(hist.size() > 0 && "empty histogram!");
+      if (hist.size() != 1) continue;
+
+      // the constant value is the LHS (value) of the first (and only) value in the histogram.
+      const uint64_t constantVal = hist.begin()->first;
+      nameToConstantValue[name] = constantVal;
+  }
+
+  return nameToConstantValue;
+
+}
 } // namespace polly
 namespace {
 
@@ -110,7 +175,19 @@ void createDestructor(Module &M) {
   appendToGlobalDtors(M, Destructor, /*Priority=*/0);
 }
 
-void readInput() {}
+void readInput() {
+    std::map<std::string, HistogramTy> nameToHistogram = polly::getHistogramFromProfile();
+
+    DEBUG(
+    dbgs() << "Profiler data:\n";
+    for(auto n2hist: nameToHistogram) {
+        dbgs() << "name: " << n2hist.first << "\n";
+        for(auto val2freq: n2hist.second) {
+            dbgs() << "\t" << val2freq.first << " : " << val2freq.second << "\n";
+        }
+        
+    });
+}
 
 class ValueProfiler : public ModulePass {
 public:
