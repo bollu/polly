@@ -12,13 +12,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "polly/CodeGen/ValueProfiler.h"
 #include "polly/CodeGen/PPCGCodeGeneration.h"
 #include "polly/CodeGen/CodeGeneration.h"
 #include "polly/CodeGen/IslAst.h"
 #include "polly/CodeGen/IslNodeBuilder.h"
 #include "polly/CodeGen/PerfMonitor.h"
 #include "polly/CodeGen/Utils.h"
+#include "polly/CodeGen/ValueProfiler.h"
 #include "polly/DependenceInfo.h"
 #include "polly/LinkAllPasses.h"
 #include "polly/Options.h"
@@ -39,18 +39,17 @@
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Target/TargetMachine.h"
-#include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/IPO/AlwaysInliner.h"
+#include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
 #include "polly/Support/ISLOStream.h"
 #include "isl/union_map.h"
-#include <iostream>
 #include <fstream>
 #include <functional>
-
+#include <iostream>
 
 extern "C" {
 #include "ppcg/cuda.h"
@@ -66,18 +65,19 @@ using namespace polly;
 using namespace llvm;
 
 enum PollyAssumptionsKind {
-    PAK_None = 0,
-    PAK_NonemptyLoops = 1,
-    PAK_ContextLowerBound = 2,
-    PAK_ContextUpperBound = 4
+  PAK_None = 0,
+  PAK_NonemptyLoops = 1,
+  PAK_ContextLowerBound = 2,
+  PAK_ContextUpperBound = 4
 };
 
 // Use assumptions to set lower and upper bounds.
 // We cannot assume that all loops are nonempty, this is bad for performance.
 static PollyAssumptionsKind useAssumptionsInContext(const Scop &S) {
-   if (S.getFunction().getName() == "__radiation_rg_org_MOD_radiation_rg_organize")
-       return PAK_None; 
-   return PAK_None;
+  if (S.getFunction().getName() ==
+      "__radiation_rg_org_MOD_radiation_rg_organize")
+    return PAK_None;
+  return PAK_None;
 }
 
 static const int LB_VAL = 0, UB_VAL = 50000;
@@ -176,34 +176,29 @@ static cl::opt<int>
 
 extern bool polly::PerfMonitoring;
 
-
-
-std::string exec(const char* cmd) {
-    std::array<char, 128> buffer;
-    std::string result;
-    std::shared_ptr<FILE> pipe(popen(cmd, "r"), pclose);
-    while (!feof(pipe.get())) {
-        if (fgets(buffer.data(), 128, pipe.get()) != nullptr)
-            result += buffer.data();
-    }
-    return result;
+std::string exec(const char *cmd) {
+  std::array<char, 128> buffer;
+  std::string result;
+  std::shared_ptr<FILE> pipe(popen(cmd, "r"), pclose);
+  while (!feof(pipe.get())) {
+    if (fgets(buffer.data(), 128, pipe.get()) != nullptr)
+      result += buffer.data();
+  }
+  return result;
 }
 
-static std::vector<char> ReadAllBytes(char const* filename)
-{
-    using namespace std;
-    ifstream ifs(filename, ios::binary|ios::ate);
-    ifstream::pos_type pos = ifs.tellg();
+static std::vector<char> ReadAllBytes(char const *filename) {
+  using namespace std;
+  ifstream ifs(filename, ios::binary | ios::ate);
+  ifstream::pos_type pos = ifs.tellg();
 
-    std::vector<char>  result(pos);
+  std::vector<char> result(pos);
 
-    ifs.seekg(0, ios::beg);
-    ifs.read(&result[0], pos);
+  ifs.seekg(0, ios::beg);
+  ifs.read(&result[0], pos);
 
-    return result;
+  return result;
 }
-
-
 
 /// Return  a unique name for a Scop, which is the scop region with the
 /// function name.
@@ -269,39 +264,54 @@ static Function *createPollyAbstractIndexFunction(Module &M,
   return F;
 }
 
+static std::string getProfilerName(const Function *F, std::string name) {
+    errs() << "\n--\n";
+    errs() << __PRETTY_FUNCTION__ << "\n";
+    errs() << "\tfn name: " << F->getName() << " | ";
+    errs() << "name:" << name << "\n";
+    size_t hash = std::hash<std::string>{}(name);
+    const std::string out = std::string(F->getName()) + "_" + name + "_" + std::to_string(hash);
+    errs() << "\tout: " << out << "\n---\n";
+    return out;
+}
 
 void replaceConstantsFromValueProfile(Function *F) {
-  const std::map<std::string, uint64_t> vpNameToConstantValue = polly::getConstantValuesFromProfile();
-  auto getProfilerName = [&F](std::string name) -> std::string {
-      size_t hash = std::hash<std::string>{}(name);
-      return std::string(F->getName()) + name + "_" + std::to_string(hash);
-  };
+  errs() << __PRETTY_FUNCTION__ << "\n";
+  const std::map<std::string, uint64_t> vpNameToConstantValue =
+      polly::getConstantValuesFromProfile();
 
-  auto vpGetOptionalValue = [&vpNameToConstantValue, &getProfilerName](std::string name) -> llvm::Optional<uint64_t> {
-      auto it = vpNameToConstantValue.find(getProfilerName(name));
-      if (it == vpNameToConstantValue.end()) return Optional<uint64_t>(None);
-          return Optional<uint64_t>(it->second);
+  auto vpGetOptionalValue = [&vpNameToConstantValue,
+                             &F](const Value *V) -> llvm::Optional<uint64_t> {
+
+    const std::string lookupName = getProfilerName(F, V->getName());
+    errs() << "looking up: " << lookupName << "...\n";
+    auto it = vpNameToConstantValue.find(lookupName);
+    if (it == vpNameToConstantValue.end())
+      return Optional<uint64_t>(None);
+    return Optional<uint64_t>(it->second);
   };
 
   PollyIRBuilder Builder(F->getContext());
-  for(Argument &Arg : F->args()) {
-      Optional<uint64_t> maybeVal = vpGetOptionalValue(Arg.getName());
-      if (!maybeVal) continue;
-      Builder.SetInsertPoint(&F->getEntryBlock());
-      Value *New = nullptr;
-      Constant *RawInt = ConstantInt::get(Builder.getInt64Ty(), *maybeVal);
-      if (Arg.getType()->isIntegerTy()) {
-          New = Builder.CreateSExtOrTrunc(RawInt, Arg.getType());
-      }
-      else if(Arg.getType()->isFloatingPointTy()) {
-          New = Builder.CreateSIToFP(RawInt, Arg.getType());
-      }
-      else {
-          report_fatal_error("unknown type of profiled argument.\n");
-      }
-      assert(New && "New uninitialized");
-      Arg.replaceAllUsesWith(New);
-
+  for (Argument &Arg : F->args()) {
+    errs() << "VP: trying to replace : " << Arg << "\n";
+    Optional<uint64_t> maybeVal = vpGetOptionalValue(&Arg);
+    if (!maybeVal) {
+      errs() << "\tno value found.\n";
+      continue;
+    }
+    errs() << "value found: " << *maybeVal << ".\n";
+    Builder.SetInsertPoint(&F->getEntryBlock());
+    Value *New = nullptr;
+    Constant *RawInt = ConstantInt::get(Builder.getInt64Ty(), *maybeVal);
+    if (Arg.getType()->isIntegerTy()) {
+      New = Builder.CreateSExtOrTrunc(RawInt, Arg.getType());
+    } else if (Arg.getType()->isFloatingPointTy()) {
+      New = Builder.CreateSIToFP(RawInt, Arg.getType());
+    } else {
+      report_fatal_error("unknown type of profiled argument.\n");
+    }
+    assert(New && "New uninitialized");
+    Arg.replaceAllUsesWith(New);
   }
 }
 
@@ -313,8 +323,6 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
                         SetVector<Value *> SubtreeValues,
                         IslExprBuilder::IDToValueTy &IDToValue,
                         const DataLayout &DL) {
-
-
 
   // // Run -O3 against F so we can check which parameters are unused.
   // llvm::legacy::PassManager OptPasses;
@@ -334,12 +342,13 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
 
   // PassBuilder.populateModulePassManager(OptPasses);
   // OptPasses.run(*F->getParent());
-    std::map<Argument *, Constant*> ConstantArgumentReplacement;
+  std::map<Argument *, Constant *> ConstantArgumentReplacement;
 
   const unsigned NumUsedArrays = [&] {
     unsigned n = 0;
     for (int i = 0; i < Prog->n_array; i++) {
-        if (!ppcg_kernel_requires_array_argument(Kernel, i)) continue;
+      if (!ppcg_kernel_requires_array_argument(Kernel, i))
+        continue;
 
       // if (ppcg_kernel_requires_array_argument(Kernel, i)) {
       //   n++;
@@ -382,64 +391,63 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
       OldToNewIndex[oldidx] = newidx++;
     }
 
-
-
     static int nConstantVarsTotal = 0;
     static int sizeConstantVarsTotal = 0;
     int nConstantVarsCur = 0;
     for (unsigned i = 0; i < NumVars; i++, oldidx++) {
-        Argument *A = OldArgs[oldidx];
-        if (A->user_empty()) {
-            LiveVarIdxs[i] = false;
+      Argument *A = OldArgs[oldidx];
+      if (A->user_empty()) {
+        LiveVarIdxs[i] = false;
+      } else {
+        isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_param, i);
+        assert(IDToValue.find(Id) != IDToValue.end());
+        Value *Val = IDToValue[Id];
+        isl_id_free(Id);
+        if (isa<Constant>(Val)) {
+          LiveVarIdxs[i] = false;
+          nConstantVarsCur++;
+          sizeConstantVarsTotal += DL.getTypeAllocSize(Val->getType());
+          ConstantArgumentReplacement[A] = cast<Constant>(Val);
+          continue;
         } else {
-            isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_param, i);
-            assert(IDToValue.find(Id) != IDToValue.end());
-            Value *Val = IDToValue[Id];
-            isl_id_free(Id);
-            if (isa<Constant>(Val)) {
-                LiveVarIdxs[i] = false;
-                nConstantVarsCur++;
-                sizeConstantVarsTotal += DL.getTypeAllocSize(Val->getType());
-                ConstantArgumentReplacement[A] = cast<Constant>(Val);
-                continue;
-            }
-            else {
-                LiveVarIdxs[i] = true;
-                OldToNewIndex[oldidx] = newidx++;
-            }
+          LiveVarIdxs[i] = true;
+          OldToNewIndex[oldidx] = newidx++;
         }
+      }
     }
     nConstantVarsTotal += nConstantVarsCur;
     dbgs() << "**** NUM CONSTANT VARS: " << nConstantVarsCur << "\n";
     dbgs() << "**** NUM CONSTANT VARS(TOTAL): " << nConstantVarsTotal << "\n";
-    dbgs() << "**** SIZE CONSTANT VARS(TOTAL): " << sizeConstantVarsTotal << "\n";
+    dbgs() << "**** SIZE CONSTANT VARS(TOTAL): " << sizeConstantVarsTotal
+           << "\n";
 
     int nConstantSubtreeValsCur = 0;
     static int nConstantSubtreeValsTotal = 0;
     static int sizeConstantSubtreeValsTotal = 0;
     for (unsigned i = 0; i < SubtreeValues.size(); oldidx++, i++) {
-        assert(oldidx < OldArgs.size() && "invalid index");
-        Argument *A = OldArgs[oldidx];
-        if (!A->user_empty()) {
-            Value *V = SubtreeValues[i];
-            if (isa<Constant>(V)) {
-                ConstantArgumentReplacement[A] = cast<Constant>(V);
-                nConstantSubtreeValsCur++;
-                sizeConstantSubtreeValsTotal += DL.getTypeAllocSize(V->getType());
-                continue;
-            }
-            else {
-                NewSubtreeValues.insert(SubtreeValues[i]);
-                OldToNewIndex[oldidx] = newidx++;
-            }
+      assert(oldidx < OldArgs.size() && "invalid index");
+      Argument *A = OldArgs[oldidx];
+      if (!A->user_empty()) {
+        Value *V = SubtreeValues[i];
+        if (isa<Constant>(V)) {
+          ConstantArgumentReplacement[A] = cast<Constant>(V);
+          nConstantSubtreeValsCur++;
+          sizeConstantSubtreeValsTotal += DL.getTypeAllocSize(V->getType());
+          continue;
+        } else {
+          NewSubtreeValues.insert(SubtreeValues[i]);
+          OldToNewIndex[oldidx] = newidx++;
         }
-
+      }
     }
     nConstantSubtreeValsTotal += nConstantSubtreeValsCur;
 
-    dbgs() << "**** NUM CONSTANT SUBTREE VALS:"  << nConstantSubtreeValsCur << "\n";
-    dbgs() << "**** NUM CONSTANT SUBTREE VALS(TOTAL):"  << nConstantSubtreeValsTotal << "\n";
-    dbgs() << "**** SIZE OF CONSTANT SUBTREE VALS(TOTAL):"  << sizeConstantSubtreeValsTotal << "\n";
+    dbgs() << "**** NUM CONSTANT SUBTREE VALS:" << nConstantSubtreeValsCur
+           << "\n";
+    dbgs() << "**** NUM CONSTANT SUBTREE VALS(TOTAL):"
+           << nConstantSubtreeValsTotal << "\n";
+    dbgs() << "**** SIZE OF CONSTANT SUBTREE VALS(TOTAL):"
+           << sizeConstantSubtreeValsTotal << "\n";
 
     assert(oldidx == OldArgs.size());
     assert(newidx <= OldArgs.size());
@@ -503,19 +511,22 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
     IOld->replaceAllUsesWith(&*INew);
     INew->takeName(&*IOld);
 
-    // if (ConstantArgumentReplacement.find(IOld) != ConstantValueReplacement.end()) {
-    //     InstructionsToReplace.insert(std::make_pair(INew, ConstantArgumentReplacement.find(IOld)->second));
-    //     // InstructionsToReplace[INew] = ConstantArgumentReplacement.find(IOld)->second;
+    // if (ConstantArgumentReplacement.find(IOld) !=
+    // ConstantValueReplacement.end()) {
+    //     InstructionsToReplace.insert(std::make_pair(INew,
+    //     ConstantArgumentReplacement.find(IOld)->second));
+    //     // InstructionsToReplace[INew] =
+    //     ConstantArgumentReplacement.find(IOld)->second;
     // } else {
     //     IOld->replaceAllUsesWith(&*INew);
     //     INew->takeName(&*IOld);
     // }
   }
   for (auto It : ConstantArgumentReplacement) {
-      Value *IOld = It.first;
-      Value *C = It.second;
+    Value *IOld = It.first;
+    Value *C = It.second;
 
-      IOld->replaceAllUsesWith(C);
+    IOld->replaceAllUsesWith(C);
   }
 
   FNew->setSubprogram(F->getSubprogram());
@@ -688,8 +699,8 @@ static __isl_give isl_id_to_ast_expr *pollyBuildAstExprForStmt(
 
   for (MemoryAccess *Acc : *Stmt) {
     if (!Acc->isAffine()) {
-      dbgs() << __PRETTY_FUNCTION__ << "\n" <<
-             ":skipping materializing the stmt's memory access because it's "
+      dbgs() << __PRETTY_FUNCTION__ << "\n"
+             << ":skipping materializing the stmt's memory access because it's "
                 "nonaffine\n";
       continue;
     }
@@ -720,9 +731,9 @@ static int computeSizeInBytes(const Type *T) {
 }
 
 static isl_stat AddConstraintToSet(isl_constraint *c, void *vs) {
-    isl_set *s = (isl_set*)vs;
-    isl_set_add_constraint(s, c);
-    return isl_stat_ok;
+  isl_set *s = (isl_set *)vs;
+  isl_set_add_constraint(s, c);
+  return isl_stat_ok;
 }
 
 /// Generate code for a GPU specific isl AST.
@@ -901,12 +912,11 @@ private:
   /// @param FN            The function into which to generate the variables.
   void createKernelVariables(ppcg_kernel *Kernel, Function *FN);
 
-
-
   /// Cast ScopArrayInfos in the kernel to the correct type, so that
   /// BlockGenerators later does not get type mismatches.
   /// We currently pass all parameters as i8*, so we need this bitcast.
-  // void castKernelArrays(ppcg_kernel *Kernel, Function *FN, PollyIRBuilder Builder);
+  // void castKernelArrays(ppcg_kernel *Kernel, Function *FN, PollyIRBuilder
+  // Builder);
 
   /// Add CUDA annotations to module.
   ///
@@ -1252,8 +1262,7 @@ void GPUNodeBuilder::addCUDAAnnotations(Module *M, Value *BlockDimX,
     if (F.getCallingConv() != CallingConv::PTX_Kernel)
       continue;
 
-    if (BlockDimX == Builder.getInt32(32) &&
-        BlockDimY == Builder.getInt32(1) &&
+    if (BlockDimX == Builder.getInt32(32) && BlockDimY == Builder.getInt32(1) &&
         BlockDimZ == Builder.getInt32(1)) {
       BlockDimX = Builder.getInt32(512);
     }
@@ -1808,17 +1817,16 @@ isl_bool collectReferencesInGPUStmt(__isl_keep isl_ast_node *Node, void *User) {
 
 /// A list of functions that are available in NVIDIA's libdevice.
 const std::set<std::string> CUDALibDeviceFunctions = {
-    "exp",      "expf", "fast_expf",     "expl",      "cos", "cosf","fast_cosf", "sqrt", "sqrtf",
-    "copysign", "copysignf", "copysignl", "log", "logf", "fast_logf", "powi", "powif", "llround", "llroundf"};
+    "exp",       "expf",      "fast_expf", "expl",    "cos",
+    "cosf",      "fast_cosf", "sqrt",      "sqrtf",   "copysign",
+    "copysignf", "copysignl", "log",       "logf",    "fast_logf",
+    "powi",      "powif",     "llround",   "llroundf"};
 
 // A map from intrinsics to their corresponding libdevice functions.
 const std::map<std::string, std::string> IntrinsicToLibdeviceFunc = {
-    {"llvm.exp.f64", "exp"},
-    {"llvm.exp.f32", "fast_expf"},
-    {"llvm.powi.f64", "powi"},
-    {"llvm.powi.f32", "powif"},
-    {"lround", "llround"},
-    {"lroundf", "llroundf"}};
+    {"llvm.exp.f64", "exp"},   {"llvm.exp.f32", "fast_expf"},
+    {"llvm.powi.f64", "powi"}, {"llvm.powi.f32", "powif"},
+    {"lround", "llround"},     {"lroundf", "llroundf"}};
 
 /// Return the corresponding CUDA libdevice function name for @p F.
 /// Note that this function will try to convert instrinsics in the list
@@ -1906,15 +1914,16 @@ getFunctionsFromRawSubtreeValues(SetVector<Value *> RawSubtreeValues,
 }
 
 // return whether `Array` is used in `Kernel` or not.
-bool isArrayUsedInKernel(ScopArrayInfo *Array, ppcg_kernel *Kernel, gpu_prog *Prog) {
-    for(int i = 0; i < Prog->n_array; i++) {
-        isl_id *Id = isl_space_get_tuple_id(Prog->array[i].space, isl_dim_set);
-        const ScopArrayInfo *SAI = ScopArrayInfo::getFromId(isl::manage(Id));
-        if (SAI == Array)
-            return ppcg_kernel_requires_array_argument(Kernel, i);
-    }
-    // assert(false && "unable to find Array in known list of arrays");
-    return false; // Is this correct?
+bool isArrayUsedInKernel(ScopArrayInfo *Array, ppcg_kernel *Kernel,
+                         gpu_prog *Prog) {
+  for (int i = 0; i < Prog->n_array; i++) {
+    isl_id *Id = isl_space_get_tuple_id(Prog->array[i].space, isl_dim_set);
+    const ScopArrayInfo *SAI = ScopArrayInfo::getFromId(isl::manage(Id));
+    if (SAI == Array)
+      return ppcg_kernel_requires_array_argument(Kernel, i);
+  }
+  // assert(false && "unable to find Array in known list of arrays");
+  return false; // Is this correct?
 }
 
 std::tuple<SetVector<Value *>, SetVector<Function *>, SetVector<const Loop *>,
@@ -1953,8 +1962,8 @@ GPUNodeBuilder::getReferencesInKernel(ppcg_kernel *Kernel) {
 
   // Remove all SAIs that are used in the kernel.
   for (auto &SAI : S.arrays()) {
-      if (isArrayUsedInKernel(SAI, Kernel, Prog))
-          SubtreeValues.remove(SAI->getBasePtr());
+    if (isArrayUsedInKernel(SAI, Kernel, Prog))
+      SubtreeValues.remove(SAI->getBasePtr());
   }
 
   isl_space *Space = S.getParamSpace().release();
@@ -2081,26 +2090,28 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
   const int NumArgs = F->arg_size();
   std::vector<int> ArgSizes(NumArgs);
 
-
   // Get a hold of the VpDumpValues function, and use it to setup
   // helper functions for creating a call to the profiler.
-  Function *VpProfileValue = polly::getOrCreateVpProfileValueProto(*Builder.GetInsertPoint()->getModule());
 
-  const std::string kernelFuncName = getKernelFuncName(Kernel->id);
-  auto CreateCallProfileVal = [&VpProfileValue, kernelFuncName](const char *Name, Value *Val, PollyIRBuilder &Builder) {
-      size_t hash =  std::hash<std::string>{}(std::string(Name));
-      Value *NameVal = Builder.CreateGlobalStringPtr(kernelFuncName + std::string(Name) + "_" + std::to_string(hash));
-      Value *ValSExt = Builder.CreateSExt(Val,
-              Builder.getInt64Ty(), Val->getName() + ".sext");
-      Builder.CreateCall(VpProfileValue, {NameVal, ValSExt});
-
-  };
-  auto CreateCallProfileBasePtr = [&CreateCallProfileVal](const char *Name, Value *Base, PollyIRBuilder &Builder) {
-      Value *ValLoaded = Builder.CreateLoad(Base, "vp.profiler.load." + Base->getName());
-      CreateCallProfileVal(Name, ValLoaded, Builder);
+  auto CreateCallProfileVal = [&F](const char *Name, Value *Val,
+                                   PollyIRBuilder &Builder) {
+    Function *VpProfileValue = polly::getOrCreateVpProfileValueProto(
+        *Builder.GetInsertPoint()->getModule());
+    Value *NameVal =
+        Builder.CreateGlobalStringPtr(getProfilerName(F, Val->getName()));
+    Value *ValSExt =
+        Builder.CreateSExt(Val, Builder.getInt64Ty(), Val->getName() + ".sext");
+    Builder.CreateCall(VpProfileValue, {NameVal, ValSExt});
 
   };
+  auto CreateCallProfileBasePtr =
+      [&CreateCallProfileVal](const char *Name, Value *Base,
+                              PollyIRBuilder &Builder) {
+        Value *ValLoaded =
+            Builder.CreateLoad(Base, "vp.profiler.load." + Base->getName());
+        CreateCallProfileVal(Name, ValLoaded, Builder);
 
+      };
 
   // If we are using the OpenCL Runtime, we need to add the kernel argument
   // sizes to the end of the launch-parameter list, so OpenCL can determine
@@ -2178,9 +2189,8 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
       assert(ValPtr != nullptr && "ValPtr that should point to a valid object"
                                   " to be stored into Parameters");
       Value *ValPtrCast = Builder.CreatePointerCast(
-              ValPtr, Builder.getInt8PtrTy(), "ValPtrCast");
+          ValPtr, Builder.getInt8PtrTy(), "ValPtrCast");
       Builder.CreateStore(ValPtrCast, Slot);
-
 
       const std::string name = std::string(ValPtr->getName());
       CreateCallProfileBasePtr(name.c_str(), ValPtr, Builder);
@@ -2191,9 +2201,9 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
                          Launch + "_param_" + std::to_string(Index),
                          EntryBlock->getTerminator());
       if (isa<SelectInst>(DevArray)) {
-          DevArray->dump();
-          SAI->dump();
-          assert(false && "DevArray is a select inst!");
+        DevArray->dump();
+        SAI->dump();
+        assert(false && "DevArray is a select inst!");
       }
       Value *DevArrayCast = Builder.CreatePointerCast(
           DevArray, Builder.getInt8PtrTy(), "DevArrayCast");
@@ -2227,7 +2237,8 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
   int NumVars = isl_space_dim(Kernel->space, isl_dim_param);
 
   for (long i = 0; i < NumVars; i++) {
-      if (BoolRemoveDeadSubtreeValues && !LiveVarIdxs[i]) continue;
+    if (BoolRemoveDeadSubtreeValues && !LiveVarIdxs[i])
+      continue;
     isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_param, i);
     Value *Val = IDToValue[Id];
     if (ValueMap.count(Val))
@@ -2244,12 +2255,11 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     Builder.CreateStore(Val, Param);
     insertStoreParameter(Parameters, Param, Index);
 
-
     // Only profile those values that are not pointers.
     if (!isa<PointerType>(Val->getType())) {
 
-        const std::string name =  std::string(Val->getName());
-        CreateCallProfileVal(name.c_str(), Val, Builder);
+      const std::string name = std::string(Val->getName());
+      CreateCallProfileVal(name.c_str(), Val, Builder);
     }
     Index++;
   }
@@ -2392,36 +2402,38 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
     S.invalidateScopArrayInfo(BasePtr, MemoryKind::Array);
   LocalArrays.clear();
 
-
   // Look for dead parameters and prune them among SubtreeValues
   LiveArrayIdxsTy LiveArrayIdxs;
   LiveVarIdxsTy LiveVarIdxs;
   if (BoolRemoveDeadSubtreeValues) {
 
-      SetVector<Value *> NewSubtreeValues;
-      Function *FNew;
+    SetVector<Value *> NewSubtreeValues;
+    Function *FNew;
     std::tie(FNew, NewSubtreeValues, LiveArrayIdxs, LiveVarIdxs) =
         removeDeadSubtreeValues(F, Prog, Kernel, SubtreeValues, IDToValue, DL);
 
-    dbgs() << "*** OLD V/S NEW SUBTREE VALUES SIZE: " << "Old:" << SubtreeValues.size() << " | NEW: " << NewSubtreeValues.size() << "\n";
+    dbgs() << "*** OLD V/S NEW SUBTREE VALUES SIZE: "
+           << "Old:" << SubtreeValues.size()
+           << " | NEW: " << NewSubtreeValues.size() << "\n";
     int nArgsOld = F->getFunctionType()->getNumParams();
     int nArgsNew = FNew->getFunctionType()->getNumParams();
-    dbgs() << "*** OLD V/S NEW NARGS: " << "Old: " << nArgsOld << " | New: " << nArgsNew << "\n";
+    dbgs() << "*** OLD V/S NEW NARGS: "
+           << "Old: " << nArgsOld << " | New: " << nArgsNew << "\n";
     assert(NewSubtreeValues.size() <= SubtreeValues.size());
     SubtreeValues.clear();
-    for(Value *NV : NewSubtreeValues) SubtreeValues.insert(NV);
+    for (Value *NV : NewSubtreeValues)
+      SubtreeValues.insert(NV);
     F = FNew;
   };
 
   // value profile
-  static const bool ValueProfilingEnabled = false;
+  static const bool ValueProfilingEnabled = true;
   if (ValueProfilingEnabled) {
-      replaceConstantsFromValueProfile(F);
+    replaceConstantsFromValueProfile(F);
   }
 
-
   if (Arch == GPUArch::NVPTX64)
-      addCUDAAnnotations(F->getParent(), BlockDimX, BlockDimY, BlockDimZ);
+    addCUDAAnnotations(F->getParent(), BlockDimX, BlockDimY, BlockDimZ);
 
   std::vector<char> ASMString = finalizeKernelFunction(F->getName());
   Builder.SetInsertPoint(&HostInsertPoint);
@@ -2447,17 +2459,22 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
   std::string Name = getKernelFuncName(Kernel->id);
 
   Value *KernelString = [&] {
-      std::vector<uint8_t> elts;
-      for(char c : ASMString) elts.push_back(c);
+    std::vector<uint8_t> elts;
+    for (char c : ASMString)
+      elts.push_back(c);
 
-      Constant *KernelCubinConstant = ConstantDataArray::get(Builder.getContext(), elts);
-      GlobalVariable *gv = new GlobalVariable(*HostInsertPoint.getModule(),  KernelCubinConstant->getType(), true, llvm::GlobalValue::InternalLinkage, KernelCubinConstant, Name + "_cubin_data");
-      Value *zero = ConstantInt::get(Type::getInt32Ty(Builder.getContext()), 0);
-      Value *Args[] = { zero, zero };
-      return Builder.CreateInBoundsGEP(gv->getValueType(), gv, Args, Name);
+    Constant *KernelCubinConstant =
+        ConstantDataArray::get(Builder.getContext(), elts);
+    GlobalVariable *gv = new GlobalVariable(
+        *HostInsertPoint.getModule(), KernelCubinConstant->getType(), true,
+        llvm::GlobalValue::InternalLinkage, KernelCubinConstant,
+        Name + "_cubin_data");
+    Value *zero = ConstantInt::get(Type::getInt32Ty(Builder.getContext()), 0);
+    Value *Args[] = {zero, zero};
+    return Builder.CreateInBoundsGEP(gv->getValueType(), gv, Args, Name);
   }();
 
-errs() << "KernelString: " << *KernelString << "\n";
+  errs() << "KernelString: " << *KernelString << "\n";
 
   Value *NameString = Builder.CreateGlobalStringPtr(Name, Name + "_name");
   Value *GPUKernel = createCallGetKernel(KernelString, NameString);
@@ -2598,11 +2615,12 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
   auto *FN = Function::Create(FT, Function::ExternalLinkage, Identifier,
                               GPUModule.get());
 
-  for(unsigned i = 0; i < FT->getNumParams(); i++) {
-      if (!isa<PointerType>(FT->getParamType(i))) continue;
-      FN->addParamAttr(i, llvm::Attribute::NonNull);
-      FN->addParamAttr(i, llvm::Attribute::NoCapture);
-      FN->addParamAttr(i, llvm::Attribute::NoAlias);
+  for (unsigned i = 0; i < FT->getNumParams(); i++) {
+    if (!isa<PointerType>(FT->getParamType(i)))
+      continue;
+    FN->addParamAttr(i, llvm::Attribute::NonNull);
+    FN->addParamAttr(i, llvm::Attribute::NoCapture);
+    FN->addParamAttr(i, llvm::Attribute::NoAlias);
   }
 
   std::vector<Metadata *> EmptyStrings;
@@ -2690,8 +2708,8 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_set, i);
     Arg->setName(isl_id_get_name(Id));
     IDToValue[Id] = &*Arg;
-    // dbgs() << __LINE__ << "|DEALING WITH NON VALUE MAPPED PARAMETER: " << *Arg << "\n";
-    // ValueMap[Val] = &*Arg;
+    // dbgs() << __LINE__ << "|DEALING WITH NON VALUE MAPPED PARAMETER: " <<
+    // *Arg << "\n"; ValueMap[Val] = &*Arg;
     KernelIDs.insert(std::unique_ptr<isl_id, IslIdDeleter>(Id));
     Arg++;
   }
@@ -2700,7 +2718,7 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_param, i);
     Arg->setName(isl_id_get_name(Id));
     Value *Val = IDToValue[Id];
-    //dbgs() << __LINE__ <<  "|Mapping: " << *Val << " => " << *Arg << "\n";
+    // dbgs() << __LINE__ <<  "|Mapping: " << *Val << " => " << *Arg << "\n";
     ValueMap[Val] = &*Arg;
     IDToValue[Id] = &*Arg;
     KernelIDs.insert(std::unique_ptr<isl_id, IslIdDeleter>(Id));
@@ -2708,7 +2726,7 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
   }
 
   for (auto *V : SubtreeValues) {
-    Arg->setName("subtree_" + V->getName());
+    Arg->setName(V->getName());
     // dbgs() <<  __LINE__ << "|Mapping: " << *V << " => " << *Arg << "\n";
     ValueMap[V] = &*Arg;
     Arg++;
@@ -2794,23 +2812,22 @@ void GPUNodeBuilder::insertKernelCallsSPIR(ppcg_kernel *Kernel) {
 
 bool doesArrayHaveNonaffineAccess(ScopArrayInfo *Array, Scop *S) {
 
-    if (Array->getNumberOfDimensions() == 0)
-      return false;
-    isl::union_map Accesses = S->getAccesses(Array);
-    isl::union_set AccessUSet = Accesses.range();
-    AccessUSet = AccessUSet.coalesce();
-    AccessUSet = AccessUSet.detect_equalities();
-    AccessUSet = AccessUSet.coalesce();
+  if (Array->getNumberOfDimensions() == 0)
+    return false;
+  isl::union_map Accesses = S->getAccesses(Array);
+  isl::union_set AccessUSet = Accesses.range();
+  AccessUSet = AccessUSet.coalesce();
+  AccessUSet = AccessUSet.detect_equalities();
+  AccessUSet = AccessUSet.coalesce();
 
-    if (AccessUSet.is_empty())
-      return false;
+  if (AccessUSet.is_empty())
+    return false;
 
-    isl::set AccessSet = AccessUSet.extract_set(Array->getSpace());
+  isl::set AccessSet = AccessUSet.extract_set(Array->getSpace());
 
-    return  !AccessSet.dim_has_lower_bound(isl::dim::set, 0) ||
-        !AccessSet.dim_has_upper_bound(isl::dim::set, 0);
+  return !AccessSet.dim_has_lower_bound(isl::dim::set, 0) ||
+         !AccessSet.dim_has_upper_bound(isl::dim::set, 0);
 }
-
 
 void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
   auto Arg = FN->arg_begin();
@@ -2819,32 +2836,34 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
       continue;
 
     isl_id *Id = isl_space_get_tuple_id(Prog->array[i].space, isl_dim_set);
-    ScopArrayInfo *SAI =
-        const_cast<ScopArrayInfo *>(ScopArrayInfo::getFromId(isl::manage(isl_id_copy(Id))));
+    ScopArrayInfo *SAI = const_cast<ScopArrayInfo *>(
+        ScopArrayInfo::getFromId(isl::manage(isl_id_copy(Id))));
 
     isl_id_free(Id);
 
-     if (S.getFunction().getName() == "__radiation_rg_org_MOD_radiation_rg_organize") {
-        Value *NewBasePtr = Arg;
-        if (PointerType *OriginalTy =
-                dyn_cast<PointerType>(SAI->getBasePtr()->getType())) {
-            PointerType *NewTy = PointerType::get(OriginalTy->getElementType(),
-                    Arg->getType()->getPointerAddressSpace());
-            NewBasePtr = Builder.CreateBitCast(
-                    Arg, NewTy, Arg->getName() + "_hack_load_for_blockgen");
-        } else {
-            report_fatal_error(" I did not think about this case yet.");
-
-        }
-        ValueMap[SAI->getBasePtr()] = NewBasePtr;
-     }
+    if (S.getFunction().getName() ==
+        "__radiation_rg_org_MOD_radiation_rg_organize") {
+      Value *NewBasePtr = Arg;
+      if (PointerType *OriginalTy =
+              dyn_cast<PointerType>(SAI->getBasePtr()->getType())) {
+        PointerType *NewTy =
+            PointerType::get(OriginalTy->getElementType(),
+                             Arg->getType()->getPointerAddressSpace());
+        NewBasePtr = Builder.CreateBitCast(
+            Arg, NewTy, Arg->getName() + "_hack_load_for_blockgen");
+      } else {
+        report_fatal_error(" I did not think about this case yet.");
+      }
+      ValueMap[SAI->getBasePtr()] = NewBasePtr;
+    }
 
     if (SAI->getNumberOfDimensions() > 0) {
       Arg++;
       continue;
     }
-    
-    // dbgs() << __LINE__ << "|" << "DEALING WITH NON VALUE MAPPED PARAMETER: " << *Arg << "\n";
+
+    // dbgs() << __LINE__ << "|" << "DEALING WITH NON VALUE MAPPED PARAMETER: "
+    // << *Arg << "\n";
     Value *Val = &*Arg;
 
     if (!gpu_array_is_read_only_scalar(&Prog->array[i])) {
@@ -2914,9 +2933,9 @@ void GPUNodeBuilder::finalizeKernelArguments(ppcg_kernel *Kernel) {
 }
 
 /*
-void GPUNodeBuilder::castKernelArrays(ppcg_kernel *Kernel, Function *FN, PollyIRBuilder Builder) {
-    assert(!FN->isDeclaration() && "Expect function to have entry block");
-    Builder.SetInsertPoint(&FN->getEntryBlock());
+void GPUNodeBuilder::castKernelArrays(ppcg_kernel *Kernel, Function *FN,
+PollyIRBuilder Builder) { assert(!FN->isDeclaration() && "Expect function to
+have entry block"); Builder.SetInsertPoint(&FN->getEntryBlock());
 
   unsigned ArgIdx = 0;
   for (long i = 0; i < Prog->n_array; i++) {
@@ -2934,8 +2953,9 @@ void GPUNodeBuilder::castKernelArrays(ppcg_kernel *Kernel, Function *FN, PollyIR
         Value *Arg = FN->arg_begin() + ArgIdx;
 
         static const unsigned GlobalAddressSpace = 1;
-        PointerType *SAIOriginalType = cast<PointerType>(SAI->getBasePtr()->getType());
-        PointerType *SAINewType = PointerType::get(SAIOriginalType->getElementType(), GlobalAddressSpace);
+        PointerType *SAIOriginalType =
+cast<PointerType>(SAI->getBasePtr()->getType()); PointerType *SAINewType =
+PointerType::get(SAIOriginalType->getElementType(), GlobalAddressSpace);
 
         dbgs() << "Arg type: " << *Arg->getType() << "\n";
         dbgs() << "original SAI type: " << *SAIOriginalType << "\n";
@@ -3023,7 +3043,8 @@ void GPUNodeBuilder::createKernelVariables(ppcg_kernel *Kernel, Function *FN) {
     KernelIds.push_back(Id);
     IDToSAI[Id] = SAI;
 
-    // dbgs() << __LINE__ << "|DEALING WITH NON VALUE MAPPED PARAMETER: " << SAI->getBasePtr()->getName() << "\n";
+    // dbgs() << __LINE__ << "|DEALING WITH NON VALUE MAPPED PARAMETER: " <<
+    // SAI->getBasePtr()->getName() << "\n";
   }
 }
 
@@ -3079,7 +3100,8 @@ void GPUNodeBuilder::createKernelFunction(
   }
 }
 
-std::vector<char> GPUNodeBuilder::createKernelASM(std::string kernelFunctionName) {
+std::vector<char>
+GPUNodeBuilder::createKernelASM(std::string kernelFunctionName) {
   llvm::Triple GPUTriple;
 
   switch (Arch) {
@@ -3133,8 +3155,9 @@ std::vector<char> GPUNodeBuilder::createKernelASM(std::string kernelFunctionName
   }
 
   std::unique_ptr<TargetMachine> TargetM(GPUTarget->createTargetMachine(
-      GPUTriple.getTriple(), subtarget, "+ptx50", Options, Optional<Reloc::Model>(), llvm::CodeModel::Small, CodeGenOpt::Aggressive));
-
+      GPUTriple.getTriple(), subtarget, "+ptx50", Options,
+      Optional<Reloc::Model>(), llvm::CodeModel::Small,
+      CodeGenOpt::Aggressive));
 
   if (Arch != GPUArch::SPIR32 && Arch != GPUArch::SPIR64) {
     // Optimize module.
@@ -3149,26 +3172,26 @@ std::vector<char> GPUNodeBuilder::createKernelASM(std::string kernelFunctionName
     PassBuilder.LoopVectorize = false;
     PassBuilder.SLPVectorize = false;
 
-    ModulePassManager.add(createTargetTransformInfoWrapperPass(TargetM->getTargetIRAnalysis()));
-    FPM.add(createTargetTransformInfoWrapperPass(TargetM->getTargetIRAnalysis()));
+    ModulePassManager.add(
+        createTargetTransformInfoWrapperPass(TargetM->getTargetIRAnalysis()));
+    FPM.add(
+        createTargetTransformInfoWrapperPass(TargetM->getTargetIRAnalysis()));
 
     PassBuilder.populateModulePassManager(ModulePassManager);
     PassBuilder.populateFunctionPassManager(FPM);
 
     FPM.doInitialization();
-    for (llvm::Module::iterator i = GPUModule->begin(); i != GPUModule->end(); i++) {
-        FPM.run(*i);
+    for (llvm::Module::iterator i = GPUModule->begin(); i != GPUModule->end();
+         i++) {
+      FPM.run(*i);
     }
 
     FPM.doFinalization();
     ModulePassManager.run(*GPUModule);
   }
 
-
   if (DumpKernelIR)
     dbgs() << *GPUModule << "\n";
-
-
 
   SmallString<0> ASMString;
   raw_svector_ostream ASMStream(ASMString);
@@ -3185,7 +3208,7 @@ std::vector<char> GPUNodeBuilder::createKernelASM(std::string kernelFunctionName
 
   PM.run(*GPUModule);
 
-  const std::string PTXString =  ASMStream.str();
+  const std::string PTXString = ASMStream.str();
 
   std::ofstream asmfile;
   const std::string ptxFilename = kernelFunctionName + ".ptx";
@@ -3194,7 +3217,9 @@ std::vector<char> GPUNodeBuilder::createKernelASM(std::string kernelFunctionName
   asmfile.close();
 
   const std::string cubinFilename = kernelFunctionName + "_dump_cubin.cubin";
-  const std::string nvccCubinCreateCommand = std::string("nvcc --cubin " + ptxFilename + " -arch " + CudaVersion + " -o " +  cubinFilename + " --resource-usage");
+  const std::string nvccCubinCreateCommand =
+      std::string("nvcc --cubin " + ptxFilename + " -arch " + CudaVersion +
+                  " -o " + cubinFilename + " --resource-usage");
   errs() << "Running NVCC Command: " << nvccCubinCreateCommand << "\b";
   const std::string resourceUsage = exec(nvccCubinCreateCommand.c_str());
   dbgs() << resourceUsage;
@@ -3274,7 +3299,8 @@ void countNumUnusedParamsInFunction(Function *F) {
          << "numUnusedParams(after): " << numUnusedParams << "\n";
 }
 
-std::vector<char> GPUNodeBuilder::finalizeKernelFunction(std::string kernelFunctionName) {
+std::vector<char>
+GPUNodeBuilder::finalizeKernelFunction(std::string kernelFunctionName) {
   {
     // NOTE: We currently copy all uses of gfortran_polly_array_index.
     // However, these are unsused, but they refer to host side values
@@ -3306,7 +3332,6 @@ std::vector<char> GPUNodeBuilder::finalizeKernelFunction(std::string kernelFunct
 
   addCUDALibDevice();
 
-
   llvm::legacy::PassManager OptPasses;
   PassManagerBuilder PassBuilder;
   PassBuilder.OptLevel = 3;
@@ -3324,14 +3349,11 @@ std::vector<char> GPUNodeBuilder::finalizeKernelFunction(std::string kernelFunct
   PassBuilder.populateModulePassManager(OptPasses);
   OptPasses.run(*GPUModule);
 
-
   for (Function &F : *GPUModule) {
     countNumUnusedParamsInFunction(&F);
   };
 
   std::vector<char> Assembly = createKernelASM(kernelFunctionName);
-
-
 
   GPUModule.release();
   KernelIDs.clear();
@@ -3582,60 +3604,70 @@ public:
     PPCGScop->context = S->getContext().release();
     std::vector<std::pair<unsigned, unsigned>> paramIdxsLoopLowerUpperBounds;
     if (S->getFunction().getName().count("inv_th") || true) {
-        for(unsigned i = 0; i < isl_set_n_param(PPCGScop->context); i++) {
-            assert(!isl_set_is_empty(PPCGScop->context) && "recieved empty context.");
-            isl_id *ParamId = isl_set_get_dim_id(PPCGScop->context, isl_dim_param, i);
-            isl_id_free(ParamId);
+      for (unsigned i = 0; i < isl_set_n_param(PPCGScop->context); i++) {
+        assert(!isl_set_is_empty(PPCGScop->context) &&
+               "recieved empty context.");
+        isl_id *ParamId =
+            isl_set_get_dim_id(PPCGScop->context, isl_dim_param, i);
+        isl_id_free(ParamId);
 
-            isl_constraint *LB = isl_inequality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
-            LB = isl_constraint_set_constant_si(LB, LB_VAL);
-            LB = isl_constraint_set_coefficient_si(LB, isl_dim_param, i, 1);
-            if (useAssumptionsInContext(*S) & PAK_ContextLowerBound) {
-                PPCGScop->context = isl_set_add_constraint(PPCGScop->context, LB);
-            } else {
-                dbgs() << " *** NOT ADDING LOWER BOUND ***\n";
-                isl_constraint_free(LB);
-            }
-
-            assert(!isl_set_is_empty(PPCGScop->context) && "context empty after adding LB");
-
-            isl_constraint *UB = isl_inequality_alloc(isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
-            UB = isl_constraint_set_constant_si(UB, UB_VAL);
-            UB = isl_constraint_set_coefficient_si(UB, isl_dim_param, i, -1);
-            if (useAssumptionsInContext(*S) & PAK_ContextUpperBound) {
-                PPCGScop->context = isl_set_add_constraint(PPCGScop->context, UB);
-            }
-            else {
-                dbgs() << " *** NOT ADDING  UPPER BOUND ***\n";
-                isl_constraint_free(UB);
-            }
-
-            assert(!isl_set_is_empty(PPCGScop->context) && "context empty after adding UB");
+        isl_constraint *LB = isl_inequality_alloc(
+            isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
+        LB = isl_constraint_set_constant_si(LB, LB_VAL);
+        LB = isl_constraint_set_coefficient_si(LB, isl_dim_param, i, 1);
+        if (useAssumptionsInContext(*S) & PAK_ContextLowerBound) {
+          PPCGScop->context = isl_set_add_constraint(PPCGScop->context, LB);
+        } else {
+          dbgs() << " *** NOT ADDING LOWER BOUND ***\n";
+          isl_constraint_free(LB);
         }
 
-        // Add all constraints from the domain of each scopstmt into the context.
-        // That way, all our domains become non-empty.
-        // We project out all set dimensions to leave relationships betweem
-        // parameter dimensions.
-        for(ScopStmt &Stmt : *S) {
-            isl::set ParamSet = Stmt.getDomain();
-            const int ndims = ParamSet.dim(isl::dim::set);
-            ParamSet = ParamSet.project_out(isl::dim::set, 0, ndims);
-            
-            // isl_set_foreach_constraint(ParamSet, AddConstraintToSet, (void *)PPCGScop->Context);
-            ParamSet = ParamSet.align_params(isl::manage(isl_set_get_space(PPCGScop->context)));
-            if (useAssumptionsInContext(*S) & PAK_NonemptyLoops) {
-                PPCGScop->context = isl_set_intersect_params(PPCGScop->context, ParamSet.release());
-            }
-            else {
-                dbgs() << "*** NOT ADDING ASSUMPTION THAT ALL LOOPS ARE NON-EMPTY\n";
-            }
-            assert(!isl_set_is_empty(PPCGScop->context) && "context empty after adding UB");
+        assert(!isl_set_is_empty(PPCGScop->context) &&
+               "context empty after adding LB");
+
+        isl_constraint *UB = isl_inequality_alloc(
+            isl_local_space_from_space(isl_set_get_space(PPCGScop->context)));
+        UB = isl_constraint_set_constant_si(UB, UB_VAL);
+        UB = isl_constraint_set_coefficient_si(UB, isl_dim_param, i, -1);
+        if (useAssumptionsInContext(*S) & PAK_ContextUpperBound) {
+          PPCGScop->context = isl_set_add_constraint(PPCGScop->context, UB);
+        } else {
+          dbgs() << " *** NOT ADDING  UPPER BOUND ***\n";
+          isl_constraint_free(UB);
         }
-        dbgs() << "DONE SETTING UPPER AND LOWER BOUND FOR PARAMS\n";
+
+        assert(!isl_set_is_empty(PPCGScop->context) &&
+               "context empty after adding UB");
+      }
+
+      // Add all constraints from the domain of each scopstmt into the context.
+      // That way, all our domains become non-empty.
+      // We project out all set dimensions to leave relationships betweem
+      // parameter dimensions.
+      for (ScopStmt &Stmt : *S) {
+        isl::set ParamSet = Stmt.getDomain();
+        const int ndims = ParamSet.dim(isl::dim::set);
+        ParamSet = ParamSet.project_out(isl::dim::set, 0, ndims);
+
+        // isl_set_foreach_constraint(ParamSet, AddConstraintToSet, (void
+        // *)PPCGScop->Context);
+        ParamSet = ParamSet.align_params(
+            isl::manage(isl_set_get_space(PPCGScop->context)));
+        if (useAssumptionsInContext(*S) & PAK_NonemptyLoops) {
+          PPCGScop->context =
+              isl_set_intersect_params(PPCGScop->context, ParamSet.release());
+        } else {
+          dbgs() << "*** NOT ADDING ASSUMPTION THAT ALL LOOPS ARE NON-EMPTY\n";
+        }
+        assert(!isl_set_is_empty(PPCGScop->context) &&
+               "context empty after adding UB");
+      }
+      dbgs() << "DONE SETTING UPPER AND LOWER BOUND FOR PARAMS\n";
     }
 
-    dbgs() << "\n\nContext: "; isl_set_dump(PPCGScop->context); dbgs() << "\n\n";
+    dbgs() << "\n\nContext: ";
+    isl_set_dump(PPCGScop->context);
+    dbgs() << "\n\n";
 
     PPCGScop->domain = S->getDomains().release();
     // TODO: investigate this further. PPCG calls collect_call_domains.
@@ -3769,30 +3801,34 @@ public:
 
     isl::pw_aff Val = isl::aff::var_on_domain(LS, isl::dim::set, 0);
     if (!AccessSet.dim_has_lower_bound(isl::dim::set, 0)) {
-        assert(Array->hasStrides() && "found nonaffine access to non-fortran array in PPCGCodeGen!");
-        //dbgs()<< "=== no lower bound found, setting lower bound to 0===\n";
-        //dbgs() << "AccessSet(prev): "; AccessSet.dump();
-        isl::constraint LB = isl::constraint::alloc_inequality(isl::local_space(AccessSet.get_space()));
-        LB = LB.set_coefficient_si(isl::dim::set, 0, 1);
-        AccessSet = AccessSet.add_constraint(LB);
-        //dbgs() << "AccessSet(new): "; AccessSet.dump();
+      assert(Array->hasStrides() &&
+             "found nonaffine access to non-fortran array in PPCGCodeGen!");
+      // dbgs()<< "=== no lower bound found, setting lower bound to 0===\n";
+      // dbgs() << "AccessSet(prev): "; AccessSet.dump();
+      isl::constraint LB = isl::constraint::alloc_inequality(
+          isl::local_space(AccessSet.get_space()));
+      LB = LB.set_coefficient_si(isl::dim::set, 0, 1);
+      AccessSet = AccessSet.add_constraint(LB);
+      // dbgs() << "AccessSet(new): "; AccessSet.dump();
     }
     isl::pw_aff OuterMin = AccessSet.dim_min(0);
 
     if (!AccessSet.dim_has_upper_bound(isl::dim::set, 0)) {
-        assert(Array->hasStrides() && "found nonaffine access to non-fortran array in PPCGCodeGen!");
-        dbgs()<< "=== no upper bound found, setting upper bound to array size===\n";
+      assert(Array->hasStrides() &&
+             "found nonaffine access to non-fortran array in PPCGCodeGen!");
+      dbgs()
+          << "=== no upper bound found, setting upper bound to array size===\n";
 
+      isl::constraint C = isl::constraint::alloc_inequality(
+          isl::local_space(AccessSet.get_space()));
+      // dbgs() << "Constraint: "; C.dump(); dbgs() << "\n";
+      C = C.set_coefficient_si(isl::dim::set, 0, -1);
+      C = C.set_constant_si(std::numeric_limits<int>().max());
 
-        isl::constraint C = isl::constraint::alloc_inequality(isl::local_space(AccessSet.get_space()));
-        //dbgs() << "Constraint: "; C.dump(); dbgs() << "\n";
-        C = C.set_coefficient_si(isl::dim::set, 0, -1);
-        C = C.set_constant_si(std::numeric_limits<int>().max());
-
-        //dbgs() << "AccessSet(old): "; AccessSet.dump();
-        AccessSet = AccessSet.add_constraint(C);
-        //dbgs() << "AccessSet(new): "; AccessSet.dump();
-    } 
+      // dbgs() << "AccessSet(old): "; AccessSet.dump();
+      AccessSet = AccessSet.add_constraint(C);
+      // dbgs() << "AccessSet(new): "; AccessSet.dump();
+    }
     isl::pw_aff OuterMax = AccessSet.dim_max(0);
 
     OuterMin = OuterMin.add_dims(isl::dim::in, Val.dim(isl::dim::in));
@@ -4475,7 +4511,6 @@ public:
       isl_ast_node_free(Root);
     } else {
 
-
       NodeBuilder.addParameters(S->getContext().release());
       Value *RTC = NodeBuilder.createRTC(Condition);
       Builder.GetInsertBlock()->getTerminator()->setOperand(0, RTC);
@@ -4499,9 +4534,9 @@ public:
     }
 
     if (!NodeBuilder.BuildSuccessful) {
-        dbgs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
-        CondBr->setOperand(0, Builder.getFalse());
-        report_fatal_error("!NodeBuilder.BuildSuccessful");
+      dbgs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
+      CondBr->setOperand(0, Builder.getFalse());
+      report_fatal_error("!NodeBuilder.BuildSuccessful");
     }
   }
 
@@ -4574,7 +4609,6 @@ public:
     auto PPCGScop = createPPCGScop();
     auto PPCGProg = createPPCGProg(PPCGScop);
     auto PPCGGen = generateGPU(PPCGScop, PPCGProg);
-
 
     if (PPCGGen->tree) {
       generateCode(isl_ast_node_copy(PPCGGen->tree), PPCGProg);

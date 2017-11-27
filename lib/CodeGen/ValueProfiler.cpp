@@ -91,7 +91,11 @@ std::map<std::string, HistogramTy> getHistogramFromProfile() {
     std::string rawinput((std::istreambuf_iterator<char>(file)),
             std::istreambuf_iterator<char>());
 
-    assert(rawinput != "" && "unable to read data from input file");
+    if (rawinput == "") {
+        errs() << "VALUEPROFILER: unable to read data, loading empty profile input...\n";
+        return {};
+        // assert(rawinput != "" && "unable to read data from input file");
+    }
 
   Json::Reader reader;
   Json::Value root;
