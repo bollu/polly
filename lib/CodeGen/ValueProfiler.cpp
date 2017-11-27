@@ -73,6 +73,10 @@ static llvm::Function *getOrCreateFunction(Module &M, const char *Name,
 }
 
 namespace polly {
+
+bool isValueProfilerSaveEnabled() {
+    return OutputFilepath != "";
+}
 llvm::Function *getOrCreateVpProfileValueProto(llvm::Module &M) {
   PollyIRBuilder Builder(M.getContext());
   return getOrCreateFunction(
@@ -121,6 +125,19 @@ std::map<std::string, HistogramTy> getHistogramFromProfile() {
           Json::Value jsonValue = jsonHistogram[i]["value"];
           Json::Value jsonFrequency = jsonHistogram[i]["frequency"];
 
+          errs() << "--\n";
+          if (jsonValue.isDouble()) {
+              errs() << __LINE__ << ":name: " << name << "\n";
+              errs() << "isint:" << jsonValue.isInt() << "\n";
+              errs() << "isuint:" << jsonValue.isUInt() << "\n";
+          }
+
+          if (jsonFrequency.isDouble()) {
+              errs() << __LINE__ << ":name: " << name << "\n";
+          }
+
+          errs() << jsonValue.asDouble() << "\n";
+          errs() << jsonFrequency.asDouble() << "\n";
           histogram[jsonValue.asUInt()] = jsonFrequency.asUInt();
 
 

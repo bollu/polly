@@ -299,14 +299,16 @@ void replaceConstantsFromValueProfile(Function *F) {
       errs() << "\tno value found.\n";
       continue;
     }
-    errs() << "value found: " << *maybeVal << ".\n";
+    static int  nFoundValues = 0;
+    nFoundValues++;
+    errs() << __PRETTY_FUNCTION__ << " |nFoundValues: " << nFoundValues << "\n";
     Builder.SetInsertPoint(&F->getEntryBlock());
     Value *New = nullptr;
     Constant *RawInt = ConstantInt::get(Builder.getInt64Ty(), *maybeVal);
     if (Arg.getType()->isIntegerTy()) {
       New = Builder.CreateSExtOrTrunc(RawInt, Arg.getType());
     } else if (Arg.getType()->isFloatingPointTy()) {
-      New = Builder.CreateSIToFP(RawInt, Arg.getType());
+      New = Builder.CreateUIToFP(RawInt, Arg.getType());
     } else {
       report_fatal_error("unknown type of profiled argument.\n");
     }
@@ -2095,21 +2097,49 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
 
   auto CreateCallProfileVal = [&F](const char *Name, Value *Val,
                                    PollyIRBuilder &Builder) {
+      if (!isValueProfilerSaveEnabled) return;
+      errs() << "--\n";
+      errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
+    errs() << __LINE__ << "\n";
     Function *VpProfileValue = polly::getOrCreateVpProfileValueProto(
         *Builder.GetInsertPoint()->getModule());
+    errs() << __LINE__ << "\n";
     Value *NameVal =
         Builder.CreateGlobalStringPtr(getProfilerName(F, Val->getName()));
-    Value *ValSExt =
-        Builder.CreateSExt(Val, Builder.getInt64Ty(), Val->getName() + ".sext");
-    Builder.CreateCall(VpProfileValue, {NameVal, ValSExt});
+    errs() << __LINE__ << "\n";
+    errs() << "Val: " << *Val << " | Name : " << Name << "\n";
+    Value *ValueAsInt64 = nullptr;
+    
+    assert(!isa<PointerType>(Val->getType()) && "cannot store pointer");
+    if (Val->getType()->isIntegerTy()) {
+        ValueAsInt64 = Builder.CreateSExt(Val, Builder.getInt64Ty(), Val->getName() + ".sext");
+    }
+    else if (Val->getType()->isFloatingPointTy()) {
+        ValueAsInt64 = Builder.CreateFPToUI(Val, Builder.getInt64Ty(), Val->getName() + ".tosi");
+    }
+    else {
+        errs() << "unable to handle type: " << *Val->getType() << " | Val: " << *Val << "\n";
+        assert(false && "unknown type.");
+    }
+    assert(ValueAsInt64 != nullptr && "uninitiaized");
+    errs() << __LINE__ << "\n";
+    Builder.CreateCall(VpProfileValue, {NameVal, ValueAsInt64});
+      errs() << "--\n";
 
   };
   auto CreateCallProfileBasePtr =
       [&CreateCallProfileVal](const char *Name, Value *Base,
                               PollyIRBuilder &Builder) {
+          errs() << "--\n";
+          errs() << "Base: " << *Base << "\n";
+          errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
+          errs() << __LINE__ << "\n";
         Value *ValLoaded =
             Builder.CreateLoad(Base, "vp.profiler.load." + Base->getName());
+        errs() << __LINE__ << "\n";
         CreateCallProfileVal(Name, ValLoaded, Builder);
+        errs() << __LINE__ << "\n";
+          errs() << "--\n";
 
       };
 
@@ -2257,7 +2287,6 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
 
     // Only profile those values that are not pointers.
     if (!isa<PointerType>(Val->getType())) {
-
       const std::string name = std::string(Val->getName());
       CreateCallProfileVal(name.c_str(), Val, Builder);
     }
