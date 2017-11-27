@@ -125,7 +125,6 @@ std::map<std::string, HistogramTy> getHistogramFromProfile() {
           Json::Value jsonValue = jsonHistogram[i]["value"];
           Json::Value jsonFrequency = jsonHistogram[i]["frequency"];
 
-          errs() << "--\n";
           if (jsonValue.isDouble()) {
               errs() << __LINE__ << ":name: " << name << "\n";
               errs() << "isint:" << jsonValue.isInt() << "\n";
@@ -136,8 +135,6 @@ std::map<std::string, HistogramTy> getHistogramFromProfile() {
               errs() << __LINE__ << ":name: " << name << "\n";
           }
 
-          errs() << jsonValue.asDouble() << "\n";
-          errs() << jsonFrequency.asDouble() << "\n";
           histogram[jsonValue.asUInt()] = jsonFrequency.asUInt();
 
 

@@ -265,18 +265,12 @@ static Function *createPollyAbstractIndexFunction(Module &M,
 }
 
 static std::string getProfilerName(const Function *F, std::string name) {
-    errs() << "\n--\n";
-    errs() << __PRETTY_FUNCTION__ << "\n";
-    errs() << "\tfn name: " << F->getName() << " | ";
-    errs() << "name:" << name << "\n";
     size_t hash = std::hash<std::string>{}(name);
     const std::string out = std::string(F->getName()) + "_" + name + "_" + std::to_string(hash);
-    errs() << "\tout: " << out << "\n---\n";
     return out;
 }
 
 void replaceConstantsFromValueProfile(Function *F) {
-  errs() << __PRETTY_FUNCTION__ << "\n";
   const std::map<std::string, uint64_t> vpNameToConstantValue =
       polly::getConstantValuesFromProfile();
 
@@ -284,7 +278,6 @@ void replaceConstantsFromValueProfile(Function *F) {
                              &F](const Value *V) -> llvm::Optional<uint64_t> {
 
     const std::string lookupName = getProfilerName(F, V->getName());
-    errs() << "looking up: " << lookupName << "...\n";
     auto it = vpNameToConstantValue.find(lookupName);
     if (it == vpNameToConstantValue.end())
       return Optional<uint64_t>(None);
@@ -293,15 +286,13 @@ void replaceConstantsFromValueProfile(Function *F) {
 
   PollyIRBuilder Builder(F->getContext());
   for (Argument &Arg : F->args()) {
-    errs() << "VP: trying to replace : " << Arg << "\n";
     Optional<uint64_t> maybeVal = vpGetOptionalValue(&Arg);
     if (!maybeVal) {
-      errs() << "\tno value found.\n";
       continue;
     }
     static int  nFoundValues = 0;
     nFoundValues++;
-    errs() << __PRETTY_FUNCTION__ << " |nFoundValues: " << nFoundValues << "\n";
+    errs() << "#####" << __FUNCTION__ << " |Fn: " << F->getName() << " |nFoundValues: " << nFoundValues << "\n";
     Builder.SetInsertPoint(&F->getEntryBlock());
     Value *New = nullptr;
     Constant *RawInt = ConstantInt::get(Builder.getInt64Ty(), *maybeVal);
@@ -349,12 +340,10 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
   const unsigned NumUsedArrays = [&] {
     unsigned n = 0;
     for (int i = 0; i < Prog->n_array; i++) {
-      if (!ppcg_kernel_requires_array_argument(Kernel, i))
-        continue;
 
-      // if (ppcg_kernel_requires_array_argument(Kernel, i)) {
-      //   n++;
-      // }
+      if (ppcg_kernel_requires_array_argument(Kernel, i)) {
+        n++;
+      }
     };
     return n;
   }();
@@ -2098,16 +2087,10 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
   auto CreateCallProfileVal = [&F](const char *Name, Value *Val,
                                    PollyIRBuilder &Builder) {
       if (!isValueProfilerSaveEnabled) return;
-      errs() << "--\n";
-      errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
-    errs() << __LINE__ << "\n";
     Function *VpProfileValue = polly::getOrCreateVpProfileValueProto(
         *Builder.GetInsertPoint()->getModule());
-    errs() << __LINE__ << "\n";
     Value *NameVal =
         Builder.CreateGlobalStringPtr(getProfilerName(F, Val->getName()));
-    errs() << __LINE__ << "\n";
-    errs() << "Val: " << *Val << " | Name : " << Name << "\n";
     Value *ValueAsInt64 = nullptr;
     
     assert(!isa<PointerType>(Val->getType()) && "cannot store pointer");
@@ -2118,28 +2101,18 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
         ValueAsInt64 = Builder.CreateFPToUI(Val, Builder.getInt64Ty(), Val->getName() + ".tosi");
     }
     else {
-        errs() << "unable to handle type: " << *Val->getType() << " | Val: " << *Val << "\n";
         assert(false && "unknown type.");
     }
     assert(ValueAsInt64 != nullptr && "uninitiaized");
-    errs() << __LINE__ << "\n";
     Builder.CreateCall(VpProfileValue, {NameVal, ValueAsInt64});
-      errs() << "--\n";
 
   };
   auto CreateCallProfileBasePtr =
       [&CreateCallProfileVal](const char *Name, Value *Base,
                               PollyIRBuilder &Builder) {
-          errs() << "--\n";
-          errs() << "Base: " << *Base << "\n";
-          errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
-          errs() << __LINE__ << "\n";
         Value *ValLoaded =
             Builder.CreateLoad(Base, "vp.profiler.load." + Base->getName());
-        errs() << __LINE__ << "\n";
         CreateCallProfileVal(Name, ValLoaded, Builder);
-        errs() << __LINE__ << "\n";
-          errs() << "--\n";
 
       };
 
@@ -2434,6 +2407,8 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
   // Look for dead parameters and prune them among SubtreeValues
   LiveArrayIdxsTy LiveArrayIdxs;
   LiveVarIdxsTy LiveVarIdxs;
+
+  // value profile
   if (BoolRemoveDeadSubtreeValues) {
 
     SetVector<Value *> NewSubtreeValues;
@@ -2455,11 +2430,25 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
     F = FNew;
   };
 
-  // value profile
+
   static const bool ValueProfilingEnabled = true;
   if (ValueProfilingEnabled) {
-    replaceConstantsFromValueProfile(F);
+      replaceConstantsFromValueProfile(F);
+
+      //if (BoolRemoveDeadSubtreeValues) {
+
+      //    SetVector<Value *> NewSubtreeValues;
+      //    Function *FNew;
+      //    std::tie(FNew, NewSubtreeValues, LiveArrayIdxs, LiveVarIdxs) =
+      //        removeDeadSubtreeValues(F, Prog, Kernel, SubtreeValues, IDToValue, DL);
+      //    assert(NewSubtreeValues.size() <= SubtreeValues.size());
+      //    SubtreeValues.clear();
+      //    for (Value *NV : NewSubtreeValues)
+      //        SubtreeValues.insert(NV);
+      //    F = FNew;
+      //};
   }
+
 
   if (Arch == GPUArch::NVPTX64)
     addCUDAAnnotations(F->getParent(), BlockDimX, BlockDimY, BlockDimZ);
@@ -2503,7 +2492,6 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
     return Builder.CreateInBoundsGEP(gv->getValueType(), gv, Args, Name);
   }();
 
-  errs() << "KernelString: " << *KernelString << "\n";
 
   Value *NameString = Builder.CreateGlobalStringPtr(Name, Name + "_name");
   Value *GPUKernel = createCallGetKernel(KernelString, NameString);
@@ -3249,7 +3237,6 @@ GPUNodeBuilder::createKernelASM(std::string kernelFunctionName) {
   const std::string nvccCubinCreateCommand =
       std::string("nvcc --cubin " + ptxFilename + " -arch " + CudaVersion +
                   " -o " + cubinFilename + " --resource-usage");
-  errs() << "Running NVCC Command: " << nvccCubinCreateCommand << "\b";
   const std::string resourceUsage = exec(nvccCubinCreateCommand.c_str());
   dbgs() << resourceUsage;
 
@@ -3647,7 +3634,6 @@ public:
         if (useAssumptionsInContext(*S) & PAK_ContextLowerBound) {
           PPCGScop->context = isl_set_add_constraint(PPCGScop->context, LB);
         } else {
-          dbgs() << " *** NOT ADDING LOWER BOUND ***\n";
           isl_constraint_free(LB);
         }
 
@@ -3661,7 +3647,6 @@ public:
         if (useAssumptionsInContext(*S) & PAK_ContextUpperBound) {
           PPCGScop->context = isl_set_add_constraint(PPCGScop->context, UB);
         } else {
-          dbgs() << " *** NOT ADDING  UPPER BOUND ***\n";
           isl_constraint_free(UB);
         }
 
@@ -3685,18 +3670,12 @@ public:
         if (useAssumptionsInContext(*S) & PAK_NonemptyLoops) {
           PPCGScop->context =
               isl_set_intersect_params(PPCGScop->context, ParamSet.release());
-        } else {
-          dbgs() << "*** NOT ADDING ASSUMPTION THAT ALL LOOPS ARE NON-EMPTY\n";
         }
         assert(!isl_set_is_empty(PPCGScop->context) &&
                "context empty after adding UB");
       }
       dbgs() << "DONE SETTING UPPER AND LOWER BOUND FOR PARAMS\n";
     }
-
-    dbgs() << "\n\nContext: ";
-    isl_set_dump(PPCGScop->context);
-    dbgs() << "\n\n";
 
     PPCGScop->domain = S->getDomains().release();
     // TODO: investigate this further. PPCG calls collect_call_domains.
