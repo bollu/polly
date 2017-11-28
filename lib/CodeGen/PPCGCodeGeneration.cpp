@@ -264,9 +264,8 @@ static Function *createPollyAbstractIndexFunction(Module &M,
   return F;
 }
 
-static std::string getProfilerName(const Function *F, std::string name) {
-    size_t hash = std::hash<std::string>{}(name);
-    const std::string out = std::string(F->getName()) + "_" + name + "_" + std::to_string(hash);
+static std::string getProfilerName(const Function *F, int Index) {
+    const std::string out = std::string(F->getName()) + "_" + std::to_string(Index);
     return out;
 }
 
@@ -275,9 +274,9 @@ void replaceConstantsFromValueProfile(Function *F) {
       polly::getConstantValuesFromProfile();
 
   auto vpGetOptionalValue = [&vpNameToConstantValue,
-                             &F](const Value *V) -> llvm::Optional<uint64_t> {
+                             &F](int ix) -> llvm::Optional<uint64_t> {
 
-    const std::string lookupName = getProfilerName(F, V->getName());
+    const std::string lookupName = getProfilerName(F, ix);
     auto it = vpNameToConstantValue.find(lookupName);
     if (it == vpNameToConstantValue.end())
       return Optional<uint64_t>(None);
@@ -285,14 +284,19 @@ void replaceConstantsFromValueProfile(Function *F) {
   };
 
   PollyIRBuilder Builder(F->getContext());
+
+  // total hack.
+  int argi = -1;
   for (Argument &Arg : F->args()) {
-    Optional<uint64_t> maybeVal = vpGetOptionalValue(&Arg);
+      argi++;
+
+    Optional<uint64_t> maybeVal = vpGetOptionalValue(argi);
     if (!maybeVal) {
       continue;
     }
     static int  nFoundValues = 0;
     nFoundValues++;
-    errs() << "#####" << __FUNCTION__ << " |Fn: " << F->getName() << " |nFoundValues: " << nFoundValues << "\n";
+    errs() << "#####" << __FUNCTION__ << " |Fn: " << F->getName() << " | Value: " << Arg << " |nFoundValues: " << nFoundValues << "\n";
     Builder.SetInsertPoint(&F->getEntryBlock());
     Value *New = nullptr;
     Constant *RawInt = ConstantInt::get(Builder.getInt64Ty(), *maybeVal);
@@ -2084,13 +2088,13 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
   // Get a hold of the VpDumpValues function, and use it to setup
   // helper functions for creating a call to the profiler.
 
-  auto CreateCallProfileVal = [&F](const char *Name, Value *Val,
+  auto CreateCallProfileVal = [&F](int Index, Value *Val,
                                    PollyIRBuilder &Builder) {
-      if (!isValueProfilerSaveEnabled) return;
+      if (!isValueProfilerSaveEnabled()) return;
     Function *VpProfileValue = polly::getOrCreateVpProfileValueProto(
         *Builder.GetInsertPoint()->getModule());
     Value *NameVal =
-        Builder.CreateGlobalStringPtr(getProfilerName(F, Val->getName()));
+        Builder.CreateGlobalStringPtr(getProfilerName(F, Index));
     Value *ValueAsInt64 = nullptr;
     
     assert(!isa<PointerType>(Val->getType()) && "cannot store pointer");
@@ -2108,11 +2112,11 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
 
   };
   auto CreateCallProfileBasePtr =
-      [&CreateCallProfileVal](const char *Name, Value *Base,
+      [&CreateCallProfileVal](int Index, Value *Base,
                               PollyIRBuilder &Builder) {
         Value *ValLoaded =
             Builder.CreateLoad(Base, "vp.profiler.load." + Base->getName());
-        CreateCallProfileVal(Name, ValLoaded, Builder);
+        CreateCallProfileVal(Index, ValLoaded, Builder);
 
       };
 
@@ -2195,8 +2199,7 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
           ValPtr, Builder.getInt8PtrTy(), "ValPtrCast");
       Builder.CreateStore(ValPtrCast, Slot);
 
-      const std::string name = std::string(ValPtr->getName());
-      CreateCallProfileBasePtr(name.c_str(), ValPtr, Builder);
+      CreateCallProfileBasePtr(Index, ValPtr, Builder);
 
     } else {
       Instruction *Param =
@@ -2260,8 +2263,7 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
 
     // Only profile those values that are not pointers.
     if (!isa<PointerType>(Val->getType())) {
-      const std::string name = std::string(Val->getName());
-      CreateCallProfileVal(name.c_str(), Val, Builder);
+      CreateCallProfileVal(Index, Val, Builder);
     }
     Index++;
   }
@@ -2276,6 +2278,11 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
                        EntryBlock->getTerminator());
     Builder.CreateStore(Val, Param);
     insertStoreParameter(Parameters, Param, Index);
+
+    if (!isa<PointerType>(Val->getType())) {
+      CreateCallProfileVal(Index, Val, Builder);
+    }
+
     Index++;
   }
   assert(Index == NumArgs && "created incorrect number of launch parameters!");
