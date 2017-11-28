@@ -120,26 +120,33 @@ std::map<std::string, HistogramTy> getHistogramFromProfile() {
       std::string name = j["name"].asString();
       Json::Value jsonHistogram = j["histogram"];
 
+      bool isValidHistogram = true;
       std::map<uint64_t, uint64_t> histogram;
       for(unsigned i = 0; i < jsonHistogram.size(); i++) {
           Json::Value jsonValue = jsonHistogram[i]["value"];
           Json::Value jsonFrequency = jsonHistogram[i]["frequency"];
 
-          if (jsonValue.isDouble()) {
+          // TODO: understand why the fuck this even happens.
+          if (jsonValue.isDouble()){
+              isValidHistogram = false;
               errs() << __LINE__ << ":name: " << name << "\n";
-              errs() << "isint:" << jsonValue.isInt() << "\n";
-              errs() << "isuint:" << jsonValue.isUInt() << "\n";
+              errs() << " :value:" << jsonValue.asDouble();
+              break;
           }
 
           if (jsonFrequency.isDouble()) {
+              isValidHistogram = false;
               errs() << __LINE__ << ":name: " << name << "\n";
+              errs() << " :frequency:" << jsonFrequency.asDouble();
+              break;
           }
 
           histogram[jsonValue.asUInt()] = jsonFrequency.asUInt();
 
 
       }
-      nameToHistogram[name] = histogram;
+      if (isValidHistogram)
+          nameToHistogram[name] = histogram;
   }
 
   return nameToHistogram;
@@ -150,17 +157,21 @@ std::map<std::string, HistogramTy> getHistogramFromProfile() {
 std::map<std::string, uint64_t> getConstantValuesFromProfile() {
   std::map<std::string, HistogramTy> nameToHistogram = getHistogramFromProfile();
   std::map<std::string, uint64_t> nameToConstantValue;
+  errs() << __PRETTY_FUNCTION__  << "\n";
 
   for(auto it: nameToHistogram) {
       const std::string name = it.first;
       const HistogramTy hist = it.second;
       assert(hist.size() > 0 && "empty histogram!");
+      errs() << "\tconsidering " << name << "\n";
       if (hist.size() != 1) continue;
 
       // the constant value is the LHS (value) of the first (and only) value in the histogram.
       const uint64_t constantVal = hist.begin()->first;
       nameToConstantValue[name] = constantVal;
+      errs() << "\t\tconstant: " << name << " = " << constantVal << "\n";
   }
+  errs() << "---\n";
 
   return nameToConstantValue;
 
