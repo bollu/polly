@@ -3350,8 +3350,8 @@ GPUNodeBuilder::finalizeKernelFunction(std::string kernelFunctionName) {
 
   llvm::legacy::PassManager OptPasses;
   PassManagerBuilder PassBuilder;
-  PassBuilder.OptLevel = 3;
-  PassBuilder.SizeLevel = 0;
+  PassBuilder.OptLevel = 1;
+  PassBuilder.SizeLevel = 3;
 
   // TODO: put this in the correct place.
   static const bool HACK_DENORMALIZE = true;
@@ -3364,6 +3364,12 @@ GPUNodeBuilder::finalizeKernelFunction(std::string kernelFunctionName) {
   }
   PassBuilder.populateModulePassManager(OptPasses);
   OptPasses.run(*GPUModule);
+
+
+    Value *BlockDimX = Builder.getInt32(32);
+    Value *BlockDimY = Builder.getInt32(1);
+    Value *BlockDimZ = Builder.getInt32(1);
+    addCUDAAnnotations(GPUModule.get(), BlockDimX, BlockDimY, BlockDimZ);
 
   for (Function &F : *GPUModule) {
     countNumUnusedParamsInFunction(&F);
