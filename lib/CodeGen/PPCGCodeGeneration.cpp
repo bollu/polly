@@ -74,12 +74,7 @@ enum PollyAssumptionsKind {
 
 // Use assumptions to set lower and upper bounds.
 // We cannot assume that all loops are nonempty, this is bad for performance.
-static unsigned useAssumptionsInContext(const Scop &S) {
-
-  if (S.getFunction().getName().count("inv_so") > 0 ||
-      S.getFunction().getName().count("inv_th") > 0)
-      return PAK_ContextLowerBound | PAK_ContextUpperBound | PAK_NonemptyLoops;
-
+static PollyAssumptionsKind useAssumptionsInContext(const Scop &S) {
   if (S.getFunction().getName() ==
       "__radiation_rg_org_MOD_radiation_rg_organize")
     return PAK_None;
