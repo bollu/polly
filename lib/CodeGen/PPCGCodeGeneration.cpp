@@ -3217,12 +3217,23 @@ GPUNodeBuilder::createKernelASM(std::string kernelFunctionName) {
     legacy::FunctionPassManager FPM(GPUModule.get());
 
     PassManagerBuilder PassBuilder;
-    TargetM->adjustPassManager(PassBuilder);
 
     PassBuilder.OptLevel = 3;
     PassBuilder.SizeLevel = 0;
     PassBuilder.LoopVectorize = false;
     PassBuilder.SLPVectorize = false;
+    TargetM->adjustPassManager(PassBuilder);
+    PassBuilder.Inliner = createFunctionInliningPass(PassBuilder.OptLevel, 0, false);
+
+    // TODO: put this in the correct place.
+    static const bool HACK_DENORMALIZE = true;
+    if (HACK_DENORMALIZE) {
+        GPUModule->addModuleFlag(Module::Override, "nvvm-reflect-ftz", 1);
+
+        for (llvm::Function &CurF : *GPUModule) {
+            CurF.addFnAttr("nvptx-f32ftz", "true");
+        }
+    }
 
     ModulePassManager.add(
         createTargetTransformInfoWrapperPass(TargetM->getTargetIRAnalysis()));
@@ -3232,14 +3243,18 @@ GPUNodeBuilder::createKernelASM(std::string kernelFunctionName) {
     PassBuilder.populateModulePassManager(ModulePassManager);
     PassBuilder.populateFunctionPassManager(FPM);
 
+    // Run optimisation passes.
     FPM.doInitialization();
     for (llvm::Module::iterator i = GPUModule->begin(); i != GPUModule->end();
          i++) {
       FPM.run(*i);
     }
-
     FPM.doFinalization();
     ModulePassManager.run(*GPUModule);
+    Value *BlockDimX = Builder.getInt32(32);
+    Value *BlockDimY = Builder.getInt32(1);
+    Value *BlockDimZ = Builder.getInt32(1);
+    addCUDAAnnotations(GPUModule.get(), BlockDimX, BlockDimY, BlockDimZ);
   }
 
   if (DumpKernelIR)
@@ -3383,32 +3398,6 @@ GPUNodeBuilder::finalizeKernelFunction(std::string kernelFunctionName) {
 
   addCUDALibDevice();
 
-  llvm::legacy::PassManager OptPasses;
-  PassManagerBuilder PassBuilder;
-  PassBuilder.OptLevel = 1;
-  PassBuilder.SizeLevel = 3;
-
-  // TODO: put this in the correct place.
-  static const bool HACK_DENORMALIZE = true;
-  if (HACK_DENORMALIZE) {
-    GPUModule->addModuleFlag(Module::Override, "nvvm-reflect-ftz", 1);
-
-    for (llvm::Function &CurF : *GPUModule) {
-      CurF.addFnAttr("nvptx-f32ftz", "true");
-    }
-  }
-  PassBuilder.populateModulePassManager(OptPasses);
-  OptPasses.run(*GPUModule);
-
-
-    Value *BlockDimX = Builder.getInt32(32);
-    Value *BlockDimY = Builder.getInt32(1);
-    Value *BlockDimZ = Builder.getInt32(1);
-    addCUDAAnnotations(GPUModule.get(), BlockDimX, BlockDimY, BlockDimZ);
-
-  for (Function &F : *GPUModule) {
-    countNumUnusedParamsInFunction(&F);
-  };
 
   std::vector<char> Assembly = createKernelASM(kernelFunctionName);
 
