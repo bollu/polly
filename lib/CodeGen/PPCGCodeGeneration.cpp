@@ -278,14 +278,6 @@ void replaceConstantsFromValueProfile(Function *F) {
                              &F](int ix) -> llvm::Optional<uint64_t> {
     
 
-    if (F->getName() == "FUNC___radiation_rg_MOD_opt_so_SCOP_0_KERNEL_0") return Optional<uint64_t>(None);
-    // if (F->getName() == "FUNC___radiation_rg_MOD_opt_so_SCOP_0_KERNEL_1") return Optional<uint64_t>(None);
-    //static const int IX_TO_ALLOW_LB = 135;
-    static const int IX_TO_ALLOW_LB = 138;
-    static const int IX_TO_ALLOW_UB = 138;
-    if (ix < IX_TO_ALLOW_LB || ix > IX_TO_ALLOW_UB ) return Optional<uint64_t>(None);
-
-
 
     const std::string lookupName = getProfilerName(F, ix);
     auto it = vpNameToConstantValue.find(lookupName);
@@ -2138,10 +2130,6 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
         assert(false && "unknown type.");
     }
     assert(ValueAsInt64 != nullptr && "uninitiaized");
-    RuntimeDebugBuilder::createCPUPrinter(
-        Builder,
-        "Fn:" +  F->getName().str() + " | Ix: " + std::to_string(Index).c_str(), " | OriginalVal: ", Val,
-        " | ValAsInt64: ", ValueAsInt64, " \n");
     Builder.CreateCall(VpProfileValue, {NameVal, ValueAsInt64});
 
   };
