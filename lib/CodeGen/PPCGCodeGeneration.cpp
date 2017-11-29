@@ -4421,6 +4421,9 @@ public:
   __isl_give isl_ast_expr *
   createSufficientComputeCheck(Scop &S, __isl_keep isl_ast_build *Build) {
     auto Iterations = getNumberOfIterations(S, Build);
+    if (MinCompute == 0) {
+        return isl_ast_expr_from_val(isl_val_int_from_si(S.getIslCtx(), 1));
+    }
     auto *MinComputeVal = isl_val_int_from_si(S.getIslCtx(), MinCompute);
     auto *MinComputeExpr = isl_ast_expr_from_val(MinComputeVal);
     return isl_ast_expr_ge(Iterations, MinComputeExpr);
