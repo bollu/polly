@@ -31,6 +31,7 @@
 #include "llvm/Analysis/GlobalsModRef.h"
 #include "llvm/Analysis/ScalarEvolutionAliasAnalysis.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
+#include "polly/CodeGen/RuntimeDebugBuilder.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Verifier.h"
@@ -285,10 +286,12 @@ void replaceConstantsFromValueProfile(Function *F) {
     if (ix < IX_TO_ALLOW_LB || ix > IX_TO_ALLOW_UB ) return Optional<uint64_t>(None);
 
 
+
     const std::string lookupName = getProfilerName(F, ix);
     auto it = vpNameToConstantValue.find(lookupName);
     if (it == vpNameToConstantValue.end())
       return Optional<uint64_t>(None);
+    errs() << "###### lookupName: " << lookupName << " |arg: " << *(F->arg_begin() + ix) << "| Value" << it->second << "\n";
     return Optional<uint64_t>(it->second);
   };
 
@@ -315,7 +318,7 @@ void replaceConstantsFromValueProfile(Function *F) {
       errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
     } else if (Arg.getType()->isFloatingPointTy()) {
         errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
-      New = Builder.CreateUIToFP(RawInt, Arg.getType());
+      New = Builder.CreateBitCast(RawInt, Arg.getType());
       errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
     } else {
       report_fatal_error("unknown type of profiled argument.\n");
@@ -2128,13 +2131,17 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     }
     else if (Val->getType()->isFloatingPointTy()) {
         errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
-        ValueAsInt64 = Builder.CreateFPToUI(Val, Builder.getInt64Ty(), Val->getName() + ".tosi");
+        ValueAsInt64 = Builder.CreateBitCast(Val, Builder.getInt64Ty(), Val->getName() + ".tosi");
         errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
     }
     else {
         assert(false && "unknown type.");
     }
     assert(ValueAsInt64 != nullptr && "uninitiaized");
+    RuntimeDebugBuilder::createCPUPrinter(
+        Builder,
+        "Fn:" +  F->getName().str() + " | Ix: " + std::to_string(Index).c_str(), " | OriginalVal: ", Val,
+        " | ValAsInt64: ", ValueAsInt64, " \n");
     Builder.CreateCall(VpProfileValue, {NameVal, ValueAsInt64});
 
   };
