@@ -57,6 +57,15 @@ static cl::opt<std::string> OutputFilepath(
     cl::desc("file path of the JSON output from the value profiler"),
     cl::Hidden, cl::init(""), cl::ZeroOrMore, cl::cat(PollyCategory));
 
+static cl::list<std::string> OnlyFunctions(
+    "polly-value-profiler-load-only-func",
+    cl::desc("Only load values from the value profiler for these functions"
+             "Multiple regexes can be comma separated. "
+             "Value prpfiling will run on all functions that match "
+             "ANY of the regexes provided."),
+    cl::ZeroOrMore, cl::CommaSeparated, cl::cat(PollyCategory));
+
+
 #define DEBUG_TYPE "polly-value-profiler"
 
 static llvm::Function *getOrCreateFunction(Module &M, const char *Name,
@@ -76,6 +85,26 @@ namespace polly {
 
 bool isValueProfilerSaveEnabled() {
     return OutputFilepath != "";
+}
+
+static bool doesStringMatchAnyRegex(StringRef Str,
+                                    const cl::list<std::string> &RegexList) {
+  for (auto RegexStr : RegexList) {
+    Regex R(RegexStr);
+
+    std::string Err;
+    if (!R.isValid(Err))
+      report_fatal_error("invalid regex given as input to polly: " + Err, true);
+
+    if (R.match(Str))
+      return true;
+  }
+  return false;
+}
+
+bool isValueProfilerLoadEnabledForFunction(std::string Name) {
+    if (OnlyFunctions.size() == 0) return true;
+    return doesStringMatchAnyRegex(Name, OnlyFunctions);
 }
 llvm::Function *getOrCreateVpProfileValueProto(llvm::Module &M) {
   PollyIRBuilder Builder(M.getContext());

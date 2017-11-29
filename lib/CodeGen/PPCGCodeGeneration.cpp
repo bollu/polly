@@ -275,6 +275,15 @@ void replaceConstantsFromValueProfile(Function *F) {
 
   auto vpGetOptionalValue = [&vpNameToConstantValue,
                              &F](int ix) -> llvm::Optional<uint64_t> {
+    
+
+    if (F->getName() == "FUNC___radiation_rg_MOD_opt_so_SCOP_0_KERNEL_0") return Optional<uint64_t>(None);
+    // if (F->getName() == "FUNC___radiation_rg_MOD_opt_so_SCOP_0_KERNEL_1") return Optional<uint64_t>(None);
+    //static const int IX_TO_ALLOW_LB = 135;
+    static const int IX_TO_ALLOW_LB = 138;
+    static const int IX_TO_ALLOW_UB = 138;
+    if (ix < IX_TO_ALLOW_LB || ix > IX_TO_ALLOW_UB ) return Optional<uint64_t>(None);
+
 
     const std::string lookupName = getProfilerName(F, ix);
     auto it = vpNameToConstantValue.find(lookupName);
@@ -296,18 +305,23 @@ void replaceConstantsFromValueProfile(Function *F) {
     }
     static int  nFoundValues = 0;
     nFoundValues++;
-    errs() << "#####" << __FUNCTION__ << " |Fn: " << F->getName() << " | Value: " << Arg << " |nFoundValues: " << nFoundValues << "\n";
+    errs() << "#####" << __FUNCTION__ << " |Fn: " << F->getName() << " | Idx: " << argi << " | Arg: " << Arg << " | Value: " << *maybeVal << " |nFoundValues: " << nFoundValues << "\n";
     Builder.SetInsertPoint(&F->getEntryBlock());
     Value *New = nullptr;
     Constant *RawInt = ConstantInt::get(Builder.getInt64Ty(), *maybeVal);
     if (Arg.getType()->isIntegerTy()) {
-      New = Builder.CreateSExtOrTrunc(RawInt, Arg.getType());
+        errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
+        New = Builder.CreateSExtOrTrunc(RawInt, Arg.getType());
+      errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
     } else if (Arg.getType()->isFloatingPointTy()) {
+        errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
       New = Builder.CreateUIToFP(RawInt, Arg.getType());
+      errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
     } else {
       report_fatal_error("unknown type of profiled argument.\n");
     }
     assert(New && "New uninitialized");
+    assert(New->getType() == Arg.getType());
     Arg.replaceAllUsesWith(New);
   }
 }
@@ -341,7 +355,7 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
   // OptPasses.run(*F->getParent());
   std::map<Argument *, Constant *> ConstantArgumentReplacement;
 
-  const unsigned NumUsedArrays = [&] {
+  const unsigned NumPPCGRequiredArrays = [&] {
     unsigned n = 0;
     for (int i = 0; i < Prog->n_array; i++) {
 
@@ -351,7 +365,7 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
     };
     return n;
   }();
-  LiveArrayIdxsTy liveArrayIdxs(NumUsedArrays, true);
+  LiveArrayIdxsTy liveArrayIdxs(NumPPCGRequiredArrays, true);
   const unsigned NumHostIters = isl_space_dim(Kernel->space, isl_dim_set);
   const unsigned NumVars = isl_space_dim(Kernel->space, isl_dim_param);
 
@@ -368,16 +382,19 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
   // Scope to contain oldidx, newidx
   {
     unsigned oldidx = 0, newidx = 0;
+    unsigned nDeadArrays = 0;
 
-    for (unsigned i = 0; i < NumUsedArrays; i++, oldidx++) {
+    for (unsigned i = 0; i < NumPPCGRequiredArrays; i++, oldidx++) {
       Argument *A = OldArgs[oldidx];
       if (A->user_empty()) {
+          nDeadArrays++;
         liveArrayIdxs[oldidx] = false;
       } else {
         liveArrayIdxs[oldidx] = true;
         OldToNewIndex[oldidx] = newidx++;
       }
     }
+    dbgs() << "**** NUM DEAD ARRAYS: " << nDeadArrays << "\n";
 
     // Step 1. Setup a 1:1 mapping between old to new indeces.
     // If an old index does not exist as a key, then this means that
@@ -417,6 +434,7 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
            << "\n";
 
     int nConstantSubtreeValsCur = 0;
+    int nDeadSubtreeValsCur = 0;
     static int nConstantSubtreeValsTotal = 0;
     static int sizeConstantSubtreeValsTotal = 0;
     for (unsigned i = 0; i < SubtreeValues.size(); oldidx++, i++) {
@@ -434,9 +452,13 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
           OldToNewIndex[oldidx] = newidx++;
         }
       }
+      else {
+          nDeadSubtreeValsCur++;
+      }
     }
     nConstantSubtreeValsTotal += nConstantSubtreeValsCur;
 
+    dbgs() << "**** NUM DEAD SUBTREE VALS:" << nDeadSubtreeValsCur;
     dbgs() << "**** NUM CONSTANT SUBTREE VALS:" << nConstantSubtreeValsCur
            << "\n";
     dbgs() << "**** NUM CONSTANT SUBTREE VALS(TOTAL):"
@@ -2091,6 +2113,7 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
   auto CreateCallProfileVal = [&F](int Index, Value *Val,
                                    PollyIRBuilder &Builder) {
       if (!isValueProfilerSaveEnabled()) return;
+
     Function *VpProfileValue = polly::getOrCreateVpProfileValueProto(
         *Builder.GetInsertPoint()->getModule());
     Value *NameVal =
@@ -2099,10 +2122,14 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     
     assert(!isa<PointerType>(Val->getType()) && "cannot store pointer");
     if (Val->getType()->isIntegerTy()) {
+        errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
         ValueAsInt64 = Builder.CreateSExt(Val, Builder.getInt64Ty(), Val->getName() + ".sext");
+        errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
     }
     else if (Val->getType()->isFloatingPointTy()) {
+        errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
         ValueAsInt64 = Builder.CreateFPToUI(Val, Builder.getInt64Ty(), Val->getName() + ".tosi");
+        errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
     }
     else {
         assert(false && "unknown type.");
@@ -2114,9 +2141,12 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
   auto CreateCallProfileBasePtr =
       [&CreateCallProfileVal](int Index, Value *Base,
                               PollyIRBuilder &Builder) {
+        errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
         Value *ValLoaded =
             Builder.CreateLoad(Base, "vp.profiler.load." + Base->getName());
+        errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
         CreateCallProfileVal(Index, ValLoaded, Builder);
+        errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
 
       };
 
@@ -2411,50 +2441,53 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
     S.invalidateScopArrayInfo(BasePtr, MemoryKind::Array);
   LocalArrays.clear();
 
+  errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
+  static const bool ValueProfilingEnabled = isValueProfilerLoadEnabledForFunction(S.getFunction().getName());
+  if (ValueProfilingEnabled) {
+      errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
+      errs() << "ValueProfiling running on: " << getUniqueScopName(&S) << "\n";
+      replaceConstantsFromValueProfile(F);
+      errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
+  }
+
+  errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
   // Look for dead parameters and prune them among SubtreeValues
   LiveArrayIdxsTy LiveArrayIdxs;
   LiveVarIdxsTy LiveVarIdxs;
 
   // value profile
   if (BoolRemoveDeadSubtreeValues) {
-
     SetVector<Value *> NewSubtreeValues;
     Function *FNew;
+
+    const int nArgsOld = F->getFunctionType()->getNumParams();
     std::tie(FNew, NewSubtreeValues, LiveArrayIdxs, LiveVarIdxs) =
         removeDeadSubtreeValues(F, Prog, Kernel, SubtreeValues, IDToValue, DL);
 
     dbgs() << "*** OLD V/S NEW SUBTREE VALUES SIZE: "
            << "Old:" << SubtreeValues.size()
            << " | NEW: " << NewSubtreeValues.size() << "\n";
-    int nArgsOld = F->getFunctionType()->getNumParams();
-    int nArgsNew = FNew->getFunctionType()->getNumParams();
+
+    const int nArgsNew = FNew->getFunctionType()->getNumParams();
+    errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
     dbgs() << "*** OLD V/S NEW NARGS: "
            << "Old: " << nArgsOld << " | New: " << nArgsNew << "\n";
+    errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
     assert(NewSubtreeValues.size() <= SubtreeValues.size());
+    errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
     SubtreeValues.clear();
-    for (Value *NV : NewSubtreeValues)
+    errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
+    for (Value *NV : NewSubtreeValues) {
       SubtreeValues.insert(NV);
+    }
+    errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
+    errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
     F = FNew;
+    errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
   };
 
+  errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
 
-  static const bool ValueProfilingEnabled = true;
-  if (ValueProfilingEnabled) {
-      replaceConstantsFromValueProfile(F);
-
-      //if (BoolRemoveDeadSubtreeValues) {
-
-      //    SetVector<Value *> NewSubtreeValues;
-      //    Function *FNew;
-      //    std::tie(FNew, NewSubtreeValues, LiveArrayIdxs, LiveVarIdxs) =
-      //        removeDeadSubtreeValues(F, Prog, Kernel, SubtreeValues, IDToValue, DL);
-      //    assert(NewSubtreeValues.size() <= SubtreeValues.size());
-      //    SubtreeValues.clear();
-      //    for (Value *NV : NewSubtreeValues)
-      //        SubtreeValues.insert(NV);
-      //    F = FNew;
-      //};
-  }
 
 
   if (Arch == GPUArch::NVPTX64)
