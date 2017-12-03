@@ -1884,7 +1884,7 @@ static bool isValidFunctionInKernel(llvm::Function *F, bool AllowLibDevice) {
 
   return F->isIntrinsic() &&
          (Name.startswith("llvm.sqrt") || Name.startswith("llvm.fabs") ||
-          Name.startswith("llvm.copysign"));
+          Name.startswith("llvm.copysign") || Name.startswith("llvm.memset"));
 }
 
 /// Do not take `Function` as a subtree value.
@@ -2903,10 +2903,10 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
                              Arg->getType()->getPointerAddressSpace());
         NewBasePtr = Builder.CreateBitCast(
             Arg, NewTy, Arg->getName() + "_hack_load_for_blockgen");
+        ValueMap[SAI->getBasePtr()] = NewBasePtr;
       } else {
         report_fatal_error(" I did not think about this case yet.");
       }
-      ValueMap[SAI->getBasePtr()] = NewBasePtr;
     }
 
     if (SAI->getNumberOfDimensions() > 0) {
@@ -4652,7 +4652,7 @@ public:
           dbgs() << getUniqueScopName(S)
                  << " contains function which cannot be materialised in a GPU "
                     "kernel. Bailing out.\n";);
-      assert(false);
+     //  assert(false);
       return false;
     }
 
