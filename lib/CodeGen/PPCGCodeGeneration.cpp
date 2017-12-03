@@ -4652,6 +4652,7 @@ public:
           dbgs() << getUniqueScopName(S)
                  << " contains function which cannot be materialised in a GPU "
                     "kernel. Bailing out.\n";);
+      assert(false);
       return false;
     }
 
