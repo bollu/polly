@@ -655,7 +655,7 @@ void ScopBuilder::buildMemoryAccess(MemAccInst Inst, ScopStmt *Stmt) {
 
   buildAccessSingleDim(Inst, Stmt);
 }
-static const bool AbstractMatrixDebug = true;
+static const bool AbstractMatrixDebug = false;
 
 // %v = bitcast (%w)
 // %v = %w
