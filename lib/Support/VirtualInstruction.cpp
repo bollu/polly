@@ -47,6 +47,10 @@ VirtualUse VirtualUse::create(Scop *S, ScopStmt *UserStmt, Loop *UserScope,
   auto *SE = S->getSE();
   if (SE->isSCEVable(Val->getType())) {
     auto *ScevExpr = SE->getSCEVAtScope(Val, UserScope);
+    errs() << "##" << __PRETTY_FUNCTION__ << "\n";
+    errs() << "Val: " << *Val << "\n";
+    errs() << "ScevExpr: " << *ScevExpr << "\n";
+    errs() << "canSynthesize: " <<  canSynthesize(Val, *UserStmt->getParent(), SE, UserScope) << "\n";
     if (!UserStmt || canSynthesize(Val, *UserStmt->getParent(), SE, UserScope))
       return VirtualUse(UserStmt, Val, Synthesizable, ScevExpr, nullptr);
   }

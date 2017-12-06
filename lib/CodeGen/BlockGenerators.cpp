@@ -130,6 +130,10 @@ Value *BlockGenerator::getNewValue(ScopStmt &Stmt, Value *Old, ValueMapT &BBMap,
 
   Value *New = nullptr;
   auto VUse = VirtualUse::create(&Stmt, L, Old, true);
+  errs() << "##" << __PRETTY_FUNCTION__ << "\n";
+  errs() << "Value: " << *Old << "\n";
+  errs() << "VUseType: " << VUse.getKind() << "\n";
+
   switch (VUse.getKind()) {
   case VirtualUse::Block:
     // BasicBlock are constants, but the BlockGenerator copies them.
@@ -170,6 +174,7 @@ Value *BlockGenerator::getNewValue(ScopStmt &Stmt, Value *Old, ValueMapT &BBMap,
     break;
 
   case VirtualUse::Synthesizable:
+    errs() << "VirtualUse::Synthesizable\n";
     // Used by:
     // * Isl/CodeGen/OpenMP/loop-body-references-outer-values-3.ll
     // * Isl/CodeGen/OpenMP/recomputed-srem.ll
@@ -211,7 +216,9 @@ Value *BlockGenerator::getNewValue(ScopStmt &Stmt, Value *Old, ValueMapT &BBMap,
     break;
 
   case VirtualUse::Intra:
+    errs() << "VirtualUse::Intra\n";
   case VirtualUse::Inter:
+    errs() << "VirtualUse::Inter\n";
     auto It = GlobalMap.find(Old);
     // if (GlobalMap.count(Old)) {
     //   errs() << "==Use::Intra|Inter from GlobalMap===\n";
@@ -433,7 +440,11 @@ Value *BlockGenerator::generateLocationAccessed(
     Type *ExpectedType) {
   isl_ast_expr *AccessExpr = isl_id_to_ast_expr_get(NewAccesses, Id);
 
+  errs() << "##" << __PRETTY_FUNCTION__ << "##\n";
+  errs() << "AccessExpr: "; isl_ast_expr_dump(AccessExpr); errs() << "\n";
+
   if (AccessExpr) {
+      errs() << " AccessExpr != nullptr\n";
     AccessExpr = isl_ast_expr_address_of(AccessExpr);
     auto Address = ExprBuilder->create(AccessExpr);
 
@@ -452,6 +463,10 @@ Value *BlockGenerator::generateLocationAccessed(
   assert(
       Pointer &&
       "If expression was not generated, must use the original pointer value");
+  assert(AccessExpr == nullptr);
+  errs() << "AccessExpr == nullptr\n";
+  errs() << "Pointer: " << *Pointer << "\n";
+
   return getNewValue(Stmt, Pointer, BBMap, LTS, L);
 }
 
@@ -471,13 +486,22 @@ BlockGenerator::getImplicitAddress(MemoryAccess &Access, Loop *L,
 Value *BlockGenerator::generateArrayLoad(ScopStmt &Stmt, LoadInst *Load,
                                          ValueMapT &BBMap, LoopToScevMapT &LTS,
                                          isl_id_to_ast_expr *NewAccesses) {
+    errs() << "##" << __PRETTY_FUNCTION__ << "\n";
+    Stmt.dump();
+    errs() << "Load: " << *Load << "\n";
+    
   if (Value *PreloadLoad = GlobalMap.lookup(Load))
     return PreloadLoad;
 
   Value *NewPointer =
       generateLocationAccessed(Stmt, Load, BBMap, LTS, NewAccesses);
+  errs() << "NewPointer: ";
+  if (NewPointer) errs() << *NewPointer << "\n";
+  else errs() << "nullptr\n";
+
   Value *ScalarLoad = Builder.CreateAlignedLoad(
       NewPointer, Load->getAlignment(), Load->getName() + "_p_scalar_");
+  errs() << "ScalarLoad: " << *ScalarLoad << "\n";
 
   if (PollyDebugPrinting)
     RuntimeDebugBuilder::createCPUPrinter(Builder, "Load from ", NewPointer,
@@ -528,8 +552,10 @@ void BlockGenerator::copyInstruction(ScopStmt &Stmt, Instruction *Inst,
     return;
 
   // Synthesizable statements will be generated on-demand.
-  if (canSyntheziseInStmt(Stmt, Inst))
+  if (canSyntheziseInStmt(Stmt, Inst)) {
+    errs() << "\t|" << *Inst << "| is Synthesizable\n";
     return;
+  }
 
   if (auto *Load = dyn_cast<LoadInst>(Inst)) {
     Value *NewLoad = generateArrayLoad(Stmt, Load, BBMap, LTS, NewAccesses);
@@ -555,8 +581,10 @@ void BlockGenerator::copyInstruction(ScopStmt &Stmt, Instruction *Inst,
 
   // Skip some special intrinsics for which we do not adjust the semantics to
   // the new schedule. All others are handled like every other instruction.
-  if (isIgnoredIntrinsic(Inst))
+  if (isIgnoredIntrinsic(Inst)) {
+    errs() << "\t|" << *Inst << "| is IgnoredIntrinsic\n";
     return;
+  }
 
   copyInstScalar(Stmt, Inst, BBMap, LTS);
 }
@@ -623,12 +651,17 @@ void BlockGenerator::copyBB(ScopStmt &Stmt, BasicBlock *BB, BasicBlock *CopyBB,
   // instructions that belong to a certain scop statement. As the code
   // structure of region statements might be arbitrary complex, optimizing the
   // instruction list is not yet supported.
-  if (Stmt.isBlockStmt() || (Stmt.isRegionStmt() && Stmt.getEntryBlock() == BB))
-    for (Instruction *Inst : Stmt.getInstructions())
+  if (Stmt.isBlockStmt() || (Stmt.isRegionStmt() && Stmt.getEntryBlock() == BB)) {
+      errs() <<  __LINE__ << ":" << "Stmt.isBlockStmt() || (Stmt.isRegionStmt() && Stmt.getEntryBlock() == BB))\n";
+    for (Instruction *Inst : Stmt.getInstructions()) {
+        errs() << "copying: " << *Inst << "\n";
       copyInstruction(Stmt, Inst, BBMap, LTS, NewAccesses);
-  else
+    }
+  } else {
+      errs() << __LINE__ << ":" << "!Stmt.isBlockStmt() || (Stmt.isRegionStmt() && Stmt.getEntryBlock() == BB))\n";
     for (Instruction &Inst : *BB)
       copyInstruction(Stmt, &Inst, BBMap, LTS, NewAccesses);
+  };
 }
 
 Value *BlockGenerator::getOrCreateAlloca(const MemoryAccess &Access) {
