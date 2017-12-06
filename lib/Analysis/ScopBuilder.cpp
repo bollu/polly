@@ -655,7 +655,7 @@ void ScopBuilder::buildMemoryAccess(MemAccInst Inst, ScopStmt *Stmt) {
 
   buildAccessSingleDim(Inst, Stmt);
 }
-static const bool AbstractMatrixDebug = false;
+static const bool AbstractMatrixDebug = true;
 
 // %v = bitcast (%w)
 // %v = %w
@@ -702,6 +702,34 @@ GlobalValue *getBasePtrForVariableStride(Value *V) {
 
   return dyn_cast<GlobalValue>(GEP->getPointerOperand());
 }
+
+
+// Collect all PHI nodes referred to by instruction I.
+void collectPHIsInInst(User *U, std::set<PHINode *> &Phis, std::set<User *> &Visited) {
+    assert(U);
+    if (Visited.count(U)) return;
+    Visited.insert(U);
+
+    if (PHINode *Phi = dyn_cast<PHINode>(U)) {
+        assert(Phi);
+        Phis.insert(Phi);
+        // TODO: think about if we should recurse into PHI nodes children?
+        return;
+    }
+    for(unsigned i = 0; i < U->getNumOperands(); i++) {
+         User *Child = dyn_cast<User>(U->getOperand(i));
+         if (!Child) continue;
+         collectPHIsInInst(Child, Phis, Visited);
+    }
+}
+
+
+// Helper if you don't care about Visited nodes.
+void collectPHIsInInst(User *U, std::set<PHINode *> &Phis) {
+    std::set<User *> Visited;
+    collectPHIsInInst(U, Phis, Visited);
+}
+
 bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
                                                  ScopStmt *Stmt) {
   bool IsAffine = true;
@@ -722,6 +750,19 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
   if (Call->getNumArgOperands() % 2 != 1) {
     return false;
   }
+
+  // inserting PHI reads
+//  {
+//      std::set<PHINode *> Phis;
+//      collectPHIsInInst(Call, Phis);
+//      for(PHINode *P : Phis) {
+//          assert(P);
+//          if (Stmt->lookupPHIReadOf(P) != nullptr) continue;
+//          addPHIReadAccess(Stmt, P);
+//      }
+//  }
+//
+
   const int NArrayDims = Call->getNumArgOperands() / 2;
   if (AbstractMatrixDebug)
     errs() << "Num array dims: " << NArrayDims << "\n";
@@ -734,24 +775,32 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
 
   InvariantLoadsSetTy AccessILS;
 
-  const SCEV *Offset = SE.getSCEV(Call->getArgOperand(0));
 
-  if (!isAffineExpr(&scop->getRegion(), SurroundingLoop, Offset, SE,
-                    &AccessILS)) {
-      errs() <<__LINE__ << "| Offset nonaffine: " << *Offset << "\n";
-      IsAffine = false;
-  }
+  const SCEV *OffsetSCEV = [&]{
+      Value *Offset = Call->getArgOperand(0);
+      assert(Offset);
+      const SCEV *OffsetSCEV = SE.getSCEV(Offset);
 
-  //// Offsets are always loaded from the array, they will get invariant 
-  //load hoisted correctly later.
-  for (LoadInst *L : AccessILS) {
-      scop->addRequiredInvariantLoad(L);
-  }
-  AccessILS.clear();
+      if (!isAffineExpr(&scop->getRegion(), SurroundingLoop, OffsetSCEV, SE,
+                  &AccessILS)) {
+          errs() <<__LINE__ << "| Offset nonaffine: " << *OffsetSCEV << "\n";
+          IsAffine = false;
+          ensureValueRead(Offset, Stmt);
+      }
+
+      //// Offsets are always loaded from the array, they will get invariant 
+      //load hoisted correctly later.
+      for (LoadInst *L : AccessILS) {
+          scop->addRequiredInvariantLoad(L);
+      }
+      AccessILS.clear();
 
 
-  if (AbstractMatrixDebug)
-    errs() << "Offset: " << *Offset << "\n";
+      if (AbstractMatrixDebug)
+          errs() << "Offset: " << *OffsetSCEV << "\n";
+
+      return OffsetSCEV;
+  }();
 
   // If all the strides are constants, then we don't need the FAD.
   // Otherwise, we need the FAD to load the correct values of strides
@@ -765,6 +814,9 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
                       &AccessILS)) {
       errs() <<__LINE__ << "| Ix nonaffine: " << *IxSCEV << "\n";
       IsAffine = false;
+      assert(Ix);
+      ensureValueRead(Ix, Stmt);
+
     }
     for (LoadInst *L : AccessILS) {
         scop->addRequiredInvariantLoad(L);
@@ -772,17 +824,20 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
     AccessILS.clear();
 
 
-    Value *Stride = Call->getArgOperand(1 + i);
+    //if (AbstractMatrixDebug)
+    //  errs() << i << " |Raw Ix: " << *Ix << " |Raw Stride: " << *Stride << "\n";
+    Subscripts.push_back(IxSCEV);
+    // -------
 
-    if (AbstractMatrixDebug)
-      errs() << i << " |Raw Ix: " << *Ix << " |Raw Stride: " << *Stride << "\n";
-    Subscripts.push_back(SE.getSCEV(Ix));
+    Value *Stride = Call->getArgOperand(1 + i);
     const SCEV *StrideSCEV = SE.getSCEV(Stride);
 
     if (!isAffineExpr(&scop->getRegion(), SurroundingLoop, StrideSCEV, SE,
                       &AccessILS)) {
       errs() <<__LINE__ << "| stride nonaffine: " << *StrideSCEV << "\n";
       IsAffine = false;
+      assert(Stride);
+      ensureValueRead(Stride, Stmt);
     }
     for (LoadInst *L : AccessILS) {
             scop->addRequiredInvariantLoad(L);
@@ -859,7 +914,7 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
   // NOTE: To be able to change this, we need to teach ScopArrayInfo to recieve
   // a Shape object. So, do that first.
   addArrayAccess(Stmt, Inst, AccType, BasePtr, ElementType, IsAffine, Subscripts,
-                 ShapeInfo::fromStrides(Strides, Offset, FAD), Val);
+                 ShapeInfo::fromStrides(Strides, OffsetSCEV, FAD), Val);
 
   if (AbstractMatrixDebug)
     errs() << "Added array access successfully!\n";
