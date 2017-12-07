@@ -2129,6 +2129,11 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
   auto CreateCallProfileBasePtr =
       [&CreateCallProfileVal](int Index, Value *Base,
                               PollyIRBuilder &Builder) {
+
+          if (isa<PointerType>(Base->getType()->getPointerElementType())) {
+              errs() << "TODO: look into this. Pointer-to-pointer found: " << *Base << "\n";
+              return;
+          }
         Value *ValLoaded =
             Builder.CreateLoad(Base, "vp.profiler.load." + Base->getName());
         CreateCallProfileVal(Index, ValLoaded, Builder);
