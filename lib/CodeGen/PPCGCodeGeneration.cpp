@@ -205,7 +205,8 @@ static std::vector<char> ReadAllBytes(char const *filename) {
 /// function name.
 std::string getUniqueScopName(const Scop *S) {
   return "Scop Region: " + S->getNameStr() +
-         " | Function: " + std::string(S->getFunction().getName());
+         " | Function: " + std::string(S->getFunction().getName()) +
+         " | ScopID: " + std::to_string(S->getID());
 }
 
 static Function *createPollyAbstractIndexFunction(Module &M,
