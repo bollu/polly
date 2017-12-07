@@ -10,6 +10,7 @@ if (GPU_CODEGEN)
   set (GPGPU_CODEGEN_FILES
        CodeGen/PPCGCodeGeneration.cpp
        CodeGen/ManagedMemoryRewrite.cpp
+       CodeGen/NVTXInstrumentationInserter.cpp
        )
 endif (GPU_CODEGEN)
 

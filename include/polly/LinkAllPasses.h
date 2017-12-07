@@ -55,6 +55,8 @@ llvm::Pass *createValueProfilerPass();
 #ifdef GPU_CODEGEN
 llvm::Pass *createPPCGCodeGenerationPass(GPUArch Arch = GPUArch::NVPTX64,
                                          GPURuntime Runtime = GPURuntime::CUDA);
+llvm::Pass *
+createNVTXInstrumentationInserterPass();
 
 llvm::Pass *
 createManagedMemoryRewritePassPass(GPUArch Arch = GPUArch::NVPTX64,
@@ -97,6 +99,7 @@ struct PollyForcePassLinking {
 #ifdef GPU_CODEGEN
     polly::createPPCGCodeGenerationPass();
     polly::createManagedMemoryRewritePassPass();
+    polly::createNVTXInstrumentationInserterPass();
 #endif
     polly::createIslScheduleOptimizerPass();
     polly::createMaximalStaticExpansionPass();
@@ -129,6 +132,7 @@ void initializePollyCanonicalizePass(llvm::PassRegistry &);
 void initializeFlattenSchedulePass(llvm::PassRegistry &);
 void initializeDeLICMPass(llvm::PassRegistry &);
 void initializeValueProfilerPass(llvm::PassRegistry &);
+void initializeNVTXInstrumentationInserterPassPass(llvm::PassRegistry &);
 } // namespace llvm
 
 #endif
