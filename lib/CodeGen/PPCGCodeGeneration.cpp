@@ -2549,6 +2549,7 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
         dbgs().changeColor(raw_ostream::RED)
             << "*** Bailing out: size of parameters is > 4K.\n";
         dbgs().resetColor();
+        report_fatal_error("Size of parameters > 4k.");
         break;
       }
     }
@@ -4514,7 +4515,7 @@ public:
     if (!NodeBuilder.preloadInvariantLoads()) {
       dbgs() << __PRETTY_FUNCTION__ << "\n"
              << "***** preloading invariant loads failed in function: ";
-      assert(false);
+      report_fatal_error("preloading invariant loads failed.");
       // Patch the introduced branch condition to ensure that we always
       // execute the original SCoP.
       auto *FalseI1 = Builder.getFalse();
@@ -4636,7 +4637,7 @@ public:
           dbgs() << getUniqueScopName(S)
                  << " contains function which cannot be materialised in a GPU "
                     "kernel. Bailing out.\n";);
-     //  assert(false);
+      assert(false);
       return false;
     }
 
