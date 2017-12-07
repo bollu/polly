@@ -52,7 +52,7 @@ namespace {
     //nvtxRangePop();
 
 static llvm::Function *getOrCreateNVTXRangePush(Module &M) {
-  const char *Name = "nvtxRangePush";
+  const char *Name = "nvtxRangePushA"; // A for ASCII
   Function *F = M.getFunction(Name);
 
   // If F is not available, declare it.
@@ -78,7 +78,7 @@ static llvm::Function *getOrCreateNVTXRangePop(Module &M) {
     PollyIRBuilder Builder(M.getContext());
     // TODO: How do I get `size_t`? I assume from DataLayout?
     FunctionType *Ty =
-        FunctionType::get(Builder.getVoidTy(), {Builder.getVoidTy()}, false);
+        FunctionType::get(Builder.getVoidTy(), {}, false);
     F = Function::Create(Ty, Linkage, Name, &M);
   }
 
@@ -97,16 +97,21 @@ public:
           BasicBlock *Entry = &F.getEntryBlock();
           PollyIRBuilder Builder(Entry);
           Builder.SetInsertPoint(Entry->getFirstNonPHIOrDbgOrLifetime());
-          Value *FnName = Builder.CreateGlobalString(Name);
+          Value *FnName = Builder.CreateGlobalStringPtr(Name);
           Builder.CreateCall(getOrCreateNVTXRangePush(M), {FnName});
 
           for(BasicBlock &BB : F) {
               // BB exits.
               if (isa<ReturnInst>(BB.getTerminator())) {
-                  Builder.SetInsertPoint(&BB);
+                  Builder.SetInsertPoint(BB.getTerminator());
                   Builder.CreateCall(getOrCreateNVTXRangePop(M),{});
               }
           }
+
+          errs() << "###############\n";
+          errs() << "F:\n";
+          errs() << F << "\n";
+          errs() << "###############\n";
           
       }
     return true;
