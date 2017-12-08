@@ -278,8 +278,8 @@ void replaceConstantsFromValueProfile(Function *F) {
   auto vpGetOptionalValue = [&vpNameToConstantValue,
                              &F](int ix) -> llvm::Optional<uint64_t> {
     
-    const int ALLOWED_LB = 0;
-    const int ALLOWED_UB = 50;
+    const int ALLOWED_LB = 50;
+    const int ALLOWED_UB = 75;
     static int curix = 0;
 
     const std::string lookupName = getProfilerName(F, ix);
