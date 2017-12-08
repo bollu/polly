@@ -278,7 +278,8 @@ void replaceConstantsFromValueProfile(Function *F) {
   auto vpGetOptionalValue = [&vpNameToConstantValue,
                              &F](int ix) -> llvm::Optional<uint64_t> {
     
-    const int ALLOWED_LB = 63;
+    // const int ALLOWED_LB = 63;
+    const int ALLOWED_LB = 68;
     const int ALLOWED_UB = 75;
     static int curix = 0;
 
