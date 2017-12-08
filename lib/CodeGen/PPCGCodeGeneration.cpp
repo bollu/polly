@@ -279,7 +279,7 @@ void replaceConstantsFromValueProfile(Function *F) {
                              &F](int ix) -> llvm::Optional<uint64_t> {
     
     const int ALLOWED_LB = 0;
-    const int ALLOWED_UB = -1;
+    const int ALLOWED_UB = 50;
     static int curix = 0;
 
     const std::string lookupName = getProfilerName(F, ix);
