@@ -279,7 +279,7 @@ void replaceConstantsFromValueProfile(Function *F) {
                              &F](int ix) -> llvm::Optional<uint64_t> {
     
     const int ALLOWED_LB = 65;
-    const int ALLOWED_UB = 66;
+    const int ALLOWED_UB = 65;
     // const int ALLOWED_UB = 68;
     static int curix = 0;
 
