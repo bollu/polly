@@ -278,14 +278,21 @@ void replaceConstantsFromValueProfile(Function *F) {
   auto vpGetOptionalValue = [&vpNameToConstantValue,
                              &F](int ix) -> llvm::Optional<uint64_t> {
     
-
+    const int ALLOWED_LB = 0;
+    const int ALLOWED_UB = 200;
+    static int curix = 0;
 
     const std::string lookupName = getProfilerName(F, ix);
     auto it = vpNameToConstantValue.find(lookupName);
     if (it == vpNameToConstantValue.end())
       return Optional<uint64_t>(None);
     errs() << "###### lookupName: " << lookupName << " |arg: " << *(F->arg_begin() + ix) << "| Value" << it->second << "\n";
-    return Optional<uint64_t>(it->second);
+
+
+    curix++;
+    if (curix >= ALLOWED_LB && curix <= ALLOWED_UB)
+        return Optional<uint64_t>(it->second);
+    return Optional<uint64_t>(None);
   };
 
   PollyIRBuilder Builder(F->getContext());
