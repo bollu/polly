@@ -338,9 +338,18 @@ Value *IslExprBuilder::createAccessAddress(isl_ast_expr *Expr) {
           assert(false && "!OldValue offset");
 
         auto NewIt = Map.find(OldValue->second);
-        if (NewIt == Map.end())
-          assert(false && "!NewIt offset");
-        Offset = NewIt->second;
+        if (NewIt == Map.end()) {
+            Offset = OldValue->second;
+            // errs() << "OldValue: " << *OldValue->second << "\n";
+          // assert(false && "!NewIt offset");
+        }
+        else {
+            Offset = NewIt->second;
+        }
+        assert(Offset);
+        if (auto OffsetInst = dyn_cast<Instruction>(Offset)) {
+            assert(OffsetInst->getModule() == Builder.GetInsertBlock()->getModule());
+        }
     } else {
     const SCEV *OffsetSCEV = SAI->getStrideOffset();
     llvm::ValueToValueMap Map(GlobalMap.begin(), GlobalMap.end());

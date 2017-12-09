@@ -39,6 +39,20 @@
 using namespace llvm;
 using namespace polly;
 
+void debugPrintBBMap(ValueMapT &BBMap) {
+    errs() << "BBMap(" << BBMap.size() << "):\n";
+    unsigned i = 0;
+    for(auto It : BBMap) {
+        errs() << "\t";
+        errs() << i++ << "|";
+        errs() << *It.first;
+        errs() << "  >>==>>  ";
+        errs() << *It.second;
+        errs() << "\n";
+    }
+    errs() << "----\n";
+}
+
 static cl::opt<bool> Aligned("enable-polly-aligned",
                              cl::desc("Assumed aligned memory accesses."),
                              cl::Hidden, cl::init(false), cl::ZeroOrMore,
@@ -68,6 +82,7 @@ Value *BlockGenerator::trySynthesizeNewValue(ScopStmt &Stmt, Value *Old,
                                              ValueMapT &BBMap,
                                              LoopToScevMapT &LTS,
                                              Loop *L) const {
+  // errs() << "##" << __PRETTY_FUNCTION__ << "(" << *Old << ")\n";
   if (!SE.isSCEVable(Old->getType()))
     return nullptr;
 
@@ -130,6 +145,10 @@ Value *BlockGenerator::getNewValue(ScopStmt &Stmt, Value *Old, ValueMapT &BBMap,
 
   Value *New = nullptr;
   auto VUse = VirtualUse::create(&Stmt, L, Old, true);
+  // errs() << "##" << __PRETTY_FUNCTION__ << "\n";
+  // errs() << "Value: " << *Old << "\n";
+  // errs() << "VUseType: " << VUse.getKind() << "\n";
+
   switch (VUse.getKind()) {
   case VirtualUse::Block:
     // BasicBlock are constants, but the BlockGenerator copies them.
@@ -170,6 +189,7 @@ Value *BlockGenerator::getNewValue(ScopStmt &Stmt, Value *Old, ValueMapT &BBMap,
     break;
 
   case VirtualUse::Synthesizable:
+    // errs() << "VirtualUse::Synthesizable\n";
     // Used by:
     // * Isl/CodeGen/OpenMP/loop-body-references-outer-values-3.ll
     // * Isl/CodeGen/OpenMP/recomputed-srem.ll
@@ -211,8 +231,9 @@ Value *BlockGenerator::getNewValue(ScopStmt &Stmt, Value *Old, ValueMapT &BBMap,
     break;
 
   case VirtualUse::Intra:
+    // errs() << "VirtualUse::Intra\n";
   case VirtualUse::Inter:
-    auto It = GlobalMap.find(Old);
+    // errs() << "VirtualUse::Inter\n";
     // if (GlobalMap.count(Old)) {
     //   errs() << "==Use::Intra|Inter from GlobalMap===\n";
     //   errs() << "Old: " << *Old << " |\nNew: " << *It->second << "\n";
@@ -264,6 +285,8 @@ static Instruction *fixupAddressSpace(Instruction *New) {
 void BlockGenerator::copyInstScalarHacked(ScopStmt &Stmt, Instruction *Inst,
                                           ValueMapT &BBMap,
                                           LoopToScevMapT &LTS) {
+    errs() << "##" << __PRETTY_FUNCTION__ << "(" << *Inst << ")" << "\n";
+
   // We do not generate debug intrinsics as we did not investigate how to
   // copy them correctly. At the current state, they just crash the code
   // generation as the meta-data operands are not correctly copied.
@@ -274,12 +297,21 @@ void BlockGenerator::copyInstScalarHacked(ScopStmt &Stmt, Instruction *Inst,
   if (auto GEP = dyn_cast<GetElementPtrInst>(Inst)) {
       Value *NewGEPBase = getNewValue(Stmt, GEP->getOperand(0), BBMap,
               LTS, getLoopForStmt(Stmt));
-      if (!NewGEPBase) return;
+      if (!NewGEPBase) {
+          // errs() << "\t\t!NEWGEPBASE: BAILING OUT\n";
+          // errs() << "\t\tOLDGEPBASE: " << *GEP->getOperand(0) << "\n";
+          return;
+      }
 
       SmallVector<Value *, 4> NewIxs;
       for(unsigned i = 1; i < GEP->getNumOperands(); i++) {
           Value *NewIx = getNewValue(Stmt, GEP->getOperand(i), BBMap, LTS, getLoopForStmt(Stmt));
-          if (!NewIx) return;
+          if (!NewIx) { 
+              // errs() << "\t\t!NEWIX(" << i << ")\n";
+              // errs() << "\t\tOLDIX: " << *GEP->getOperand(i) << "\n";
+              // debugPrintBBMap(BBMap);
+              return;
+          }
           NewIxs.push_back(NewIx);
       }
       NewInst = GetElementPtrInst::Create(/*PointeeType=*/nullptr, NewGEPBase, NewIxs, Inst->getName());
@@ -287,7 +319,10 @@ void BlockGenerator::copyInstScalarHacked(ScopStmt &Stmt, Instruction *Inst,
 
   else if(auto Bitcast = dyn_cast<BitCastInst>(Inst)) {
       Value *NewSrc = BBMap[Bitcast->getOperand(0)];
-      if (!NewSrc) return;
+      if (!NewSrc){ 
+          // errs() << "\t\t !NEWSRC: BAILINT OUT FROM COPYINSTSCALAR\n";
+          return;
+      }
       PointerType *OldDestTy = cast<PointerType>(Bitcast->getDestTy());
       int NewAddrspace = NewSrc->getType()->getPointerAddressSpace();
       PointerType *NewDestTy = PointerType::get(OldDestTy->getElementType(), NewAddrspace);
@@ -300,6 +335,8 @@ void BlockGenerator::copyInstScalarHacked(ScopStmt &Stmt, Instruction *Inst,
 
   Builder.Insert(NewInst);
   BBMap[Inst] = NewInst;
+  // errs() << "\t\tNewInst: " << *NewInst << "\n";
+  // debugPrintBBMap(BBMap);
 
   // When copying the instruction onto the Module meant for the GPU,
   // debug metadata attached to an instruction causes all related
@@ -316,11 +353,14 @@ void BlockGenerator::copyInstScalarHacked(ScopStmt &Stmt, Instruction *Inst,
 
 void BlockGenerator::copyInstScalarOrig(ScopStmt &Stmt, Instruction *Inst,
                                         ValueMapT &BBMap, LoopToScevMapT &LTS) {
+    // errs() << "##" << __PRETTY_FUNCTION__ << "(" << *Inst << ")" << "\n";
   // We do not generate debug intrinsics as we did not investigate how to
   // copy them correctly. At the current state, they just crash the code
   // generation as the meta-data operands are not correctly copied.
-  if (isa<DbgInfoIntrinsic>(Inst))
+  if (isa<DbgInfoIntrinsic>(Inst)) {
+      // errs() << "\t\tINST IS DEBUG INFO.\n";
     return;
+  }
 
   Instruction *NewInst = Inst->clone();
   Module *curModule = Builder.GetInsertBlock()->getParent()->getParent();
@@ -350,9 +390,12 @@ void BlockGenerator::copyInstScalarOrig(ScopStmt &Stmt, Instruction *Inst,
     }
 
     if (!NewOperand) {
+
       assert(!isa<StoreInst>(NewInst) &&
              "Store instructions are always needed!");
       NewInst->deleteValue();
+      // errs() << "\t\t !NEWOPERAND: BAILING OUT FROM COPYINSTSCALAR\n";
+      // errs() << "\t\tOld operand: " << *OldOperand << "\n";
       return;
     }
 
@@ -361,6 +404,8 @@ void BlockGenerator::copyInstScalarOrig(ScopStmt &Stmt, Instruction *Inst,
 
   Builder.Insert(NewInst);
   BBMap[Inst] = NewInst;
+  // errs() << "\t\tNewInst: " << *NewInst << "\n";
+  // debugPrintBBMap(BBMap);
 
   // When copying the instruction onto the Module meant for the GPU,
   // debug metadata attached to an instruction causes all related
@@ -433,7 +478,11 @@ Value *BlockGenerator::generateLocationAccessed(
     Type *ExpectedType) {
   isl_ast_expr *AccessExpr = isl_id_to_ast_expr_get(NewAccesses, Id);
 
+  // errs() << "##" << __PRETTY_FUNCTION__ << "##\n";
+  // errs() << "AccessExpr: "; isl_ast_expr_dump(AccessExpr); errs() << "\n";
+
   if (AccessExpr) {
+      // errs() << " AccessExpr != nullptr\n";
     AccessExpr = isl_ast_expr_address_of(AccessExpr);
     auto Address = ExprBuilder->create(AccessExpr);
 
@@ -452,6 +501,10 @@ Value *BlockGenerator::generateLocationAccessed(
   assert(
       Pointer &&
       "If expression was not generated, must use the original pointer value");
+  assert(AccessExpr == nullptr);
+  // errs() << "AccessExpr == nullptr\n";
+  // errs() << "Pointer: " << *Pointer << "\n";
+
   return getNewValue(Stmt, Pointer, BBMap, LTS, L);
 }
 
@@ -471,13 +524,21 @@ BlockGenerator::getImplicitAddress(MemoryAccess &Access, Loop *L,
 Value *BlockGenerator::generateArrayLoad(ScopStmt &Stmt, LoadInst *Load,
                                          ValueMapT &BBMap, LoopToScevMapT &LTS,
                                          isl_id_to_ast_expr *NewAccesses) {
+    // errs() << "##" << __PRETTY_FUNCTION__ << "\n";
+    // errs() << "Load: " << *Load << "\n";
+    
   if (Value *PreloadLoad = GlobalMap.lookup(Load))
     return PreloadLoad;
 
   Value *NewPointer =
       generateLocationAccessed(Stmt, Load, BBMap, LTS, NewAccesses);
+  //errs() << "NewPointer: ";
+  //if (NewPointer) errs() << *NewPointer << "\n";
+  //else errs() << "nullptr\n";
+
   Value *ScalarLoad = Builder.CreateAlignedLoad(
       NewPointer, Load->getAlignment(), Load->getName() + "_p_scalar_");
+  // errs() << "ScalarLoad: " << *ScalarLoad << "\n";
 
   if (PollyDebugPrinting)
     RuntimeDebugBuilder::createCPUPrinter(Builder, "Load from ", NewPointer,
@@ -515,6 +576,9 @@ void BlockGenerator::generateArrayStore(ScopStmt &Stmt, StoreInst *Store,
 
 bool BlockGenerator::canSyntheziseInStmt(ScopStmt &Stmt, Instruction *Inst) {
   Loop *L = getLoopForStmt(Stmt);
+   // errs () << "###" << __PRETTY_FUNCTION__ << "\n";
+   // errs() << "canSynthesize(" << *Inst << ") = " << canSynthesize(Inst, *Stmt.getParent(), &SE, L) << "\n";
+
   return (Stmt.isBlockStmt() || !Stmt.getRegion()->contains(L)) &&
          canSynthesize(Inst, *Stmt.getParent(), &SE, L);
 }
@@ -522,14 +586,17 @@ bool BlockGenerator::canSyntheziseInStmt(ScopStmt &Stmt, Instruction *Inst) {
 void BlockGenerator::copyInstruction(ScopStmt &Stmt, Instruction *Inst,
                                      ValueMapT &BBMap, LoopToScevMapT &LTS,
                                      isl_id_to_ast_expr *NewAccesses) {
+    // errs() << "\n\n\n\n### Copying: " << *Inst << "\n";
   // Terminator instructions control the control flow. They are explicitly
   // expressed in the clast and do not need to be copied.
   if (Inst->isTerminator())
     return;
 
   // Synthesizable statements will be generated on-demand.
-  if (canSyntheziseInStmt(Stmt, Inst))
+  if (canSyntheziseInStmt(Stmt, Inst)) {
+    // errs() << "\t|" << *Inst << "| is Synthesizable\n";
     return;
+  }
 
   if (auto *Load = dyn_cast<LoadInst>(Inst)) {
     Value *NewLoad = generateArrayLoad(Stmt, Load, BBMap, LTS, NewAccesses);
@@ -555,9 +622,12 @@ void BlockGenerator::copyInstruction(ScopStmt &Stmt, Instruction *Inst,
 
   // Skip some special intrinsics for which we do not adjust the semantics to
   // the new schedule. All others are handled like every other instruction.
-  if (isIgnoredIntrinsic(Inst))
+  if (isIgnoredIntrinsic(Inst)) {
+    // errs() << "\t|" << *Inst << "| is IgnoredIntrinsic\n";
     return;
+  }
 
+  // errs() << "\t|" << *Inst << "| is copyInstScalar\n";
   copyInstScalar(Stmt, Inst, BBMap, LTS);
 }
 
@@ -583,6 +653,11 @@ void BlockGenerator::copyStmt(ScopStmt &Stmt, LoopToScevMapT &LTS,
                               isl_id_to_ast_expr *NewAccesses) {
   assert(Stmt.isBlockStmt() &&
          "Only block statements can be copied by the block generator");
+
+
+  //errs() << "-----\n";
+  //errs() <<  __PRETTY_FUNCTION__ << "|copying stmt: ";
+  // Stmt.dump();
 
   ValueMapT BBMap;
 
@@ -623,12 +698,16 @@ void BlockGenerator::copyBB(ScopStmt &Stmt, BasicBlock *BB, BasicBlock *CopyBB,
   // instructions that belong to a certain scop statement. As the code
   // structure of region statements might be arbitrary complex, optimizing the
   // instruction list is not yet supported.
-  if (Stmt.isBlockStmt() || (Stmt.isRegionStmt() && Stmt.getEntryBlock() == BB))
-    for (Instruction *Inst : Stmt.getInstructions())
+  if (Stmt.isBlockStmt() || (Stmt.isRegionStmt() && Stmt.getEntryBlock() == BB)) {
+      // errs() <<  __LINE__ << ":" << "Stmt.isBlockStmt() || (Stmt.isRegionStmt() && Stmt.getEntryBlock() == BB))\n";
+    for (Instruction *Inst : Stmt.getInstructions()) {
       copyInstruction(Stmt, Inst, BBMap, LTS, NewAccesses);
-  else
+    }
+  } else {
+      // errs() << __LINE__ << ":" << "!Stmt.isBlockStmt() || (Stmt.isRegionStmt() && Stmt.getEntryBlock() == BB))\n";
     for (Instruction &Inst : *BB)
       copyInstruction(Stmt, &Inst, BBMap, LTS, NewAccesses);
+  };
 }
 
 Value *BlockGenerator::getOrCreateAlloca(const MemoryAccess &Access) {
@@ -733,6 +812,11 @@ void BlockGenerator::generateScalarLoads(
     isl_set_free(StmtDom);
     isl_set_free(AccDom);
 #endif
+
+    // errs() << __PRETTY_FUNCTION__ << "\n";
+    // errs() << "\t\tMA: "; MA->dump(); errs() << "\n";
+    // errs() << "MA->accessValue: " << *MA->getAccessValue() << "\n";
+    // errs() << "----\n";
 
     auto *Address =
         getImplicitAddress(*MA, getLoopForStmt(Stmt), LTS, BBMap, NewAccesses);

@@ -205,7 +205,8 @@ static std::vector<char> ReadAllBytes(char const *filename) {
 /// function name.
 std::string getUniqueScopName(const Scop *S) {
   return "Scop Region: " + S->getNameStr() +
-         " | Function: " + std::string(S->getFunction().getName());
+         " | Function: " + std::string(S->getFunction().getName()) +
+         " | ScopID: " + std::to_string(S->getID());
 }
 
 static Function *createPollyAbstractIndexFunction(Module &M,
@@ -305,13 +306,9 @@ void replaceConstantsFromValueProfile(Function *F) {
     Value *New = nullptr;
     Constant *RawInt = ConstantInt::get(Builder.getInt64Ty(), *maybeVal);
     if (Arg.getType()->isIntegerTy()) {
-        errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
         New = Builder.CreateSExtOrTrunc(RawInt, Arg.getType());
-      errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
     } else if (Arg.getType()->isFloatingPointTy()) {
-        errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
       New = Builder.CreateBitCast(RawInt, Arg.getType());
-      errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
     } else {
       report_fatal_error("unknown type of profiled argument.\n");
     }
@@ -1832,7 +1829,7 @@ const std::set<std::string> CUDALibDeviceFunctions = {
     "exp",       "expf",      "fast_expf", "expl",    "cos",
     "cosf",      "fast_cosf", "sqrt",      "sqrtf",   "copysign",
     "copysignf", "copysignl", "log",       "logf",    "fast_logf",
-    "powi",      "powif",     "llround",   "llroundf"};
+    "powi",      "powif",     "llround",   "llroundf", "pow"};
 
 // A map from intrinsics to their corresponding libdevice functions.
 const std::map<std::string, std::string> IntrinsicToLibdeviceFunc = {
@@ -1884,7 +1881,7 @@ static bool isValidFunctionInKernel(llvm::Function *F, bool AllowLibDevice) {
 
   return F->isIntrinsic() &&
          (Name.startswith("llvm.sqrt") || Name.startswith("llvm.fabs") ||
-          Name.startswith("llvm.copysign"));
+          Name.startswith("llvm.copysign") || Name.startswith("llvm.memset"));
 }
 
 /// Do not take `Function` as a subtree value.
@@ -2117,14 +2114,10 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     
     assert(!isa<PointerType>(Val->getType()) && "cannot store pointer");
     if (Val->getType()->isIntegerTy()) {
-        errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
         ValueAsInt64 = Builder.CreateSExt(Val, Builder.getInt64Ty(), Val->getName() + ".sext");
-        errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
     }
     else if (Val->getType()->isFloatingPointTy()) {
-        errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
         ValueAsInt64 = Builder.CreateBitCast(Val, Builder.getInt64Ty(), Val->getName() + ".tosi");
-        errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
     }
     else {
         assert(false && "unknown type.");
@@ -2136,12 +2129,14 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
   auto CreateCallProfileBasePtr =
       [&CreateCallProfileVal](int Index, Value *Base,
                               PollyIRBuilder &Builder) {
-        errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
+
+          if (isa<PointerType>(Base->getType()->getPointerElementType())) {
+              errs() << "TODO: look into this. Pointer-to-pointer found: " << *Base << "\n";
+              return;
+          }
         Value *ValLoaded =
             Builder.CreateLoad(Base, "vp.profiler.load." + Base->getName());
-        errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
         CreateCallProfileVal(Index, ValLoaded, Builder);
-        errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
 
       };
 
@@ -2436,16 +2431,12 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
     S.invalidateScopArrayInfo(BasePtr, MemoryKind::Array);
   LocalArrays.clear();
 
-  errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
   static const bool ValueProfilingEnabled = isValueProfilerLoadEnabledForFunction(S.getFunction().getName());
   if (ValueProfilingEnabled) {
-      errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
       errs() << "ValueProfiling running on: " << getUniqueScopName(&S) << "\n";
       replaceConstantsFromValueProfile(F);
-      errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
   }
 
-  errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
   // Look for dead parameters and prune them among SubtreeValues
   LiveArrayIdxsTy LiveArrayIdxs;
   LiveVarIdxsTy LiveVarIdxs;
@@ -2464,24 +2455,16 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
            << " | NEW: " << NewSubtreeValues.size() << "\n";
 
     const int nArgsNew = FNew->getFunctionType()->getNumParams();
-    errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
     dbgs() << "*** OLD V/S NEW NARGS: "
            << "Old: " << nArgsOld << " | New: " << nArgsNew << "\n";
-    errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
     assert(NewSubtreeValues.size() <= SubtreeValues.size());
-    errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
     SubtreeValues.clear();
-    errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
     for (Value *NV : NewSubtreeValues) {
       SubtreeValues.insert(NV);
     }
-    errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
-    errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
     F = FNew;
-    errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
   };
 
-  errs() << __PRETTY_FUNCTION__<< ":" << __LINE__ << "\n";
 
 
 
@@ -2566,6 +2549,7 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
         dbgs().changeColor(raw_ostream::RED)
             << "*** Bailing out: size of parameters is > 4K.\n";
         dbgs().resetColor();
+        report_fatal_error("Size of parameters > 4k.");
         break;
       }
     }
@@ -2903,10 +2887,12 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
                              Arg->getType()->getPointerAddressSpace());
         NewBasePtr = Builder.CreateBitCast(
             Arg, NewTy, Arg->getName() + "_hack_load_for_blockgen");
+        ValueMap[SAI->getBasePtr()] = NewBasePtr;
       } else {
-        report_fatal_error(" I did not think about this case yet.");
+          errs() << "Arg: " << Arg << "\n";
+          errs() << "SAI->basePtr: " << *SAI->getBasePtr() << "\n";
+          errs() << (" I did not think about this case yet.");
       }
-      ValueMap[SAI->getBasePtr()] = NewBasePtr;
     }
 
     if (SAI->getNumberOfDimensions() > 0) {
@@ -2914,8 +2900,6 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
       continue;
     }
 
-    // dbgs() << __LINE__ << "|" << "DEALING WITH NON VALUE MAPPED PARAMETER: "
-    // << *Arg << "\n";
     Value *Val = &*Arg;
 
     if (!gpu_array_is_read_only_scalar(&Prog->array[i])) {
@@ -2927,6 +2911,7 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
     Value *Alloca = BlockGen.getOrCreateAlloca(SAI);
     Builder.CreateStore(Val, Alloca);
 
+    // ValueMap[SAI->getBasePtr()] = Val;
     Arg++;
   }
 }
@@ -4530,7 +4515,7 @@ public:
     if (!NodeBuilder.preloadInvariantLoads()) {
       dbgs() << __PRETTY_FUNCTION__ << "\n"
              << "***** preloading invariant loads failed in function: ";
-      assert(false);
+      report_fatal_error("preloading invariant loads failed.");
       // Patch the introduced branch condition to ensure that we always
       // execute the original SCoP.
       auto *FalseI1 = Builder.getFalse();
@@ -4652,6 +4637,7 @@ public:
           dbgs() << getUniqueScopName(S)
                  << " contains function which cannot be materialised in a GPU "
                     "kernel. Bailing out.\n";);
+      assert(false);
       return false;
     }
 

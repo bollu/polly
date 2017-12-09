@@ -247,6 +247,7 @@ void initializePollyPasses(PassRegistry &Registry) {
 #ifdef GPU_CODEGEN
   initializePPCGCodeGenerationPass(Registry);
   initializeManagedMemoryRewritePassPass(Registry);
+  initializeNVTXInstrumentationInserterPassPass(Registry);
   LLVMInitializeNVPTXTarget();
   LLVMInitializeNVPTXTargetInfo();
   LLVMInitializeNVPTXTargetMC();
