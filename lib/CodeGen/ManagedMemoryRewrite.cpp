@@ -335,7 +335,8 @@ static void getAllocasToBeManaged(Function &F,
 }
 
 static void rewriteAllocaAsManagedMemory(AllocaInst *Alloca,
-                                         const DataLayout &DL) {
+                                         const DataLayout &DL,
+                                         const DominatorTree &DT) {
   DEBUG(dbgs() << "rewriting: (" << *Alloca << ") to managed mem.\n");
   Module *M = Alloca->getModule();
   assert(M && "Alloca does not have a module");
@@ -347,7 +348,7 @@ static void rewriteAllocaAsManagedMemory(AllocaInst *Alloca,
   const uint64_t Size =
       DL.getTypeAllocSize(Alloca->getType()->getElementType());
   Value *SizeVal = Builder.getInt64(Size);
-  Value *RawManagedMem = Builder.CreateCall(MallocManagedFn, {SizeVal});
+  Instruction *RawManagedMem = Builder.CreateCall(MallocManagedFn, {SizeVal});
   Value *Bitcasted = Builder.CreateBitCast(RawManagedMem, Alloca->getType());
 
   Function *F = Alloca->getFunction();
@@ -361,11 +362,31 @@ static void rewriteAllocaAsManagedMemory(AllocaInst *Alloca,
     ReturnInst *Return = dyn_cast<ReturnInst>(BB.getTerminator());
     if (!Return)
       continue;
+
+    // only add the return to those basic blocks that have control flow
+    // from the alloca block. Eg:
+    // A  -> B (Alloca -> D (Exit)
+    // |
+    // v
+    // C (Exit)
+    // We should add B's alloca free to D, and not to C.
+    if (!DT.dominates(RawManagedMem, Return)) continue;
+
     Builder.SetInsertPoint(Return);
+
 
     Value *FreeManagedFn = getOrCreatePollyFreeManaged(*M);
     Builder.CreateCall(FreeManagedFn, {RawManagedMem});
   }
+
+  if(verifyModule(*M, nullptr)) {
+      errs() << "Broken alloca conversion:\n";
+      verifyModule(*M, &errs());
+      errs() <<  "Broken Function:\n";
+      F->dump();
+      report_fatal_error("Broken alloca conversion");
+  }
+
 }
 
 // Replace all uses of `Old` with `New`, even inside `ConstantExpr`.
@@ -396,13 +417,15 @@ static void replaceAllUsesAndConstantUses(Value *Old, Value *New,
 }
 
 class ManagedMemoryRewritePass : public ModulePass {
+    private:
+        DominatorTree *DT;
 public:
   static char ID;
   GPUArch Architecture;
   GPURuntime Runtime;
 
   ManagedMemoryRewritePass() : ModulePass(ID) {}
-  virtual bool runOnModule(Module &M) {
+  virtual bool runOnModule(Module &M) override {
     const DataLayout &DL = M.getDataLayout();
 
     Function *Malloc = M.getFunction("malloc");
@@ -439,11 +462,18 @@ public:
       for (Function &F : M.functions())
         getAllocasToBeManaged(F, AllocasToBeManaged);
 
-      for (AllocaInst *Alloca : AllocasToBeManaged)
-        rewriteAllocaAsManagedMemory(Alloca, DL);
+      for (AllocaInst *Alloca : AllocasToBeManaged) {
+        const DominatorTree DT(*Alloca->getFunction()); // getAnalysis<DominatorTree>(*Alloca->getFunction());
+        rewriteAllocaAsManagedMemory(Alloca, DL, DT);
+      }
     }
 
     return true;
+  }
+
+
+  void getAnalysisUsage(AnalysisUsage &AU) const override {
+    AU.addRequired<DominatorTreeWrapperPass>();
   }
 };
 
@@ -462,13 +492,7 @@ INITIALIZE_PASS_BEGIN(
     ManagedMemoryRewritePass, "polly-acc-rewrite-managed-memory",
     "Polly - Rewrite all allocations in heap & data section to managed memory",
     false, false)
-INITIALIZE_PASS_DEPENDENCY(PPCGCodeGeneration);
-INITIALIZE_PASS_DEPENDENCY(DependenceInfo);
 INITIALIZE_PASS_DEPENDENCY(DominatorTreeWrapperPass);
-INITIALIZE_PASS_DEPENDENCY(LoopInfoWrapperPass);
-INITIALIZE_PASS_DEPENDENCY(RegionInfoPass);
-INITIALIZE_PASS_DEPENDENCY(ScalarEvolutionWrapperPass);
-INITIALIZE_PASS_DEPENDENCY(ScopDetectionWrapperPass);
 INITIALIZE_PASS_END(
     ManagedMemoryRewritePass, "polly-acc-rewrite-managed-memory",
     "Polly - Rewrite all allocations in heap & data section to managed memory",
