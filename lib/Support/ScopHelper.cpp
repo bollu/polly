@@ -670,3 +670,7 @@ polly::getAbstractMatrixCall(MemAccInst Inst, ScalarEvolution &SE) {
   std::pair<CallInst *, GEPOperator *> p = std::make_pair(Call, GEP);
   return Optional<std::pair<CallInst *, GEPOperator *>>(p);
 }
+
+bool polly::isNonaffineAllowedFunction(std::string name) {
+    return name == "__radiation_rg_org_MOD_radiation_rg_organize";
+}

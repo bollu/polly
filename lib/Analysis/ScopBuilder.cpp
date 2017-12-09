@@ -897,7 +897,7 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
  */
 
   // ONLY allow nonaffine in organize
-  if (!IsAffine && Inst->getParent()->getParent()->getName() != "__radiation_rg_org_MOD_radiation_rg_organize") {
+  if (!IsAffine && !isNonaffineAllowedFunction(Inst->getFunction()->getName())) {
       if (AbstractMatrixDebug) {
           errs() << "polly fortran index expr is nonaffine:\n";
           errs() << *Inst << "\n";

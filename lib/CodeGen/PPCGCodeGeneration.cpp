@@ -75,8 +75,7 @@ enum PollyAssumptionsKind {
 // Use assumptions to set lower and upper bounds.
 // We cannot assume that all loops are nonempty, this is bad for performance.
 static PollyAssumptionsKind useAssumptionsInContext(const Scop &S) {
-  if (S.getFunction().getName() ==
-      "__radiation_rg_org_MOD_radiation_rg_organize")
+  if (isNonaffineAllowedFunction(S.getFunction().getName()))
     return PAK_None;
   return PAK_None;
 }
@@ -2877,8 +2876,7 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
 
     isl_id_free(Id);
 
-    if (S.getFunction().getName() ==
-        "__radiation_rg_org_MOD_radiation_rg_organize") {
+    if (isNonaffineAllowedFunction(S.getFunction().getName())) {
       Value *NewBasePtr = Arg;
       if (PointerType *OriginalTy =
               dyn_cast<PointerType>(SAI->getBasePtr()->getType())) {

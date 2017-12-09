@@ -463,6 +463,8 @@ static const std::string POLLY_ABSTRACT_INDEX_BASENAME = "polly_array_index";
 llvm::Optional<std::pair<llvm::CallInst *, llvm::GEPOperator *>>
 getAbstractMatrixCall(MemAccInst Inst, llvm::ScalarEvolution &SE);
 
+bool isNonaffineAllowedFunction(std::string name);
+
 
 } // namespace polly
 #endif
