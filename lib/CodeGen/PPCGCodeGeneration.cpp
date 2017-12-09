@@ -1828,7 +1828,8 @@ const std::set<std::string> CUDALibDeviceFunctions = {
     "exp",       "expf",      "fast_expf", "expl",    "cos",
     "cosf",      "fast_cosf", "sqrt",      "sqrtf",   "copysign",
     "copysignf", "copysignl", "log",       "logf",    "fast_logf",
-    "powi",      "powif",     "llround",   "llroundf", "pow"};
+    "powi",      "powif",     "llround",   "llroundf", "pow",
+    "sin", "asin", "acos", "tan", "atan"};
 
 // A map from intrinsics to their corresponding libdevice functions.
 const std::map<std::string, std::string> IntrinsicToLibdeviceFunc = {
