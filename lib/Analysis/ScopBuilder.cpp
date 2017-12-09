@@ -790,9 +790,9 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
 
       //// Offsets are always loaded from the array, they will get invariant 
       //load hoisted correctly later.
-      for (LoadInst *L : AccessILS) {
-          scop->addRequiredInvariantLoad(L);
-      }
+      // for (LoadInst *L : AccessILS) {
+      //     scop->addRequiredInvariantLoad(L);
+      // }
       AccessILS.clear();
 
 
@@ -818,9 +818,9 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
       ensureValueRead(Ix, Stmt);
 
     }
-    for (LoadInst *L : AccessILS) {
-        scop->addRequiredInvariantLoad(L);
-    }
+    // for (LoadInst *L : AccessILS) {
+    //     scop->addRequiredInvariantLoad(L);
+    // }
     AccessILS.clear();
 
 
@@ -839,9 +839,9 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
       assert(Stride);
       ensureValueRead(Stride, Stmt);
     }
-    for (LoadInst *L : AccessILS) {
-            scop->addRequiredInvariantLoad(L);
-    }
+    //for (LoadInst *L : AccessILS) {
+    //        scop->addRequiredInvariantLoad(L);
+    //}
     AccessILS.clear();
 
     // Try to get an FAD from a stride.
@@ -1626,6 +1626,8 @@ void ScopBuilder::buildScop(Region &R, AssumptionCache &AC,
   // Check late for a feasible runtime context because profitability did not
   // change.
   if (!scop->hasFeasibleRuntimeContext()) {
+
+      assert(false);
     DEBUG(dbgs() << "Bailing-out because of unfeasible context (late)\n");
     return;
   }

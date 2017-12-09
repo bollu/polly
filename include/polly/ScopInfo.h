@@ -100,16 +100,16 @@ extern bool UseInstructionNames;
 
 /// Enumeration of assumptions Polly can take.
 enum AssumptionKind {
-  ALIASING,
-  INBOUNDS,
-  WRAPPING,
-  UNSIGNED,
-  PROFITABLE,
-  ERRORBLOCK,
-  COMPLEXITY,
-  INFINITELOOP,
-  INVARIANTLOAD,
-  DELINEARIZATION,
+  ALIASING = 0,
+  INBOUNDS = 1,
+  WRAPPING = 2,
+  UNSIGNED = 3,
+  PROFITABLE = 4,
+  ERRORBLOCK = 5,
+  COMPLEXITY = 6,
+  INFINITELOOP = 7,
+  INVARIANTLOAD = 8,
+  DELINEARIZATION = 9,
 };
 
 // Abstract over a notion of the shape of an array:

@@ -4118,12 +4118,20 @@ isl::set Scop::getNonHoistableCtx(MemoryAccess *Access, isl::union_map Writes) {
 void Scop::verifyInvariantLoads() {
   auto &RIL = getRequiredInvariantLoads();
   for (LoadInst *LI : RIL) {
+      errs() << "-----\n";
+    errs() << "LI:" << *LI << "\n";
     assert(LI && contains(LI));
     // If there exists a statement in the scop which has a memory access for
     // @p LI, then mark this scop as infeasible for optimization.
     for (ScopStmt &Stmt : Stmts)
-      if (Stmt.getArrayAccessOrNULLFor(LI)) {
-        invalidate(INVARIANTLOAD, LI->getDebugLoc(), LI->getParent());
+      if (MemoryAccess *MA = Stmt.getArrayAccessOrNULLFor(LI)) {
+          errs() << "Stmt\n";
+          Stmt.dump();
+          errs() << "----------\n";
+          errs() << "MA:\n";
+          MA->dump();
+          errs() << "\n";
+          invalidate(INVARIANTLOAD, LI->getDebugLoc(), LI->getParent());
         return;
       }
   }
@@ -4462,11 +4470,15 @@ bool Scop::isProfitable(bool ScalarsAreUnprofitable) const {
 
 bool Scop::hasFeasibleRuntimeContext() const {
   auto *PositiveContext = getAssumedContext().release();
+  errs() << __LINE__ << "|" << "PositiveContext: "; isl_set_dump(PositiveContext); errs()  << "\n";
   auto *NegativeContext = getInvalidContext().release();
+  errs() << __LINE__ << " | " << "NegativeContext: "; isl_set_dump(NegativeContext); errs()  << "\n";
   PositiveContext =
       addNonEmptyDomainConstraints(isl::manage(PositiveContext)).release();
+  errs() << __LINE__ << "|" << "PositiveContext: "; isl_set_dump(PositiveContext); errs()  << "\n";
   bool IsFeasible = !(isl_set_is_empty(PositiveContext) ||
                       isl_set_is_subset(PositiveContext, NegativeContext));
+  errs() << __LINE__ << " | IsFeasible: " << IsFeasible << "\n";
   isl_set_free(PositiveContext);
   if (!IsFeasible) {
     isl_set_free(NegativeContext);
@@ -4475,7 +4487,9 @@ bool Scop::hasFeasibleRuntimeContext() const {
 
   auto *DomainContext = isl_union_set_params(getDomains().release());
   IsFeasible = !isl_set_is_subset(DomainContext, NegativeContext);
+  errs() << __LINE__ << " | IsFeasible: " << IsFeasible << "\n";
   IsFeasible &= !isl_set_is_subset(Context, NegativeContext);
+  errs() << __LINE__ << " | IsFeasible: " << IsFeasible << "\n";
   isl_set_free(NegativeContext);
   isl_set_free(DomainContext);
 
@@ -4651,7 +4665,8 @@ void Scop::addRecordedAssumptions() {
 }
 
 void Scop::invalidate(AssumptionKind Kind, DebugLoc Loc, BasicBlock *BB) {
-  DEBUG(dbgs() << "Invalidate SCoP because of reason " << Kind << "\n");
+    assert(false);
+  DEBUG(dbgs() << "Invalidate SCoP because of reason " << toString(Kind) << "\n");
   addAssumption(Kind, isl_set_empty(getParamSpace().release()), Loc,
                 AS_ASSUMPTION, BB);
 }
