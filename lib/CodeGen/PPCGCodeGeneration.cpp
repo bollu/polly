@@ -3358,6 +3358,8 @@ GPUNodeBuilder::finalizeKernelFunction(std::string kernelFunctionName) {
     DEBUG(dbgs() << "verifyModule Error:\n";
           verifyModule(*GPUModule, &dbgs()););
 
+    dbgs() << "Scop: "<< getUniqueScopName(&S) << "\n";
+
     if (FailOnVerifyModuleFailure)
       llvm_unreachable("VerifyModule failed.");
 

@@ -732,10 +732,8 @@ void collectPHIsInInst(User *U, std::set<PHINode *> &Phis) {
 
 bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
                                                  ScopStmt *Stmt) {
-  errs() << "analysing MemAccInst:" << *Inst.asInstruction() << " := ";
   bool IsAffine = true;
   auto optionalCallGEP = getAbstractMatrixCall(Inst, SE);
-  errs() << "haveGEP: " << (bool) optionalCallGEP << "\n";
   if (!optionalCallGEP)
     return false;
 
@@ -750,8 +748,6 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
   }
 
   if (Call->getNumArgOperands() % 2 != 1) {
-      errs() << "\t" << __LINE__ << "\n";
-      assert(false);
     return false;
   }
 
@@ -823,7 +819,6 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
                       &AccessILS)) {
       errs() <<__LINE__ << "| Ix nonaffine: " << *IxSCEV << "\n";
       IsAffine = false;
-      assert(false);
       assert(Ix);
       ensureValueRead(Ix, Stmt);
 
@@ -936,8 +931,6 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
           errs() << "======\n";
       }
       scop->invalidate(DELINEARIZATION, Inst->getDebugLoc(), Inst->getParent());
-      errs() << "\t" << __LINE__ << "\n";
-      assert(false);
   }
 
   // NOTE: this should be fromStrides.
@@ -1658,8 +1651,6 @@ void ScopBuilder::buildScop(Region &R, AssumptionCache &AC,
   // Check late for a feasible runtime context because profitability did not
   // change.
   if (!scop->hasFeasibleRuntimeContext()) {
-
-      assert(false);
     DEBUG(dbgs() << "Bailing-out because of unfeasible context (late)\n");
     return;
   }
