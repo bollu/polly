@@ -732,8 +732,10 @@ void collectPHIsInInst(User *U, std::set<PHINode *> &Phis) {
 
 bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
                                                  ScopStmt *Stmt) {
+  errs() << "analysing MemAccInst:" << *Inst.asInstruction() << " := ";
   bool IsAffine = true;
   auto optionalCallGEP = getAbstractMatrixCall(Inst, SE);
+  errs() << "haveGEP: " << (bool) optionalCallGEP << "\n";
   if (!optionalCallGEP)
     return false;
 
@@ -748,6 +750,8 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
   }
 
   if (Call->getNumArgOperands() % 2 != 1) {
+      errs() << "\t" << __LINE__ << "\n";
+      assert(false);
     return false;
   }
 
@@ -790,9 +794,9 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
 
       //// Offsets are always loaded from the array, they will get invariant 
       //load hoisted correctly later.
-      // for (LoadInst *L : AccessILS) {
-      //     scop->addRequiredInvariantLoad(L);
-      // }
+       for (LoadInst *L : AccessILS) {
+           scop->addRequiredInvariantLoad(L);
+       }
       AccessILS.clear();
 
 
@@ -810,17 +814,41 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
     Value *Ix = Call->getArgOperand(1 + NArrayDims + i);
     const SCEV *IxSCEV = SE.getSCEV(Ix);
 
+    // if (scop->getFunction().getName().contains("copy")) {
+    //     ensureValueRead(Ix, Stmt);
+    // }
+
+    AccessILS.clear();
     if (!isAffineExpr(&scop->getRegion(), SurroundingLoop, IxSCEV, SE,
                       &AccessILS)) {
       errs() <<__LINE__ << "| Ix nonaffine: " << *IxSCEV << "\n";
       IsAffine = false;
+      assert(false);
       assert(Ix);
       ensureValueRead(Ix, Stmt);
 
     }
-    // for (LoadInst *L : AccessILS) {
-    //     scop->addRequiredInvariantLoad(L);
-    // }
+
+    // This entire thing is a clusterfuck. So, let me explain:
+    // In copy2d / copy3d, we have nonaffine accesses that cannot be invariant
+    // load hoisted. (As in, if we try to do so, we get a fucked up scop).
+    // 
+    // We can't code generate the nonaffine access correctly within the fortran
+    // stuff I added because I depend on SCEVExpander to expand the index expression.
+    // SCEVExpander cannot handle a load, which is what "out = A[B[i]]" is:
+    //
+    // ix = load(B, i)
+    // out = load(A, ix) <- "ix" is a SCEVUnknown(load(...)). SCEVExpander bails on this
+    // So, we return false and depend on the other polly stuff to model this read.
+    //
+    // Yes, I'm an idiot. I should either expand SCEVExpander or not use SCEV. I don't recall
+    // why I chose to use SCEV. I'm sure I had a good reason :)
+    if (Stmt->getParent()->getFunction().getName().contains("copy")) {
+        for (LoadInst *L : AccessILS) {
+            const InvariantLoadsSetTy &ScopRIL = scop->getRequiredInvariantLoads();
+            if (!ScopRIL.count(L)){  return false; }
+        }
+    }
     AccessILS.clear();
 
 
@@ -839,9 +867,9 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
       assert(Stride);
       ensureValueRead(Stride, Stmt);
     }
-    //for (LoadInst *L : AccessILS) {
-    //        scop->addRequiredInvariantLoad(L);
-    //}
+    for (LoadInst *L : AccessILS) {
+            scop->addRequiredInvariantLoad(L);
+    }
     AccessILS.clear();
 
     // Try to get an FAD from a stride.
@@ -908,6 +936,8 @@ bool ScopBuilder::buildAccessPollyAbstractMatrix(MemAccInst Inst,
           errs() << "======\n";
       }
       scop->invalidate(DELINEARIZATION, Inst->getDebugLoc(), Inst->getParent());
+      errs() << "\t" << __LINE__ << "\n";
+      assert(false);
   }
 
   // NOTE: this should be fromStrides.
@@ -1134,6 +1164,8 @@ void ScopBuilder::addArrayAccess(ScopStmt *Stmt, MemAccInst MemAccInst,
   auto *MemAccess = addMemoryAccess(Stmt, MemAccInst, AccType, BaseAddress,
                                     ElementType, IsAffine, AccessValue,
                                     Subscripts, Shape, MemoryKind::Array);
+
+  errs() << "\tadded memory access: "; MemAccess->dump(); errs() << "\n";
 
   if (!DetectFortranArrays)
     return;

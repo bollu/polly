@@ -1184,6 +1184,10 @@ void MemoryAccess::print(raw_ostream &OS) const {
 
   OS << "[Scalar: " << isScalarKind() << "]\n";
   OS.indent(16) << getOriginalAccessRelationStr() << ";\n";
+
+  if (this->getAccessInstruction())
+          OS.indent(16) << *this->getAccessInstruction() << "\n";
+
   if (hasNewAccessRelation())
     OS.indent(11) << "new: " << getNewAccessRelationStr() << ";\n";
 }

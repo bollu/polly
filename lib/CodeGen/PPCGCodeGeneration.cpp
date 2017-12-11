@@ -3834,8 +3834,8 @@ public:
 
     isl::pw_aff Val = isl::aff::var_on_domain(LS, isl::dim::set, 0);
     if (!AccessSet.dim_has_lower_bound(isl::dim::set, 0)) {
-      assert(Array->hasStrides() &&
-             "found nonaffine access to non-fortran array in PPCGCodeGen!");
+      // assert(Array->hasStrides() &&
+      //        "found nonaffine access to non-fortran array in PPCGCodeGen!");
       // dbgs()<< "=== no lower bound found, setting lower bound to 0===\n";
       // dbgs() << "AccessSet(prev): "; AccessSet.dump();
       isl::constraint LB = isl::constraint::alloc_inequality(
@@ -3847,8 +3847,8 @@ public:
     isl::pw_aff OuterMin = AccessSet.dim_min(0);
 
     if (!AccessSet.dim_has_upper_bound(isl::dim::set, 0)) {
-      assert(Array->hasStrides() &&
-             "found nonaffine access to non-fortran array in PPCGCodeGen!");
+      // assert(Array->hasStrides() &&
+      //        "found nonaffine access to non-fortran array in PPCGCodeGen!");
       dbgs()
           << "=== no upper bound found, setting upper bound to array size===\n";
 
