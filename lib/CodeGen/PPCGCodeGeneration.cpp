@@ -4547,7 +4547,8 @@ public:
     } else {
 
       NodeBuilder.addParameters(S->getContext().release());
-      Value *RTC = NodeBuilder.createRTC(Condition);
+      isl_ast_expr_free(Condition);
+      Value *RTC = Builder.getInt1(true); /// //NodeBuilder.createRTC(Condition);
       Builder.GetInsertBlock()->getTerminator()->setOperand(0, RTC);
 
       Builder.SetInsertPoint(&*StartBlock->begin());
