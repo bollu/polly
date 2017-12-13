@@ -276,16 +276,24 @@ void replaceConstantsFromValueProfile(Function *F) {
 
   auto vpGetOptionalValue = [&vpNameToConstantValue,
                              &F](int ix) -> llvm::Optional<uint64_t> {
-    
+
+                                 const int ALLOWED_LB = 0;
+                                 //const int ALLOWED_UB = 66;
+                                 const int ALLOWED_UB = 10000;
+                                 // const int ALLOWED_UB = 68;
+                                 static int curix = 0;
 
 
     const std::string lookupName = getProfilerName(F, ix);
     auto it = vpNameToConstantValue.find(lookupName);
     if (it == vpNameToConstantValue.end())
       return Optional<uint64_t>(None);
-    errs() << "###### lookupName: " << lookupName << " |arg: " << *(F->arg_begin() + ix) << "| Value" << it->second << "\n";
-    return Optional<uint64_t>(it->second);
-  };
+    curix++;
+    errs() << "###### curix: " << curix << " | lookupName: " << lookupName << " |arg: " << *(F->arg_begin() + ix) << "| Value" << it->second << "\n";
+    if (curix >= ALLOWED_LB && curix <= ALLOWED_UB)
+        return Optional<uint64_t>(it->second);
+    return Optional<uint64_t>(None);
+                             };
 
   PollyIRBuilder Builder(F->getContext());
 
@@ -293,6 +301,7 @@ void replaceConstantsFromValueProfile(Function *F) {
   int argi = -1;
   for (Argument &Arg : F->args()) {
       argi++;
+
 
     Optional<uint64_t> maybeVal = vpGetOptionalValue(argi);
     if (!maybeVal) {
@@ -2431,12 +2440,6 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
     S.invalidateScopArrayInfo(BasePtr, MemoryKind::Array);
   LocalArrays.clear();
 
-  static const bool ValueProfilingEnabled = isValueProfilerLoadEnabledForFunction(S.getFunction().getName());
-  if (ValueProfilingEnabled) {
-      errs() << "ValueProfiling running on: " << getUniqueScopName(&S) << "\n";
-      replaceConstantsFromValueProfile(F);
-  }
-
   // Look for dead parameters and prune them among SubtreeValues
   LiveArrayIdxsTy LiveArrayIdxs;
   LiveVarIdxsTy LiveVarIdxs;
@@ -2465,6 +2468,12 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
     F = FNew;
   };
 
+
+  static const bool ValueProfilingEnabled = isValueProfilerLoadEnabledForFunction(S.getFunction().getName());
+  if (ValueProfilingEnabled) {
+      errs() << "ValueProfiling running on: " << getUniqueScopName(&S) << "\n";
+      replaceConstantsFromValueProfile(F);
+  }
 
 
 
