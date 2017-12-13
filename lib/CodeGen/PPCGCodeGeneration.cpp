@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/Support/Error.h"
 #include "polly/CodeGen/PPCGCodeGeneration.h"
 #include "polly/CodeGen/CodeGeneration.h"
 #include "polly/CodeGen/IslAst.h"
@@ -2466,6 +2467,11 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
       SubtreeValues.insert(NV);
     }
     F = FNew;
+
+    if(Error e = F->getParent()->materializeAll()) {
+        errs() << "Error from materializeAll(): ";
+        report_fatal_error("died at materializeAll()");
+    }
   };
 
 
@@ -2473,6 +2479,42 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
   if (ValueProfilingEnabled) {
       errs() << "ValueProfiling running on: " << getUniqueScopName(&S) << "\n";
       replaceConstantsFromValueProfile(F);
+
+      if(Error e = F->getParent()->materializeAll()) {
+          errs() << "Error from materializeAll(): ";
+          report_fatal_error("died at materializeAll()");
+      }
+      // Also prune subtree values after replacing constants
+    
+      // Pretty sure this fucks up due to Vars computation / something else.
+      // because it is not consistent with our previous definition:
+      //if (BoolRemoveDeadSubtreeValues) {
+      //    errs() << "*** REMOVING DEAD SUBTREE VALUES: " << __LINE__ << "\n";
+      //    SetVector<Value *> NewSubtreeValues;
+      //    Function *FNew;
+
+      //    const int nArgsOld = F->getFunctionType()->getNumParams();
+      //    std::tie(FNew, NewSubtreeValues, LiveArrayIdxs, LiveVarIdxs) =
+      //        removeDeadSubtreeValues(F, Prog, Kernel, SubtreeValues, IDToValue, DL);
+
+      //    dbgs() << "*** OLD V/S NEW SUBTREE VALUES SIZE: "
+      //        << "Old:" << SubtreeValues.size()
+      //        << " | NEW: " << NewSubtreeValues.size() << "\n";
+
+      //    const int nArgsNew = FNew->getFunctionType()->getNumParams();
+      //    dbgs() << "*** OLD V/S NEW NARGS: "
+      //        << "Old: " << nArgsOld << " | New: " << nArgsNew << "\n";
+      //    assert(NewSubtreeValues.size() <= SubtreeValues.size());
+      //    SubtreeValues.clear();
+      //    for (Value *NV : NewSubtreeValues) {
+      //        SubtreeValues.insert(NV);
+      //    }
+      //    F = FNew;
+      //    if(Error e = F->getParent()->materializeAll()) {
+      //        errs() << "Error from materializeAll(): ";
+      //        report_fatal_error("died at materializeAll()");
+      //    }
+      //};
   }
 
 
