@@ -379,13 +379,13 @@ static void rewriteAllocaAsManagedMemory(AllocaInst *Alloca,
     Builder.CreateCall(FreeManagedFn, {RawManagedMem});
   }
 
-  if(verifyModule(*M, nullptr)) {
-      errs() << "Broken alloca conversion:\n";
-      verifyModule(*M, &errs());
-      errs() <<  "Broken Function:\n";
-      F->dump();
-      report_fatal_error("Broken alloca conversion");
-  }
+  // if(verifyModule(*M, nullptr)) {
+  //     errs() << "Broken alloca conversion:\n";
+  //     verifyModule(*M, &errs());
+  //     errs() <<  "Broken Function:\n";
+  //     F->dump();
+  //     report_fatal_error("Broken alloca conversion");
+  // }
 
 }
 
