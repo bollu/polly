@@ -327,15 +327,58 @@ void replaceConstantsFromValueProfile(Function *F) {
   }
 }
 
-// Large parts stolen from DeadArgumentElimination
+// A class to represent parameters sent to the kernel.
+class KernelParameters {
+    public:
+    std::vector<std::pair<Argument*, ScopArrayInfo *>> ArrayParams;
+    unsigned NumHostIters;
+    // std::vector<Argument *> HostIters;
+    std::vector<std::pair<Argument *, isl_id*>> VarParams;
+    std::vector<std::pair<Argument *, Value*>> SubtreeParams;
+
+    // KernelParameters(
+        // isl_id *getVarParam(int i) {
+        //     assert(i < VarParams.size());
+        //     return VarParams[i];
+        // }
+        unsigned numArrayParams() const { return ArrayParams.size(); }
+        unsigned numHostIters() const { return NumHostIters; }
+        unsigned numVars() const { return VarParams.size(); }
+        unsigned numSubtreeValues() const { return SubtreeParams.size(); }
+
+
+        unsigned numTotalArgs() const {
+            return numArrayParams() + numHostIters() + numVars() + numSubtreeValues(); 
+        }
+
+        isl_id *getVarId(unsigned i) const {
+            assert(i < VarParams.size());
+            return VarParams[i].second;
+        }
+
+        Value *getSubtreeHostValue(unsigned i) const {
+            assert (i < SubtreeParams.size());
+            return SubtreeParams[i].second;
+        }
+        ScopArrayInfo *getSAI(unsigned i) {
+            assert(i < ArrayParams.size());
+            return ArrayParams[i].second;
+        }
+};
+
 using LiveArrayIdxsTy = std::vector<bool>;
 using LiveVarIdxsTy = std::vector<bool>;
-std::tuple<Function *, SetVector<Value *>, LiveArrayIdxsTy, LiveVarIdxsTy>
-removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
-                        SetVector<Value *> SubtreeValues,
+
+// Large parts stolen from DeadArgumentElimination
+std::pair<Function *, KernelParameters>
+removeDeadSubtreeValues(Function *F,
+                        // gpu_prog *Prog,
+                        // ppcg_kernel *Kernel,
+                        const KernelParameters &Params,
                         IslExprBuilder::IDToValueTy &IDToValue,
                         const DataLayout &DL) {
 
+    errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
   // // Run -O3 against F so we can check which parameters are unused.
   // llvm::legacy::PassManager OptPasses;
   // PassManagerBuilder PassBuilder;
@@ -354,26 +397,24 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
 
   // PassBuilder.populateModulePassManager(OptPasses);
   // OptPasses.run(*F->getParent());
+  errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
   std::map<Argument *, Constant *> ConstantArgumentReplacement;
 
-  const unsigned NumPPCGRequiredArrays = [&] {
-    unsigned n = 0;
-    for (int i = 0; i < Prog->n_array; i++) {
+  LiveArrayIdxsTy liveArrayIdxs(Params.numArrayParams(), true);
+  std::vector<bool> LiveSubtreeIdxs(Params.numSubtreeValues(), true);
 
-      if (ppcg_kernel_requires_array_argument(Kernel, i)) {
-        n++;
-      }
-    };
-    return n;
-  }();
-  LiveArrayIdxsTy liveArrayIdxs(NumPPCGRequiredArrays, true);
-  const unsigned NumHostIters = isl_space_dim(Kernel->space, isl_dim_set);
-  const unsigned NumVars = isl_space_dim(Kernel->space, isl_dim_param);
+  const unsigned NumHostIters = Params.numHostIters(); // isl_space_dim(Kernel->space, isl_dim_set);
+  const unsigned NumVars = Params.numVars(); // isl_space_dim(Kernel->space, isl_dim_param);
 
+  assert(F->arg_size() == Params.numTotalArgs());
+
+  errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
   std::vector<Argument *> OldArgs;
   for (Argument &A : F->args()) {
     OldArgs.push_back(&A);
   }
+
+  errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
 
   // SmallVector<Argument *, 4> LiveSubtreeArgs;
   // SmallVector<unsigned, 4> LiveSubtreeIndeces;
@@ -385,16 +426,18 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
     unsigned oldidx = 0, newidx = 0;
     unsigned nDeadArrays = 0;
 
-    for (unsigned i = 0; i < NumPPCGRequiredArrays; i++, oldidx++) {
+    for (unsigned i = 0; i < Params.numArrayParams(); i++, oldidx++) {
+      errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
       Argument *A = OldArgs[oldidx];
       if (A->user_empty()) {
           nDeadArrays++;
-        liveArrayIdxs[oldidx] = false;
+          liveArrayIdxs[i] = false;
       } else {
-        liveArrayIdxs[oldidx] = true;
+        liveArrayIdxs[i] = true;
         OldToNewIndex[oldidx] = newidx++;
       }
     }
+    errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
     dbgs() << "**** NUM DEAD ARRAYS: " << nDeadArrays << "\n";
 
     // Step 1. Setup a 1:1 mapping between old to new indeces.
@@ -407,12 +450,13 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
     static int nConstantVarsTotal = 0;
     static int sizeConstantVarsTotal = 0;
     int nConstantVarsCur = 0;
+
     for (unsigned i = 0; i < NumVars; i++, oldidx++) {
       Argument *A = OldArgs[oldidx];
       if (A->user_empty()) {
         LiveVarIdxs[i] = false;
       } else {
-        isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_param, i);
+        isl_id *Id = Params.getVarId(i); // isl_space_get_dim_id(Kernel->space, isl_dim_param, i);
         assert(IDToValue.find(Id) != IDToValue.end());
         Value *Val = IDToValue[Id];
         isl_id_free(Id);
@@ -428,6 +472,7 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
         }
       }
     }
+    errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
     nConstantVarsTotal += nConstantVarsCur;
     dbgs() << "**** NUM CONSTANT VARS: " << nConstantVarsCur << "\n";
     dbgs() << "**** NUM CONSTANT VARS(TOTAL): " << nConstantVarsTotal << "\n";
@@ -438,25 +483,30 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
     int nDeadSubtreeValsCur = 0;
     static int nConstantSubtreeValsTotal = 0;
     static int sizeConstantSubtreeValsTotal = 0;
-    for (unsigned i = 0; i < SubtreeValues.size(); oldidx++, i++) {
+    for (unsigned i = 0; i < Params.numSubtreeValues(); oldidx++, i++) {
       assert(oldidx < OldArgs.size() && "invalid index");
       Argument *A = OldArgs[oldidx];
+      
       if (!A->user_empty()) {
-        Value *V = SubtreeValues[i];
+        Value *V = Params.getSubtreeHostValue(i);
         if (isa<Constant>(V)) {
           ConstantArgumentReplacement[A] = cast<Constant>(V);
           nConstantSubtreeValsCur++;
           sizeConstantSubtreeValsTotal += DL.getTypeAllocSize(V->getType());
+          LiveSubtreeIdxs[i] = false;
           continue;
         } else {
-          NewSubtreeValues.insert(SubtreeValues[i]);
+          LiveSubtreeIdxs[i] = true;
+          NewSubtreeValues.insert(V);
           OldToNewIndex[oldidx] = newidx++;
         }
       }
       else {
           nDeadSubtreeValsCur++;
+          LiveSubtreeIdxs[i] = false;
       }
     }
+    errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
     nConstantSubtreeValsTotal += nConstantSubtreeValsCur;
 
     dbgs() << "**** NUM DEAD SUBTREE VALS:" << nDeadSubtreeValsCur;
@@ -481,6 +531,7 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
     const unsigned newidxcur = It.second;
     NewFArgTys[newidxcur] = OldArgs[oldidxcur]->getType();
   }
+  errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
 
   // TODO: figure out correct assert.assert(NewSubtreeValues.size() ==
   // newidx);
@@ -528,18 +579,8 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
     auto INew = FNew->arg_begin() + newidx;
     IOld->replaceAllUsesWith(&*INew);
     INew->takeName(&*IOld);
-
-    // if (ConstantArgumentReplacement.find(IOld) !=
-    // ConstantValueReplacement.end()) {
-    //     InstructionsToReplace.insert(std::make_pair(INew,
-    //     ConstantArgumentReplacement.find(IOld)->second));
-    //     // InstructionsToReplace[INew] =
-    //     ConstantArgumentReplacement.find(IOld)->second;
-    // } else {
-    //     IOld->replaceAllUsesWith(&*INew);
-    //     INew->takeName(&*IOld);
-    // }
   }
+
   for (auto It : ConstantArgumentReplacement) {
     Value *IOld = It.first;
     Value *C = It.second;
@@ -550,7 +591,47 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
   FNew->setSubprogram(F->getSubprogram());
   F->eraseFromParent();
 
-  return std::make_tuple(FNew, NewSubtreeValues, liveArrayIdxs, LiveVarIdxs);
+  // create a new KernelParameters struct;
+  errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
+  KernelParameters NewParams;
+  auto It = FNew->arg_begin();
+
+  for(unsigned i = 0; i < Params.numArrayParams(); i++) {
+      if (!liveArrayIdxs[i]) continue;
+      ScopArrayInfo *SAI = Params.ArrayParams[i].second;
+      NewParams.ArrayParams.push_back(std::make_pair(It, SAI));
+      It++;
+  }
+  errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
+
+  // for(unsigned i = 0; i < Params.NumHostIters; i++) {
+  // }
+  NewParams.NumHostIters = Params.NumHostIters;
+  It += NewParams.NumHostIters;
+
+  for(unsigned i = 0; i < Params.numVars(); i++) {
+      if (!LiveVarIdxs[i]) continue;
+      isl_id *Id = Params.VarParams[i].second;
+      NewParams.VarParams.push_back(std::make_pair(It, Id));
+      It++;
+  }
+  errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
+
+  for(unsigned i = 0; i < Params.numSubtreeValues(); i++) {
+      if (!LiveSubtreeIdxs[i]) continue;
+      Value *V = Params.SubtreeParams[i].second; 
+      NewParams.SubtreeParams.push_back(std::make_pair(It, V));
+      It++;
+  }
+  errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
+
+  assert(FNew->arg_size() == NewParams.numTotalArgs());
+  assert(It == FNew->arg_end());
+
+  errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
+
+
+  return std::make_pair(FNew, NewParams); // std::make_tuple(FNew, NewSubtreeValues, liveArrayIdxs, LiveVarIdxs);
 }
 
 /// Used to store information PPCG wants for kills. This information is
@@ -917,8 +998,9 @@ private:
   /// @returns A stack allocated array with pointers to the parameter
   ///          values that are passed to the kernel.
   Value *createLaunchParameters(ppcg_kernel *Kernel, Function *F,
-                                LiveArrayIdxsTy LiveArrayIdxs,
-                                LiveVarIdxsTy LiveVarIdxs,
+                                // LiveArrayIdxsTy LiveArrayIdxs,
+                                // LiveVarIdxsTy LiveVarIdxs,
+                                KernelParameters KernelParams,
                                 SetVector<Value *> SubtreeValues,
                                 PerfMonitor *P);
 
@@ -995,7 +1077,7 @@ private:
   /// @param SubtreeValues The set of llvm::Values referenced by this kernel.
   /// @param SubtreeFunctions The set of llvm::Functions referenced by this
   ///                         kernel.
-  void createKernelFunction(ppcg_kernel *Kernel,
+  KernelParameters createKernelFunction(ppcg_kernel *Kernel,
                             SetVector<Value *> &SubtreeValues,
                             SetVector<Function *> &SubtreeFunctions);
 
@@ -1012,7 +1094,7 @@ private:
   /// @param SubtreeValues The set of llvm::Values referenced by this kernel.
   ///
   /// @returns The newly declared function.
-  Function *createKernelFunctionDecl(ppcg_kernel *Kernel,
+  std::pair<Function *, KernelParameters> createKernelFunctionDecl(ppcg_kernel *Kernel,
                                      SetVector<Value *> &SubtreeValues);
 
   /// Insert intrinsic functions to obtain thread and block ids.
@@ -2102,8 +2184,9 @@ void GPUNodeBuilder::insertStoreParameter(Instruction *Parameters,
 }
 
 Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
-                                              LiveArrayIdxsTy LiveArrayIdxs,
-                                              LiveVarIdxsTy LiveVarIdxs,
+                                              // LiveArrayIdxsTy LiveArrayIdxs,
+                                              // LiveVarIdxsTy LiveVarIdxs,
+                                              KernelParameters KernelParams, 
                                               SetVector<Value *> SubtreeValues,
                                               PerfMonitor *P) {
   const int NumArgs = F->arg_size();
@@ -2174,20 +2257,10 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
       ArrayTy, AddressSpace, Launch + "_params", EntryBlock->getTerminator());
 
   int Index = 0;
-  int IndexUsedArray = 0;
-  for (long i = 0; i < Prog->n_array; i++) {
-    if (!ppcg_kernel_requires_array_argument(Kernel, i))
-      continue;
-    if (BoolRemoveDeadSubtreeValues && !LiveArrayIdxs[IndexUsedArray]) {
-      dbgs() << __PRETTY_FUNCTION__ << " |Skipping array : " << IndexUsedArray
-             << "\n";
-      IndexUsedArray++;
-      continue;
-    }
-    IndexUsedArray++;
-
-    isl_id *Id = isl_space_get_tuple_id(Prog->array[i].space, isl_dim_set);
-    const ScopArrayInfo *SAI = ScopArrayInfo::getFromId(isl::manage(Id));
+  for (long i = 0; i < KernelParams.numArrayParams(); ++i) {
+    // isl_id *Id = isl_space_get_tuple_id(Prog->array[i].space, isl_dim_set);
+    // const ScopArrayInfo *SAI = ScopArrayInfo::getFromId(isl::manage(Id));
+    const ScopArrayInfo *SAI = KernelParams.getSAI(i);
 
     if (Runtime == GPURuntime::OpenCL)
       ArgSizes[Index] = SAI->getElemSizeInBytes();
@@ -2251,7 +2324,7 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     Index++;
   }
 
-  int NumHostIters = isl_space_dim(Kernel->space, isl_dim_set);
+  const int NumHostIters = KernelParams.numHostIters(); // isl_space_dim(Kernel->space, isl_dim_set);
 
   for (long i = 0; i < NumHostIters; i++) {
     isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_set, i);
@@ -2270,16 +2343,14 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     Index++;
   }
 
-  int NumVars = isl_space_dim(Kernel->space, isl_dim_param);
+  // int NumVars = isl_space_dim(Kernel->space, isl_dim_param);
 
-  for (long i = 0; i < NumVars; i++) {
-    if (BoolRemoveDeadSubtreeValues && !LiveVarIdxs[i])
-      continue;
-    isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_param, i);
+  for (long i = 0; i < KernelParams.numVars(); i++) {
+    isl_id *Id = KernelParams.getVarId(i); // isl_space_get_dim_id(Kernel->space, isl_dim_param, i);
     Value *Val = IDToValue[Id];
     if (ValueMap.count(Val))
       Val = ValueMap[Val];
-    isl_id_free(Id);
+    // isl_id_free(Id);
 
     if (Runtime == GPURuntime::OpenCL)
       ArgSizes[Index] = computeSizeInBytes(Val->getType());
@@ -2298,7 +2369,8 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     Index++;
   }
 
-  for (auto Val : SubtreeValues) {
+  for (auto It : KernelParams.SubtreeParams) {
+      Value *Val = It.first;
     if (Runtime == GPURuntime::OpenCL)
       ArgSizes[Index] = computeSizeInBytes(Val->getType());
 
@@ -2318,7 +2390,7 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
   assert(Index == NumArgs && "created incorrect number of launch parameters!");
 
   if (Runtime == GPURuntime::OpenCL) {
-    for (int i = 0; i < NumArgs; i++) {
+    for (unsigned i = 0; i < KernelParams.numTotalArgs(); i++) {
       Value *Val = ConstantInt::get(Builder.getInt32Ty(), ArgSizes[i]);
       Instruction *Param =
           new AllocaInst(Builder.getInt32Ty(), AddressSpace,
@@ -2419,7 +2491,9 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
     SubtreeValues.insert(V);
   }
 
-  createKernelFunction(Kernel, SubtreeValues, SubtreeFunctions);
+  errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
+  KernelParameters KernelParams = createKernelFunction(Kernel, SubtreeValues, SubtreeFunctions);
+  errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
   setupKernelSubtreeFunctions(SubtreeFunctions);
 
   create(isl_ast_node_copy(Kernel->tree));
@@ -2441,31 +2515,27 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
     S.invalidateScopArrayInfo(BasePtr, MemoryKind::Array);
   LocalArrays.clear();
 
-  // Look for dead parameters and prune them among SubtreeValues
-  LiveArrayIdxsTy LiveArrayIdxs;
-  LiveVarIdxsTy LiveVarIdxs;
 
   // value profile
-  if (BoolRemoveDeadSubtreeValues) {
-    SetVector<Value *> NewSubtreeValues;
+  if (false && BoolRemoveDeadSubtreeValues) {
     Function *FNew;
+    KernelParameters NewKernelParams;
 
-    const int nArgsOld = F->getFunctionType()->getNumParams();
-    std::tie(FNew, NewSubtreeValues, LiveArrayIdxs, LiveVarIdxs) =
-        removeDeadSubtreeValues(F, Prog, Kernel, SubtreeValues, IDToValue, DL);
+    errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
+    std::tie(FNew, NewKernelParams) = 
+        removeDeadSubtreeValues(F, KernelParams, IDToValue, DL);
+    errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
 
     dbgs() << "*** OLD V/S NEW SUBTREE VALUES SIZE: "
            << "Old:" << SubtreeValues.size()
-           << " | NEW: " << NewSubtreeValues.size() << "\n";
+           << " | NEW: " << NewKernelParams.numSubtreeValues() << "\n";
 
-    const int nArgsNew = FNew->getFunctionType()->getNumParams();
-    dbgs() << "*** OLD V/S NEW NARGS: "
-           << "Old: " << nArgsOld << " | New: " << nArgsNew << "\n";
-    assert(NewSubtreeValues.size() <= SubtreeValues.size());
+
     SubtreeValues.clear();
-    for (Value *NV : NewSubtreeValues) {
-      SubtreeValues.insert(NV);
+    for (auto It : NewKernelParams.SubtreeParams) {
+      SubtreeValues.insert(It.second);
     }
+
     F = FNew;
 
     if(Error e = F->getParent()->materializeAll()) {
@@ -2531,9 +2601,11 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
     P = new PerfMonitor(S, S.getFunction().getParent());
     P->initialize();
   }
+  errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
 
-  Parameters = createLaunchParameters(Kernel, F, LiveArrayIdxs, LiveVarIdxs,
+  Parameters = createLaunchParameters(Kernel, F, KernelParams,
                                       SubtreeValues, P);
+  errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
 
   // We see ~7% keping this here.
   // if (polly::PerfMonitoring)  {
@@ -2647,13 +2719,14 @@ static std::string computeSPIRDataLayout(bool is64Bit) {
   return Ret;
 }
 
-Function *
+std::pair<Function *, KernelParameters>
 GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
                                          SetVector<Value *> &SubtreeValues) {
   std::vector<Type *> Args;
   std::string Identifier = getKernelFuncName(Kernel->id);
 
   std::vector<Metadata *> MemoryType;
+
 
   for (long i = 0; i < Prog->n_array; i++) {
     if (!ppcg_kernel_requires_array_argument(Kernel, i))
@@ -2741,10 +2814,17 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     break;
   }
 
+
+  // assert(IDToSAI.size() == 0);
+  KernelParameters KernelParams;
+
   auto Arg = FN->arg_begin();
+  unsigned NumArrays = 0;
+
   for (long i = 0; i < Kernel->n_array; i++) {
     if (!ppcg_kernel_requires_array_argument(Kernel, i))
       continue;
+    NumArrays++;
 
     Arg->setName(Kernel->array[i].array->name);
 
@@ -2787,10 +2867,15 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
 
     isl_ast_build_free(Build);
     KernelIds.push_back(Id);
+
+    KernelParams.ArrayParams.push_back(std::make_pair(Arg, const_cast<ScopArrayInfo *>(SAIRep)));
     IDToSAI[Id] = SAIRep;
     Arg++;
   }
+  assert(KernelParams.numArrayParams() == NumArrays);
 
+  
+  KernelParams.NumHostIters = NumHostIters;
   for (long i = 0; i < NumHostIters; i++) {
     isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_set, i);
     Arg->setName(isl_id_get_name(Id));
@@ -2800,6 +2885,7 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     KernelIDs.insert(std::unique_ptr<isl_id, IslIdDeleter>(Id));
     Arg++;
   }
+  assert(KernelParams.numHostIters() == unsigned(NumHostIters));
 
   for (long i = 0; i < NumVars; i++) {
     isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_param, i);
@@ -2810,17 +2896,24 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     IDToValue[Id] = &*Arg;
     KernelIDs.insert(std::unique_ptr<isl_id, IslIdDeleter>(Id));
     Arg++;
+    KernelParams.VarParams.push_back(std::make_pair(Arg, Id));
   }
+
+  assert(KernelParams.numVars() == unsigned(NumVars));
 
   for (auto *V : SubtreeValues) {
     Arg->setName(V->getName());
     // dbgs() <<  __LINE__ << "|Mapping: " << *V << " => " << *Arg << "\n";
     ValueMap[V] = &*Arg;
     Arg++;
+    KernelParams.SubtreeParams.push_back(std::make_pair(Arg, V));
   }
+  assert(KernelParams.numSubtreeValues() == SubtreeValues.size());
   // dbgs() << "\n=======\n";
+  //
+  assert(KernelParams.numTotalArgs() == FN->arg_size());
 
-  return FN;
+  return std::make_pair(FN, KernelParams);
 }
 
 void GPUNodeBuilder::insertKernelIntrinsics(ppcg_kernel *Kernel) {
@@ -3135,13 +3228,15 @@ void GPUNodeBuilder::createKernelVariables(ppcg_kernel *Kernel, Function *FN) {
   }
 }
 
-void GPUNodeBuilder::createKernelFunction(
+KernelParameters GPUNodeBuilder::createKernelFunction(
     ppcg_kernel *Kernel, SetVector<Value *> &SubtreeValues,
     SetVector<Function *> &SubtreeFunctions) {
   std::string Identifier = getKernelFuncName(Kernel->id);
   GPUModule.reset(new Module(Identifier, Builder.getContext()));
 
-  Function *FN = createKernelFunctionDecl(Kernel, SubtreeValues);
+  Function *FN;
+  KernelParameters params;
+  std::tie(FN, params) = createKernelFunctionDecl(Kernel, SubtreeValues);
 
   switch (Arch) {
   case GPUArch::NVPTX64:
@@ -3185,6 +3280,7 @@ void GPUNodeBuilder::createKernelFunction(
     insertKernelCallsSPIR(Kernel);
     break;
   }
+  return params;
 }
 
 std::vector<char>
