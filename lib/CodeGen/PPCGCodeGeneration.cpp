@@ -330,7 +330,7 @@ void replaceConstantsFromValueProfile(Function *F) {
 // A class to represent parameters sent to the kernel.
 class KernelParameters {
     public:
-    std::vector<std::pair<Argument*, ScopArrayInfo *>> ArrayParams;
+    std::vector<std::pair<Argument*, isl_id *>> ArrayParams;
     unsigned NumHostIters;
     // std::vector<Argument *> HostIters;
     std::vector<std::pair<Argument *, isl_id*>> VarParams;
@@ -360,7 +360,7 @@ class KernelParameters {
             assert (i < SubtreeParams.size());
             return SubtreeParams[i].second;
         }
-        ScopArrayInfo *getSAI(unsigned i) {
+        isl_id *getArrayId(unsigned i) {
             assert(i < ArrayParams.size());
             return ArrayParams[i].second;
         }
@@ -598,8 +598,8 @@ removeDeadSubtreeValues(Function *F,
 
   for(unsigned i = 0; i < Params.numArrayParams(); i++) {
       if (!liveArrayIdxs[i]) continue;
-      ScopArrayInfo *SAI = Params.ArrayParams[i].second;
-      NewParams.ArrayParams.push_back(std::make_pair(It, SAI));
+      isl_id *Id = Params.ArrayParams[i].second;
+      NewParams.ArrayParams.push_back(std::make_pair(It, Id));
       It++;
   }
   errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
@@ -2189,7 +2189,9 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
                                               KernelParameters KernelParams, 
                                               SetVector<Value *> SubtreeValues,
                                               PerfMonitor *P) {
+    errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
   const int NumArgs = F->arg_size();
+  assert(unsigned(NumArgs) == KernelParams.numTotalArgs());
   std::vector<int> ArgSizes(NumArgs);
 
   // Get a hold of the VpDumpValues function, and use it to setup
@@ -2233,6 +2235,7 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
 
       };
 
+    errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
   // If we are using the OpenCL Runtime, we need to add the kernel argument
   // sizes to the end of the launch-parameter list, so OpenCL can determine
   // how big the respective kernel arguments are.
@@ -2256,11 +2259,11 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
   Instruction *Parameters = new AllocaInst(
       ArrayTy, AddressSpace, Launch + "_params", EntryBlock->getTerminator());
 
+  errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
   int Index = 0;
   for (long i = 0; i < KernelParams.numArrayParams(); ++i) {
-    // isl_id *Id = isl_space_get_tuple_id(Prog->array[i].space, isl_dim_set);
-    // const ScopArrayInfo *SAI = ScopArrayInfo::getFromId(isl::manage(Id));
-    const ScopArrayInfo *SAI = KernelParams.getSAI(i);
+    isl_id *Id = KernelParams.getArrayId(i); // isl_space_get_tuple_id(Prog->array[i].space, isl_dim_set);
+    const ScopArrayInfo *SAI = ScopArrayInfo::getFromId(isl::manage(Id));
 
     if (Runtime == GPURuntime::OpenCL)
       ArgSizes[Index] = SAI->getElemSizeInBytes();
@@ -2323,6 +2326,7 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     }
     Index++;
   }
+  errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
 
   const int NumHostIters = KernelParams.numHostIters(); // isl_space_dim(Kernel->space, isl_dim_set);
 
@@ -2342,6 +2346,7 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     insertStoreParameter(Parameters, Param, Index);
     Index++;
   }
+  errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
 
   // int NumVars = isl_space_dim(Kernel->space, isl_dim_param);
 
@@ -2368,12 +2373,14 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
     }
     Index++;
   }
+  errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
 
   for (auto It : KernelParams.SubtreeParams) {
-      Value *Val = It.first;
+      Value *Val = It.second;
     if (Runtime == GPURuntime::OpenCL)
       ArgSizes[Index] = computeSizeInBytes(Val->getType());
 
+    errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
     Instruction *Param =
         new AllocaInst(Val->getType(), AddressSpace,
                        Launch + "_param_" + std::to_string(Index),
@@ -2387,6 +2394,7 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
 
     Index++;
   }
+  errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
   assert(Index == NumArgs && "created incorrect number of launch parameters!");
 
   if (Runtime == GPURuntime::OpenCL) {
@@ -2401,6 +2409,7 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
       Index++;
     }
   }
+  errs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
 
   auto Location = EntryBlock->getTerminator();
   return new BitCastInst(Parameters, Builder.getInt8PtrTy(),
@@ -2868,7 +2877,7 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     isl_ast_build_free(Build);
     KernelIds.push_back(Id);
 
-    KernelParams.ArrayParams.push_back(std::make_pair(Arg, const_cast<ScopArrayInfo *>(SAIRep)));
+    KernelParams.ArrayParams.push_back(std::make_pair(Arg, Id));
     IDToSAI[Id] = SAIRep;
     Arg++;
   }
