@@ -961,7 +961,6 @@ void IslNodeBuilder::createSubstitutionsVector(
 
 void IslNodeBuilder::generateCopyStmt(
     ScopStmt *Stmt, __isl_keep isl_id_to_ast_expr *NewAccesses) {
-    errs() << __PRETTY_FUNCTION__ << "\n";
   assert(Stmt->size() == 2);
   auto ReadAccess = Stmt->begin();
   auto WriteAccess = ReadAccess++;

@@ -1158,7 +1158,6 @@ void ScopBuilder::addArrayAccess(ScopStmt *Stmt, MemAccInst MemAccInst,
                                     ElementType, IsAffine, AccessValue,
                                     Subscripts, Shape, MemoryKind::Array);
 
-  errs() << "\tadded memory access: "; MemAccess->dump(); errs() << "\n";
 
   if (!DetectFortranArrays)
     return;
