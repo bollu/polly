@@ -3758,6 +3758,8 @@ public:
       dbgs() << "DONE SETTING UPPER AND LOWER BOUND FOR PARAMS\n";
     }
 
+    PPCGScop->context = isl_set_coalesce(PPCGScop->context);
+
     PPCGScop->domain = S->getDomains().release();
     // TODO: investigate this further. PPCG calls collect_call_domains.
     PPCGScop->call = isl_union_set_from_set(S->getContext().release());
