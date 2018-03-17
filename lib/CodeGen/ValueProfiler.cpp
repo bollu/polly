@@ -103,8 +103,21 @@ static bool doesStringMatchAnyRegex(StringRef Str,
 }
 
 bool isValueProfilerLoadEnabledForFunction(std::string Name) {
-    if (OnlyFunctions.size() == 0) return true;
-    return doesStringMatchAnyRegex(Name, OnlyFunctions);
+    bool AllowedByOnlyFunctions = [Name]() {
+        if (OnlyFunctions.size() == 0) return true;
+        return doesStringMatchAnyRegex(Name, OnlyFunctions);
+    }();
+
+    if (!AllowedByOnlyFunctions) return false;
+
+
+    std::map<std::string, uint64_t> m = getConstantValuesFromProfile();
+    for(auto it: m) {
+        if (it.first.find(Name) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
 }
 llvm::Function *getOrCreateVpProfileValueProto(llvm::Module &M) {
   PollyIRBuilder Builder(M.getContext());
