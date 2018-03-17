@@ -132,7 +132,8 @@ llvm::Function *getOrCreateVpProfileValueProto(llvm::Module &M) {
 using HistogramTy =std::map<uint64_t, uint64_t>;
 
 
-std::map<std::string, HistogramTy> getHistogramFromProfile() {
+// Uncached version.
+std::map<std::string, HistogramTy> getHistogramFromProfile_() {
     std::ifstream file(PollyValueProfilerInputFilepath);
     std::string rawinput((std::istreambuf_iterator<char>(file)),
             std::istreambuf_iterator<char>());
@@ -196,24 +197,43 @@ std::map<std::string, HistogramTy> getHistogramFromProfile() {
 } // end getConstantValuesFromProfile
 
 
+
+std::map<std::string, HistogramTy> getHistogramFromProfileCached() {
+    static std::map<std::string, HistogramTy> hist;
+    static bool LOADED_HIST = false;
+
+    if (!LOADED_HIST) {
+        hist = getHistogramFromProfile_();
+        LOADED_HIST = true;
+    }
+
+    return hist;
+}
+
 std::map<std::string, uint64_t> getConstantValuesFromProfile() {
-  std::map<std::string, HistogramTy> nameToHistogram = getHistogramFromProfile();
-  std::map<std::string, uint64_t> nameToConstantValue;
-  errs() << __PRETTY_FUNCTION__  << "\n";
+  static std::map<std::string, HistogramTy> nameToHistogram = getHistogramFromProfileCached();
+  static std::map<std::string, uint64_t> nameToConstantValue;
 
-  for(auto it: nameToHistogram) {
-      const std::string name = it.first;
-      const HistogramTy hist = it.second;
-      assert(hist.size() > 0 && "empty histogram!");
-      errs() << "\tconsidering " << name << "\n";
-      if (hist.size() != 1) continue;
+  if (nameToConstantValue.size() == 0) {
+      errs() << __PRETTY_FUNCTION__  << "\n";
 
-      // the constant value is the LHS (value) of the first (and only) value in the histogram.
-      const uint64_t constantVal = hist.begin()->first;
-      nameToConstantValue[name] = constantVal;
-      errs() << "\t\tconstant: " << name << " = " << constantVal << "\n";
+      for(auto it: nameToHistogram) {
+          const std::string name = it.first;
+          const HistogramTy hist = it.second;
+          assert(hist.size() > 0 && "empty histogram!");
+          errs() << "\tconsidering " << name << "\n";
+          if (hist.size() != 1) continue;
+
+          // the constant value is the LHS (value) of the first (and only) value in the histogram.
+          const uint64_t constantVal = hist.begin()->first;
+          nameToConstantValue[name] = constantVal;
+          errs() << "\t\tconstant: " << name << " = " << constantVal << "\n";
+      }
+      errs() << "---\n";
   }
-  errs() << "---\n";
+  else {
+      errs() << "using cached value profile data\n";
+  }
 
   return nameToConstantValue;
 
@@ -250,7 +270,7 @@ void createDestructor(Module &M) {
 }
 
 void readInput() {
-    std::map<std::string, HistogramTy> nameToHistogram = polly::getHistogramFromProfile();
+    std::map<std::string, HistogramTy> nameToHistogram = polly::getHistogramFromProfileCached();
 
     DEBUG(
     dbgs() << "Profiler data:\n";
