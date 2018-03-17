@@ -1,4 +1,4 @@
-//===------ PPCGCodeGeneration.cpp - Polly Accelerator Code Generation. ---===//
+// PPCGCodeGeneration.cpp - Polly Accelerator Code Generation. ---===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -12,12 +12,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Support/Error.h"
 #include "polly/CodeGen/PPCGCodeGeneration.h"
 #include "polly/CodeGen/CodeGeneration.h"
 #include "polly/CodeGen/IslAst.h"
 #include "polly/CodeGen/IslNodeBuilder.h"
 #include "polly/CodeGen/PerfMonitor.h"
+#include "polly/CodeGen/RuntimeDebugBuilder.h"
 #include "polly/CodeGen/Utils.h"
 #include "polly/CodeGen/ValueProfiler.h"
 #include "polly/DependenceInfo.h"
@@ -32,12 +32,12 @@
 #include "llvm/Analysis/GlobalsModRef.h"
 #include "llvm/Analysis/ScalarEvolutionAliasAnalysis.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
-#include "polly/CodeGen/RuntimeDebugBuilder.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/IRReader/IRReader.h"
 #include "llvm/Linker/Linker.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Target/TargetMachine.h"
@@ -267,8 +267,9 @@ static Function *createPollyAbstractIndexFunction(Module &M,
 }
 
 static std::string getProfilerName(const Function *F, int Index) {
-    const std::string out = std::string(F->getName()) + "_" + std::to_string(Index);
-    return out;
+  const std::string out =
+      std::string(F->getName()) + "_" + std::to_string(Index);
+  return out;
 }
 
 void replaceConstantsFromValueProfile(Function *F) {
@@ -278,44 +279,48 @@ void replaceConstantsFromValueProfile(Function *F) {
   auto vpGetOptionalValue = [&vpNameToConstantValue,
                              &F](int ix) -> llvm::Optional<uint64_t> {
 
-                                 const int ALLOWED_LB = 0;
-                                 //const int ALLOWED_UB = 66;
-                                 const int ALLOWED_UB = 10000;
-                                 // const int ALLOWED_UB = 68;
-                                 static int curix = 0;
-
+    const int ALLOWED_LB = 0;
+    // const int ALLOWED_UB = 66;
+    const int ALLOWED_UB = 10000;
+    // const int ALLOWED_UB = 68;
+    static int curix = 0;
 
     const std::string lookupName = getProfilerName(F, ix);
     auto it = vpNameToConstantValue.find(lookupName);
     if (it == vpNameToConstantValue.end())
       return Optional<uint64_t>(None);
     curix++;
-    errs() << "###### curix: " << curix << " | lookupName: " << lookupName << " |arg: " << *(F->arg_begin() + ix) << "| Value" << it->second << "\n";
-    if (curix >= ALLOWED_LB && curix <= ALLOWED_UB)
-        return Optional<uint64_t>(it->second);
+    errs() << "###### curix: " << curix << " | lookupName: " << lookupName
+           << " |arg: " << *(F->arg_begin() + ix) << "| Value" << it->second
+           << "\n";
+    if (curix >= ALLOWED_LB && curix <= ALLOWED_UB) {
+      return Optional<uint64_t>(it->second);
+    }
     return Optional<uint64_t>(None);
-                             };
+  };
 
   PollyIRBuilder Builder(F->getContext());
 
   // total hack.
   int argi = -1;
   for (Argument &Arg : F->args()) {
-      argi++;
-
+    argi++;
 
     Optional<uint64_t> maybeVal = vpGetOptionalValue(argi);
     if (!maybeVal) {
       continue;
     }
-    static int  nFoundValues = 0;
+    static int nFoundValues = 0;
     nFoundValues++;
-    errs() << "#####" << __FUNCTION__ << " |Fn: " << F->getName() << " | Idx: " << argi << " | Arg: " << Arg << " | Value: " << *maybeVal << " |nFoundValues: " << nFoundValues << "\n";
+    errs() << "#####" << __FUNCTION__ << " |Fn: " << F->getName()
+           << " | Idx: " << argi << " | Arg: " << Arg
+           << " | Value: " << *maybeVal << " |nFoundValues: " << nFoundValues
+           << "\n";
     Builder.SetInsertPoint(&F->getEntryBlock());
     Value *New = nullptr;
     Constant *RawInt = ConstantInt::get(Builder.getInt64Ty(), *maybeVal);
     if (Arg.getType()->isIntegerTy()) {
-        New = Builder.CreateSExtOrTrunc(RawInt, Arg.getType());
+      New = Builder.CreateSExtOrTrunc(RawInt, Arg.getType());
     } else if (Arg.getType()->isFloatingPointTy()) {
       New = Builder.CreateBitCast(RawInt, Arg.getType());
     } else {
@@ -388,7 +393,7 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
     for (unsigned i = 0; i < NumPPCGRequiredArrays; i++, oldidx++) {
       Argument *A = OldArgs[oldidx];
       if (A->user_empty()) {
-          nDeadArrays++;
+        nDeadArrays++;
         liveArrayIdxs[oldidx] = false;
       } else {
         liveArrayIdxs[oldidx] = true;
@@ -452,9 +457,8 @@ removeDeadSubtreeValues(Function *F, gpu_prog *Prog, ppcg_kernel *Kernel,
           NewSubtreeValues.insert(SubtreeValues[i]);
           OldToNewIndex[oldidx] = newidx++;
         }
-      }
-      else {
-          nDeadSubtreeValsCur++;
+      } else {
+        nDeadSubtreeValsCur++;
       }
     }
     nConstantSubtreeValsTotal += nConstantSubtreeValsCur;
@@ -1835,11 +1839,11 @@ isl_bool collectReferencesInGPUStmt(__isl_keep isl_ast_node *Node, void *User) {
 
 /// A list of functions that are available in NVIDIA's libdevice.
 const std::set<std::string> CUDALibDeviceFunctions = {
-    "exp",       "expf",      "fast_expf", "expl",    "cos",
-    "cosf",      "fast_cosf", "sqrt",      "sqrtf",   "copysign",
-    "copysignf", "copysignl", "log",       "logf",    "fast_logf",
+    "exp",       "expf",      "fast_expf", "expl",     "cos",
+    "cosf",      "fast_cosf", "sqrt",      "sqrtf",    "copysign",
+    "copysignf", "copysignl", "log",       "logf",     "fast_logf",
     "powi",      "powif",     "llround",   "llroundf", "pow",
-    "sin", "asin", "acos", "tan", "atan"};
+    "sin",       "asin",      "acos",      "tan",      "atan"};
 
 // A map from intrinsics to their corresponding libdevice functions.
 const std::map<std::string, std::string> IntrinsicToLibdeviceFunc = {
@@ -2106,6 +2110,8 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
                                               LiveVarIdxsTy LiveVarIdxs,
                                               SetVector<Value *> SubtreeValues,
                                               PerfMonitor *P) {
+  static const bool ValueProfilingEnabled =
+      isValueProfilerLoadEnabledForFunction(S.getFunction().getName());
   const int NumArgs = F->arg_size();
   std::vector<int> ArgSizes(NumArgs);
 
@@ -2114,36 +2120,36 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
 
   auto CreateCallProfileVal = [&F](int Index, Value *Val,
                                    PollyIRBuilder &Builder) {
-      if (!isValueProfilerSaveEnabled()) return;
+    if (!isValueProfilerSaveEnabled())
+      return;
 
     Function *VpProfileValue = polly::getOrCreateVpProfileValueProto(
         *Builder.GetInsertPoint()->getModule());
-    Value *NameVal =
-        Builder.CreateGlobalStringPtr(getProfilerName(F, Index));
+    Value *NameVal = Builder.CreateGlobalStringPtr(getProfilerName(F, Index));
     Value *ValueAsInt64 = nullptr;
-    
+
     assert(!isa<PointerType>(Val->getType()) && "cannot store pointer");
     if (Val->getType()->isIntegerTy()) {
-        ValueAsInt64 = Builder.CreateSExt(Val, Builder.getInt64Ty(), Val->getName() + ".sext");
-    }
-    else if (Val->getType()->isFloatingPointTy()) {
-        ValueAsInt64 = Builder.CreateBitCast(Val, Builder.getInt64Ty(), Val->getName() + ".tosi");
-    }
-    else {
-        assert(false && "unknown type.");
+      ValueAsInt64 = Builder.CreateSExt(Val, Builder.getInt64Ty(),
+                                        Val->getName() + ".sext");
+    } else if (Val->getType()->isFloatingPointTy()) {
+      ValueAsInt64 = Builder.CreateBitCast(Val, Builder.getInt64Ty(),
+                                           Val->getName() + ".tosi");
+    } else {
+      assert(false && "unknown type.");
     }
     assert(ValueAsInt64 != nullptr && "uninitiaized");
     Builder.CreateCall(VpProfileValue, {NameVal, ValueAsInt64});
 
   };
   auto CreateCallProfileBasePtr =
-      [&CreateCallProfileVal](int Index, Value *Base,
-                              PollyIRBuilder &Builder) {
+      [&CreateCallProfileVal](int Index, Value *Base, PollyIRBuilder &Builder) {
 
-          if (isa<PointerType>(Base->getType()->getPointerElementType())) {
-              errs() << "TODO: look into this. Pointer-to-pointer found: " << *Base << "\n";
-              return;
-          }
+        if (isa<PointerType>(Base->getType()->getPointerElementType())) {
+          errs() << "TODO: look into this. Pointer-to-pointer found: " << *Base
+                 << "\n";
+          return;
+        }
         Value *ValLoaded =
             Builder.CreateLoad(Base, "vp.profiler.load." + Base->getName());
         CreateCallProfileVal(Index, ValLoaded, Builder);
@@ -2178,7 +2184,8 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
   for (long i = 0; i < Prog->n_array; i++) {
     if (!ppcg_kernel_requires_array_argument(Kernel, i))
       continue;
-    if (BoolRemoveDeadSubtreeValues && !LiveArrayIdxs[IndexUsedArray]) {
+    if (ValueProfilingEnabled && BoolRemoveDeadSubtreeValues &&
+        !LiveArrayIdxs[IndexUsedArray]) {
       dbgs() << __PRETTY_FUNCTION__ << " |Skipping array : " << IndexUsedArray
              << "\n";
       IndexUsedArray++;
@@ -2273,7 +2280,7 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
   int NumVars = isl_space_dim(Kernel->space, isl_dim_param);
 
   for (long i = 0; i < NumVars; i++) {
-    if (BoolRemoveDeadSubtreeValues && !LiveVarIdxs[i])
+    if (ValueProfilingEnabled && BoolRemoveDeadSubtreeValues && !LiveVarIdxs[i])
       continue;
     isl_id *Id = isl_space_get_dim_id(Kernel->space, isl_dim_param, i);
     Value *Val = IDToValue[Id];
@@ -2446,78 +2453,76 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
   LiveVarIdxsTy LiveVarIdxs;
 
   // value profile
-  if (BoolRemoveDeadSubtreeValues) {
-    SetVector<Value *> NewSubtreeValues;
-    Function *FNew;
+  // if (BoolRemoveDeadSubtreeValues) {
+  //   SetVector<Value *> NewSubtreeValues;
+  //   Function *FNew;
 
-    const int nArgsOld = F->getFunctionType()->getNumParams();
-    std::tie(FNew, NewSubtreeValues, LiveArrayIdxs, LiveVarIdxs) =
-        removeDeadSubtreeValues(F, Prog, Kernel, SubtreeValues, IDToValue, DL);
+  //   const int nArgsOld = F->getFunctionType()->getNumParams();
+  //   std::tie(FNew, NewSubtreeValues, LiveArrayIdxs, LiveVarIdxs) =
+  //       removeDeadSubtreeValues(F, Prog, Kernel, SubtreeValues, IDToValue,
+  //       DL);
 
-    dbgs() << "*** OLD V/S NEW SUBTREE VALUES SIZE: "
-           << "Old:" << SubtreeValues.size()
-           << " | NEW: " << NewSubtreeValues.size() << "\n";
+  //   dbgs() << "*** OLD V/S NEW SUBTREE VALUES SIZE: "
+  //          << "Old:" << SubtreeValues.size()
+  //          << " | NEW: " << NewSubtreeValues.size() << "\n";
 
-    const int nArgsNew = FNew->getFunctionType()->getNumParams();
-    dbgs() << "*** OLD V/S NEW NARGS: "
-           << "Old: " << nArgsOld << " | New: " << nArgsNew << "\n";
-    assert(NewSubtreeValues.size() <= SubtreeValues.size());
-    SubtreeValues.clear();
-    for (Value *NV : NewSubtreeValues) {
-      SubtreeValues.insert(NV);
+  //   const int nArgsNew = FNew->getFunctionType()->getNumParams();
+  //   dbgs() << "*** OLD V/S NEW NARGS: "
+  //          << "Old: " << nArgsOld << " | New: " << nArgsNew << "\n";
+  //   assert(NewSubtreeValues.size() <= SubtreeValues.size());
+  //   SubtreeValues.clear();
+  //   for (Value *NV : NewSubtreeValues) {
+  //     SubtreeValues.insert(NV);
+  //   }
+  //   F = FNew;
+
+  //   if(Error e = F->getParent()->materializeAll()) {
+  //       errs() << "Error from materializeAll(): ";
+  //       report_fatal_error("died at materializeAll()");
+  //   }
+  // };
+
+  static const bool ValueProfilingEnabled =
+      isValueProfilerLoadEnabledForFunction(S.getFunction().getName());
+  if (ValueProfilingEnabled) {
+    errs() << "ValueProfiling running on: " << getUniqueScopName(&S) << "\n";
+    replaceConstantsFromValueProfile(F);
+
+    if (Error e = F->getParent()->materializeAll()) {
+      errs() << "Error from materializeAll(): ";
+      report_fatal_error("died at materializeAll()");
     }
-    F = FNew;
+    // Pretty sure this fucks up due to Vars computation / something else.
+    // because it is not consistent with our previous definition:
+    if (BoolRemoveDeadSubtreeValues) {
+      errs() << "*** REMOVING DEAD SUBTREE VALUES: " << __LINE__ << "\n";
+      SetVector<Value *> NewSubtreeValues;
+      Function *FNew;
 
-    if(Error e = F->getParent()->materializeAll()) {
+      const int nArgsOld = F->getFunctionType()->getNumParams();
+      std::tie(FNew, NewSubtreeValues, LiveArrayIdxs, LiveVarIdxs) =
+          removeDeadSubtreeValues(F, Prog, Kernel, SubtreeValues, IDToValue,
+                                  DL);
+
+      dbgs() << "*** OLD V/S NEW SUBTREE VALUES SIZE: "
+             << "Old:" << SubtreeValues.size()
+             << " | NEW: " << NewSubtreeValues.size() << "\n";
+
+      const int nArgsNew = FNew->getFunctionType()->getNumParams();
+      dbgs() << "*** OLD V/S NEW NARGS: "
+             << "Old: " << nArgsOld << " | New: " << nArgsNew << "\n";
+      assert(NewSubtreeValues.size() <= SubtreeValues.size());
+      SubtreeValues.clear();
+      for (Value *NV : NewSubtreeValues) {
+        SubtreeValues.insert(NV);
+      }
+      F = FNew;
+      if (Error e = F->getParent()->materializeAll()) {
         errs() << "Error from materializeAll(): ";
         report_fatal_error("died at materializeAll()");
-    }
-  };
-
-
-  static const bool ValueProfilingEnabled = isValueProfilerLoadEnabledForFunction(S.getFunction().getName());
-  if (ValueProfilingEnabled) {
-      errs() << "ValueProfiling running on: " << getUniqueScopName(&S) << "\n";
-      replaceConstantsFromValueProfile(F);
-
-      if(Error e = F->getParent()->materializeAll()) {
-          errs() << "Error from materializeAll(): ";
-          report_fatal_error("died at materializeAll()");
       }
-      // Also prune subtree values after replacing constants
-    
-      // Pretty sure this fucks up due to Vars computation / something else.
-      // because it is not consistent with our previous definition:
-      //if (BoolRemoveDeadSubtreeValues) {
-      //    errs() << "*** REMOVING DEAD SUBTREE VALUES: " << __LINE__ << "\n";
-      //    SetVector<Value *> NewSubtreeValues;
-      //    Function *FNew;
-
-      //    const int nArgsOld = F->getFunctionType()->getNumParams();
-      //    std::tie(FNew, NewSubtreeValues, LiveArrayIdxs, LiveVarIdxs) =
-      //        removeDeadSubtreeValues(F, Prog, Kernel, SubtreeValues, IDToValue, DL);
-
-      //    dbgs() << "*** OLD V/S NEW SUBTREE VALUES SIZE: "
-      //        << "Old:" << SubtreeValues.size()
-      //        << " | NEW: " << NewSubtreeValues.size() << "\n";
-
-      //    const int nArgsNew = FNew->getFunctionType()->getNumParams();
-      //    dbgs() << "*** OLD V/S NEW NARGS: "
-      //        << "Old: " << nArgsOld << " | New: " << nArgsNew << "\n";
-      //    assert(NewSubtreeValues.size() <= SubtreeValues.size());
-      //    SubtreeValues.clear();
-      //    for (Value *NV : NewSubtreeValues) {
-      //        SubtreeValues.insert(NV);
-      //    }
-      //    F = FNew;
-      //    if(Error e = F->getParent()->materializeAll()) {
-      //        errs() << "Error from materializeAll(): ";
-      //        report_fatal_error("died at materializeAll()");
-      //    }
-      //};
+    };
   }
-
-
 
   if (Arch == GPUArch::NVPTX64)
     addCUDAAnnotations(F->getParent(), BlockDimX, BlockDimY, BlockDimZ);
@@ -2560,7 +2565,6 @@ void GPUNodeBuilder::createKernel(__isl_take isl_ast_node *KernelStmt) {
     Value *Args[] = {zero, zero};
     return Builder.CreateInBoundsGEP(gv->getValueType(), gv, Args, Name);
   }();
-
 
   Value *NameString = Builder.CreateGlobalStringPtr(Name, Name + "_name");
   Value *GPUKernel = createCallGetKernel(KernelString, NameString);
@@ -2939,9 +2943,9 @@ void GPUNodeBuilder::prepareKernelArguments(ppcg_kernel *Kernel, Function *FN) {
             Arg, NewTy, Arg->getName() + "_hack_load_for_blockgen");
         ValueMap[SAI->getBasePtr()] = NewBasePtr;
       } else {
-          errs() << "Arg: " << Arg << "\n";
-          errs() << "SAI->basePtr: " << *SAI->getBasePtr() << "\n";
-          errs() << (" I did not think about this case yet.");
+        errs() << "Arg: " << Arg << "\n";
+        errs() << "SAI->basePtr: " << *SAI->getBasePtr() << "\n";
+        errs() << (" I did not think about this case yet.");
       }
     }
 
@@ -3409,7 +3413,7 @@ GPUNodeBuilder::finalizeKernelFunction(std::string kernelFunctionName) {
     DEBUG(dbgs() << "verifyModule Error:\n";
           verifyModule(*GPUModule, &dbgs()););
 
-    dbgs() << "Scop: "<< getUniqueScopName(&S) << "\n";
+    dbgs() << "Scop: " << getUniqueScopName(&S) << "\n";
 
     if (FailOnVerifyModuleFailure)
       llvm_unreachable("VerifyModule failed.");
@@ -3437,11 +3441,10 @@ GPUNodeBuilder::finalizeKernelFunction(std::string kernelFunctionName) {
   PassBuilder.populateModulePassManager(OptPasses);
   OptPasses.run(*GPUModule);
 
-
-    Value *BlockDimX = Builder.getInt32(32);
-    Value *BlockDimY = Builder.getInt32(1);
-    Value *BlockDimZ = Builder.getInt32(1);
-    addCUDAAnnotations(GPUModule.get(), BlockDimX, BlockDimY, BlockDimZ);
+  Value *BlockDimX = Builder.getInt32(32);
+  Value *BlockDimY = Builder.getInt32(1);
+  Value *BlockDimZ = Builder.getInt32(1);
+  addCUDAAnnotations(GPUModule.get(), BlockDimX, BlockDimY, BlockDimZ);
 
   for (Function &F : *GPUModule) {
     countNumUnusedParamsInFunction(&F);
@@ -4599,7 +4602,8 @@ public:
 
       NodeBuilder.addParameters(S->getContext().release());
       isl_ast_expr_free(Condition);
-      Value *RTC = Builder.getInt1(true); /// //NodeBuilder.createRTC(Condition);
+      Value *RTC =
+          Builder.getInt1(true); /// //NodeBuilder.createRTC(Condition);
       Builder.GetInsertBlock()->getTerminator()->setOperand(0, RTC);
 
       Builder.SetInsertPoint(&*StartBlock->begin());
