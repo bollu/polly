@@ -45,6 +45,9 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 
+static cl::opt<bool> PaperRewriteAllAllocas("polly-paper-rewrite-all-allocas",
+        cl::desc("Rewrite all allocas, without checking for escape analysis"));
+
 static cl::opt<bool> RewriteAllocas(
     "polly-acc-rewrite-allocas",
     cl::desc(
@@ -318,6 +321,12 @@ static void getAllocasToBeManaged(Function &F,
       auto *Alloca = dyn_cast<AllocaInst>(&I);
       if (!Alloca)
         continue;
+
+      if (PaperRewriteAllAllocas) {
+          Allocas.insert(Alloca);
+          continue;
+      }
+
       DEBUG(dbgs() << "Checking if (" << *Alloca << ") may be captured: ");
 	
       if (Alloca->hasName() && Alloca->getName().startswith("polly"))
