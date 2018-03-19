@@ -93,6 +93,12 @@ static cl::opt<bool> HackBailPPCGCodeGenRunOnScop(
     "polly-acc-hack-bail-run-on-scop",
     cl::desc("HACK: bail out from runOnScop() on PPCGCodeGen"));
 
+
+// Use this to test that only when this is close to 100% do we get
+// performance. That is, keeping data on the GPU is *critical*
+static cl::opt<float> PaperProbRunKernelOnCPU("polly-paper-prob-run-kernel-on-cpu",
+        cl::desc("probability of running the CPU version of the code"));
+
 static cl::opt<bool>
     DumpScop("polly-acc-dump-scop",
              cl::desc("HACK: dump scop so we can view the output."));
@@ -176,6 +182,24 @@ static cl::opt<int>
                cl::Hidden, cl::init(10 * 512 * 512));
 
 extern bool polly::PerfMonitoring;
+
+
+static llvm::Function *getOrCreateCRand(Module &M) {
+  const char *Name = "rand";
+  Function *F = M.getFunction(Name);
+
+  // If F is not available, declare it.
+  if (!F) {
+    GlobalValue::LinkageTypes Linkage = Function::ExternalLinkage;
+    PollyIRBuilder Builder(M.getContext());
+    // TODO: How do I get `size_t`? I assume from DataLayout?
+    FunctionType *Ty =
+        FunctionType::get(Builder.getInt32Ty(), {}, false);
+    F = Function::Create(Ty, Linkage, Name, &M);
+  }
+
+  return F;
+}
 
 std::string exec(const char *cmd) {
   std::array<char, 128> buffer;
@@ -4604,8 +4628,17 @@ public:
 
       NodeBuilder.addParameters(S->getContext().release());
       isl_ast_expr_free(Condition);
-      Value *RTC =
-          Builder.getInt1(true); /// //NodeBuilder.createRTC(Condition);
+      //
+      Value *RTC = [&Builder]() {
+          Value *randomInt = Builder.CreateCall(getOrCreateCRand(*Builder.GetInsertBlock()->getModule()), {}, "rand_rtc");
+          Value *randomIntNormalized= Builder.CreateSRem(randomInt, Builder.getInt32(100), "rand_rtc_0_to_99");
+          Value *shouldRun = Builder.CreateICmpUGT(randomIntNormalized,Builder.getInt32(ceil(PaperProbRunKernelOnCPU * 100)), "rtc");
+
+          return shouldRun;
+      }();
+      //
+
+
       Builder.GetInsertBlock()->getTerminator()->setOperand(0, RTC);
 
       Builder.SetInsertPoint(&*StartBlock->begin());

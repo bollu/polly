@@ -36,6 +36,13 @@
 
 static int DebugMode;
 static int CacheMode;
+
+
+__attribute__((constructor)) static void paperSeedRNG() {
+    // we use rand() to randomly drop kernels.
+    srand(time(NULL));
+}
+
 #define max(x, y) ((x) > (y) ? (x) : (y))
 
 static PollyGPURuntime Runtime = RUNTIME_NONE;
