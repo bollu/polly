@@ -33,6 +33,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <time.h>
 
 static int DebugMode;
 static int CacheMode;
@@ -1999,4 +2000,15 @@ PollyGPUContext *polly_initContextCL() {
   fprintf(stderr, "GPU Runtime was built without OpenCL support.\n");
   exit(-1);
 #endif /* HAS_LIBOPENCL */
+}
+
+
+int polly_shouldRunKernelOnCPU() {
+  dump_function();
+  const char *percentShouldRunKernelOnCPUStr = getenv("POLLY_SHOULD_RUN_KERNEL_ON_CPU_0_100");
+  if (!percentShouldRunKernelOnCPUStr) return 0;
+
+
+  const int percent =  atoi(percentShouldRunKernelOnCPUStr);
+  return percent >= 1 + (rand() % 100);
 }

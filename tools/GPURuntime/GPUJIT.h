@@ -120,4 +120,5 @@ void polly_freeContext(PollyGPUContext *Context);
 // If this is still present, ping Siddharth Bhat <siddu.druid@gmail.com>
 void *polly_mallocManaged(size_t size);
 void polly_freeManaged(void *mem);
+int polly_shouldRunKernelOnCPU();
 #endif /* GPUJIT_H_ */

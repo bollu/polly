@@ -96,8 +96,9 @@ static cl::opt<bool> HackBailPPCGCodeGenRunOnScop(
 
 // Use this to test that only when this is close to 100% do we get
 // performance. That is, keeping data on the GPU is *critical*
-static cl::opt<float> PaperProbRunKernelOnCPU("polly-paper-prob-run-kernel-on-cpu",
-        cl::desc("probability of running the CPU version of the code"));
+static cl::opt<bool> PaperProbabilisticallyRunKernelOnCPU("polly-paper-probabilistically-run-kernel-on-cpu",
+        cl::desc("Allow kernels to be dropped probailistically for the paper."),
+        cl::init(false));
 
 static cl::opt<bool>
     DumpScop("polly-acc-dump-scop",
@@ -183,6 +184,22 @@ static cl::opt<int>
 
 extern bool polly::PerfMonitoring;
 
+
+
+Value* createCallShouldRunKernelOnCPU(PollyIRBuilder &Builder) {
+  const char *Name = "polly_shouldRunKernelOnCPU";
+  Module *M = Builder.GetInsertBlock()->getParent()->getParent();
+  Function *F = M->getFunction(Name);
+
+  // If F is not available, declare it.
+  if (!F) {
+    GlobalValue::LinkageTypes Linkage = Function::ExternalLinkage;
+    FunctionType *Ty = FunctionType::get(Builder.getInt32Ty(), {}, false);
+    F = Function::Create(Ty, Linkage, Name, M);
+  }
+
+  return Builder.CreateCall(F, {});
+}
 
 static llvm::Function *getOrCreateCRand(Module &M) {
   const char *Name = "rand";
@@ -1166,6 +1183,7 @@ private:
   ///
   /// @param Array The device array to free.
   void createCallFreeDeviceMemory(Value *Array);
+
 
   /// Create a call to copy data from host to device.
   ///
@@ -4641,14 +4659,14 @@ public:
       NodeBuilder.addParameters(S->getContext().release());
       isl_ast_expr_free(Condition);
       //
-      Value *RTC = [&Builder]() {
-          Value *randomInt = Builder.CreateCall(getOrCreateCRand(*Builder.GetInsertBlock()->getModule()), {}, "rand_rtc");
-          Value *randomIntNormalized= Builder.CreateSRem(randomInt, Builder.getInt32(100), "rand_rtc_0_to_99");
-          Value *shouldRun = Builder.CreateICmpUGT(randomIntNormalized,Builder.getInt32(ceil(PaperProbRunKernelOnCPU * 100)), "rtc");
+      Value *RTC = [&Builder]() -> llvm::Value *{
+          // if the option is not enabled, always pass RTC
+          if (!PaperProbabilisticallyRunKernelOnCPU)
+              return Builder.getTrue();
 
-          return shouldRun;
+          Value *shouldRunReturn = createCallShouldRunKernelOnCPU(Builder);
+          return Builder.CreateICmpEQ(shouldRunReturn, Builder.getInt32(0));
       }();
-      //
 
 
       Builder.GetInsertBlock()->getTerminator()->setOperand(0, RTC);
