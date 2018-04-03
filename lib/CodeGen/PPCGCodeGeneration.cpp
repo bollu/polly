@@ -3782,18 +3782,23 @@ public:
       dbgs() << "DONE SETTING UPPER AND LOWER BOUND FOR PARAMS\n";
     }
 
-    PPCGScop->context = isl_set_coalesce(PPCGScop->context);
+    // PPCGScop->context = isl_set_coalesce(PPCGScop->context);
 
     PPCGScop->domain = S->getDomains().release();
+    dbgs() << __FILE__ << ":" << __LINE__ << "\n";
     // TODO: investigate this further. PPCG calls collect_call_domains.
     PPCGScop->call = isl_union_set_from_set(S->getContext().release());
+    dbgs() << __FILE__ << ":" << __LINE__ << "\n";
     PPCGScop->tagged_reads = getTaggedReads();
+    dbgs() << __FILE__ << ":" << __LINE__ << "\n";
     PPCGScop->reads = S->getReads().release();
+    dbgs() << __FILE__ << ":" << __LINE__ << "\n";
     PPCGScop->live_in = nullptr;
     PPCGScop->tagged_may_writes = getTaggedMayWrites();
     PPCGScop->may_writes = S->getWrites().release();
     PPCGScop->tagged_must_writes = getTaggedMustWrites();
     PPCGScop->must_writes = S->getMustWrites().release();
+    dbgs() << __FILE__ << ":" << __LINE__ << "\n";
     PPCGScop->live_out = nullptr;
     PPCGScop->tagged_must_kills = KillsInfo.TaggedMustKills.take();
     PPCGScop->must_kills = KillsInfo.MustKills.take();
@@ -3807,6 +3812,7 @@ public:
     PPCGScop->dep_forced = nullptr;
     PPCGScop->dep_order = nullptr;
     PPCGScop->tagged_dep_order = nullptr;
+    dbgs() << __FILE__ << ":" << __LINE__ << "\n";
 
     PPCGScop->schedule = S->getScheduleTree().release();
     // If we have something non-trivial to kill, add it to the schedule
@@ -3817,9 +3823,15 @@ public:
     PPCGScop->names = getNames();
     PPCGScop->pet = nullptr;
 
+
+    dbgs() << __FILE__ << ":" << __LINE__ << "\n";
+
     compute_tagger(PPCGScop);
+    dbgs() << __FILE__ << ":" << __LINE__ << "\n";
     compute_dependences(PPCGScop);
+    dbgs() << __FILE__ << ":" << __LINE__ << "\n";
     eliminate_dead_code(PPCGScop);
+    dbgs() << __FILE__ << ":" << __LINE__ << "\n";
 
     return PPCGScop;
   }
@@ -4733,12 +4745,23 @@ public:
       return false;
     }
 
+    errs() << __FILE__ << ":" << __LINE__ << "\n";
+    errs() << "Calling createPPCGScop...";
     auto PPCGScop = createPPCGScop();
+    errs() << "done.\n";
+    errs() << "Calling createPPCGProg...";
     auto PPCGProg = createPPCGProg(PPCGScop);
+    errs() << "successful\n";
+    errs() << "Calling generateGPU...";
     auto PPCGGen = generateGPU(PPCGScop, PPCGProg);
+    errs() << "generateGPU successful\n";
+
+
 
     if (PPCGGen->tree) {
+        errs() << "Calling generateCode...";
       generateCode(isl_ast_node_copy(PPCGGen->tree), PPCGProg);
+      errs() << "successful\n";
       CurrentScop.markAsToBeSkipped();
     } else {
       DEBUG(dbgs() << getUniqueScopName(S)
