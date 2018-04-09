@@ -12,6 +12,12 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "json/reader.h"
+#include "json/writer.h"
+#include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/raw_ostream.h"
 #include "polly/CodeGen/PPCGCodeGeneration.h"
 #include "polly/CodeGen/CodeGeneration.h"
 #include "polly/CodeGen/IslAst.h"
@@ -190,7 +196,33 @@ static cl::opt<int>
 
 extern bool polly::PerfMonitoring;
 
+void writeJSONToFile(Json::Value &V, std::string FileName) {
+   Json::StyledWriter writer;
+   std::string fileContent = writer.write(V);
+ 
+   // Write to file.
+   std::error_code EC;
+   tool_output_file F(FileName, EC, llvm::sys::fs::F_Text);
+ 
+   errs() << "Writing JSON of kernel data to " << FileName << "\n";
+ 
+   if (!EC) {
+     F.os() << fileContent;
+     F.os().close();
+     if (!F.os().has_error()) {
+       errs() << "\n";
+       F.keep();
+       return;
+     }
+   }
+ 
+   errs() << "  error opening file for writing!\n";
+  F.os().clear_error();
+}
+
 void dumpKernelStats(Module &M, const std::string kernelFunctionName) {
+    // oh god, why?
+    static Json::Value root;
 
     for(Function &F: M) {
         if (F.getName() != kernelFunctionName) continue;
@@ -198,8 +230,11 @@ void dumpKernelStats(Module &M, const std::string kernelFunctionName) {
         PassBuilder PB;
         FunctionAnalysisManager FAM;
         PB.registerFunctionAnalyses(FAM);
-
         LoopInfo &LI = FAM.getResult<LoopAnalysis>(F);
+
+        Json::Value FJSON;
+        FJSON["name"] = F.getName().str();
+        root.append(FJSON);
 
 
         for(const BasicBlock &BB : F) {
@@ -208,6 +243,7 @@ void dumpKernelStats(Module &M, const std::string kernelFunctionName) {
             }
         }
 
+        writeJSONToFile(root, PaperKernelStatsFilepath);
         assert(false && "dumping kernel stats");
     }
     
