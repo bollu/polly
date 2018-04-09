@@ -222,7 +222,9 @@ void writeJSONToFile(Json::Value &V, std::string FileName) {
 
 void dumpKernelStats(Module &M, const std::string kernelFunctionName) {
     // oh god, why?
+    errs() << "***" << __FUNCTION__ << "\n";
     static Json::Value root;
+    const DataLayout &DL = M.getDataLayout();
 
     for(Function &F: M) {
         if (F.getName() != kernelFunctionName) continue;
@@ -234,15 +236,45 @@ void dumpKernelStats(Module &M, const std::string kernelFunctionName) {
 
         Json::Value FJSON;
         FJSON["name"] = F.getName().str();
-        root.append(FJSON);
 
 
-        for(const BasicBlock &BB : F) {
-            for(const Instruction &I: BB) {
+        int NumInst = 0;
+        int NumLoads = 0;
+        int NumStores = 0;
+        int SizeLoaded = 0;
+        int SizeStored = 0;
+        for(BasicBlock &BB : F) {
+            for(Instruction &I: BB) {
+                NumInst++;
+                if (LoadInst *LI = dyn_cast<LoadInst>(&I)) {
+                    NumLoads++;
+                    Type *Ty = LI->getPointerOperandType();
+                    const int size = DL.getTypeAllocSize(Ty);
+
+                    // errs() << "load: " << *LI << " |Type: " << *Ty <<  "|size: " << size << "\n";
+                    SizeLoaded += size;
+
+                }
+                else if (StoreInst *SI = dyn_cast<StoreInst>(&I)) {
+                    NumStores++;
+
+                    Type *Ty = SI->getPointerOperandType();
+                    const int size = DL.getTypeAllocSize(Ty);
+
+                    // errs() << "store: " << *SI << " |Type: " << *Ty <<  "|size: " << size << "\n";
+                    SizeStored += size;
+                }
 
             }
         }
 
+        FJSON["ninst"] = NumInst;
+        FJSON["nloads"] = NumLoads;
+        FJSON["nstores"] = NumStores;
+        FJSON["sizeloaded"] = SizeLoaded;
+        FJSON["sizestored"] = SizeStored;
+
+        root.append(FJSON);
         writeJSONToFile(root, PaperKernelStatsFilepath);
         assert(false && "dumping kernel stats");
     }
