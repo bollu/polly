@@ -73,6 +73,7 @@ extern "C" {
 
 using namespace polly;
 using namespace llvm;
+using ResourceUsageString = std::string;
 
 enum PollyAssumptionsKind {
   PAK_None = 0,
@@ -220,7 +221,9 @@ void writeJSONToFile(Json::Value &V, std::string FileName) {
   F.os().clear_error();
 }
 
-void dumpKernelStats(Module &M, const std::string kernelFunctionName) {
+void dumpKernelStats(Module &M,
+        const std::string kernelFunctionName,
+        std::string ResourceUsage) {
     // oh god, why?
     errs() << "***" << __FUNCTION__ << "\n";
     static Json::Value root;
@@ -284,9 +287,14 @@ void dumpKernelStats(Module &M, const std::string kernelFunctionName) {
         FJSON["nllvmstores"] = NumStores;
         FJSON["sizellvmloaded"] = SizeLoaded;
         FJSON["sizellvmstored"] = SizeStored;
+        FJSON["resourceUsageRaw"] = ResourceUsage;
 
         root.append(FJSON);
         writeJSONToFile(root, PaperKernelStatsFilepath);
+
+        errs() << "\n\n\nresource usage: " << "\n";
+        errs() << ResourceUsage;
+        errs() << "\n";
         assert(false && "dumping kernel stats");
     }
     
@@ -1214,7 +1222,7 @@ private:
   /// Create a PTX assembly string for the current GPU kernel.
   ///
   /// @returns A string containing the corresponding PTX assembly code.
-  std::vector<char> createKernelASM(std::string kernelFunctionName);
+  std::pair<std::vector<char>, ResourceUsageString>  createKernelASM(std::string kernelFunctionName);
 
   /// Remove references from the dominator tree to the kernel function @p F.
   ///
@@ -3341,7 +3349,7 @@ void GPUNodeBuilder::createKernelFunction(
   }
 }
 
-std::vector<char>
+std::pair<std::vector<char>, ResourceUsageString>
 GPUNodeBuilder::createKernelASM(std::string kernelFunctionName) {
   llvm::Triple GPUTriple;
 
@@ -3460,11 +3468,14 @@ GPUNodeBuilder::createKernelASM(std::string kernelFunctionName) {
   const std::string cubinFilename = kernelFunctionName + "_dump_cubin.cubin";
   const std::string nvccCubinCreateCommand =
       std::string("nvcc --cubin " + ptxFilename + " -arch " + CudaVersion +
-                  " -o " + cubinFilename + " --resource-usage");
+                  " -o " + cubinFilename + " --resource-usage" + " 2>&1");
   const std::string resourceUsage = exec(nvccCubinCreateCommand.c_str());
-  dbgs() << resourceUsage;
+  // dbgs() << resourceUsage;
 
-  return ReadAllBytes(cubinFilename.c_str());
+
+  errs() << __LINE__ << "resourceUsage: " << resourceUsage<< "\n";
+
+  return std::make_pair(ReadAllBytes(cubinFilename.c_str()), resourceUsage);
 }
 
 bool GPUNodeBuilder::requiresCUDALibDevice() {
@@ -3601,13 +3612,19 @@ GPUNodeBuilder::finalizeKernelFunction(std::string kernelFunctionName) {
   };
 
 
+
+  ResourceUsageString resourceUsage;
+  std::vector<char> Assembly;
+  std::tie(Assembly, resourceUsage) = createKernelASM(kernelFunctionName);
+
+  errs() << __LINE__ << "resourceUSage: " << resourceUsage<< "\n";
+
+
   // dump statistics of kernel
   if (PaperKernelStatsFilepath != "") {
-      dumpKernelStats(*GPUModule, kernelFunctionName);
+      dumpKernelStats(*GPUModule, kernelFunctionName, resourceUsage);
 
   }
-
-  std::vector<char> Assembly = createKernelASM(kernelFunctionName);
 
   GPUModule.release();
   KernelIDs.clear();
