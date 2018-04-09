@@ -289,13 +289,10 @@ void dumpKernelStats(Module &M,
         FJSON["sizellvmstored"] = SizeStored;
         FJSON["resourceUsageRaw"] = ResourceUsage;
 
+        errs() << "resource usage: " << ResourceUsage << "\n";
+
         root.append(FJSON);
         writeJSONToFile(root, PaperKernelStatsFilepath);
-
-        errs() << "\n\n\nresource usage: " << "\n";
-        errs() << ResourceUsage;
-        errs() << "\n";
-        assert(false && "dumping kernel stats");
     }
     
 }
@@ -3472,9 +3469,6 @@ GPUNodeBuilder::createKernelASM(std::string kernelFunctionName) {
   const std::string resourceUsage = exec(nvccCubinCreateCommand.c_str());
   // dbgs() << resourceUsage;
 
-
-  errs() << __LINE__ << "resourceUsage: " << resourceUsage<< "\n";
-
   return std::make_pair(ReadAllBytes(cubinFilename.c_str()), resourceUsage);
 }
 
@@ -3616,8 +3610,6 @@ GPUNodeBuilder::finalizeKernelFunction(std::string kernelFunctionName) {
   ResourceUsageString resourceUsage;
   std::vector<char> Assembly;
   std::tie(Assembly, resourceUsage) = createKernelASM(kernelFunctionName);
-
-  errs() << __LINE__ << "resourceUSage: " << resourceUsage<< "\n";
 
 
   // dump statistics of kernel
