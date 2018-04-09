@@ -46,6 +46,8 @@
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include "llvm/IR/PassManager.h"
+#include "llvm/Passes/PassBuilder.h"
 
 #include "polly/Support/ISLOStream.h"
 #include "isl/union_map.h"
@@ -93,6 +95,10 @@ static cl::opt<bool> HackBailPPCGCodeGenRunOnScop(
     "polly-acc-hack-bail-run-on-scop",
     cl::desc("HACK: bail out from runOnScop() on PPCGCodeGen"));
 
+
+static cl::opt<std::string> PaperKernelStatsFilepath("polly-paper-kernel-stats-filepath",
+        cl::desc("Path to file which contains information about all kernels"),
+        cl::init(""));
 
 // Use this to test that only when this is close to 100% do we get
 // performance. That is, keeping data on the GPU is *critical*
@@ -183,6 +189,29 @@ static cl::opt<int>
                cl::Hidden, cl::init(10 * 512 * 512));
 
 extern bool polly::PerfMonitoring;
+
+void dumpKernelStats(Module &M, const std::string kernelFunctionName) {
+
+    for(Function &F: M) {
+        if (F.getName() != kernelFunctionName) continue;
+
+        PassBuilder PB;
+        FunctionAnalysisManager FAM;
+        PB.registerFunctionAnalyses(FAM);
+
+        LoopInfo &LI = FAM.getResult<LoopAnalysis>(F);
+
+
+        for(const BasicBlock &BB : F) {
+            for(const Instruction &I: BB) {
+
+            }
+        }
+
+        assert(false && "dumping kernel stats");
+    }
+    
+}
 
 
 
@@ -3491,6 +3520,13 @@ GPUNodeBuilder::finalizeKernelFunction(std::string kernelFunctionName) {
   for (Function &F : *GPUModule) {
     countNumUnusedParamsInFunction(&F);
   };
+
+
+  // dump statistics of kernel
+  if (PaperKernelStatsFilepath != "") {
+      dumpKernelStats(*GPUModule, kernelFunctionName);
+
+  }
 
   std::vector<char> Assembly = createKernelASM(kernelFunctionName);
 
