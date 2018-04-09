@@ -237,7 +237,18 @@ void dumpKernelStats(Module &M, const std::string kernelFunctionName) {
         Json::Value FJSON;
         FJSON["name"] = F.getName().str();
 
+        // Loop info
+        {
+            int nloops = 0;
+            for(Loop * L: LI) {
+                nloops++;
+            }
+            FJSON["nloops"] = nloops;
+        }
 
+
+
+        // Instruction info
         int NumInst = 0;
         int NumLoads = 0;
         int NumStores = 0;
@@ -268,11 +279,11 @@ void dumpKernelStats(Module &M, const std::string kernelFunctionName) {
             }
         }
 
-        FJSON["ninst"] = NumInst;
-        FJSON["nloads"] = NumLoads;
-        FJSON["nstores"] = NumStores;
-        FJSON["sizeloaded"] = SizeLoaded;
-        FJSON["sizestored"] = SizeStored;
+        FJSON["nllvminst"] = NumInst;
+        FJSON["nllvmloads"] = NumLoads;
+        FJSON["nllvmstores"] = NumStores;
+        FJSON["sizellvmloaded"] = SizeLoaded;
+        FJSON["sizellvmstored"] = SizeStored;
 
         root.append(FJSON);
         writeJSONToFile(root, PaperKernelStatsFilepath);
