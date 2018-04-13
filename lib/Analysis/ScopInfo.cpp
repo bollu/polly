@@ -280,17 +280,36 @@ static void writeJSONToFile(Json::Value &V, std::string FileName) {
   F.os().clear_error();
 }
 void paperDumpScopStats(Scop &S) {
-    for(int i = 0; i < 1000; i++)
-        errs() << "DUMPING SCOP STATS!";
-    char c;
-    std::cin >> c;
+    errs() << "DUMPING SCOP STATS!\n";
 
     assert (PaperScopStatsFilepath != "" );
 
     static Json::Value root;
 
+    {
+
+        Json::Value SJSON;
+        SJSON["name"] = S.getName().str();
+
+        int ninsts = 0;
+        int nblocks = 0;
+        Region &RG = S.getRegion();
+        for(auto It : RG.blocks()) {
+            BasicBlock &BB = *It;
+            nblocks++;
+            for(Instruction &I : BB) {
+                ninsts++;
+            }
+        }
+        SJSON["ninsts"] = ninsts;
+        SJSON["nblocks"] = nblocks;
+
+
+        root.append(SJSON);
+    }
+
     writeJSONToFile(root, PaperScopStatsFilepath);
-    assert (false && "collecting scop statistics");
+    // assert (false && "collecting scop statistics");
 }
 
 raw_ostream &polly::operator<<(raw_ostream &OS, const ShapeInfo &Shape) {
@@ -5423,7 +5442,6 @@ bool ScopInfoRegionPass::runOnRegion(Region *R, RGPassManager &RGM) {
   auto &AC = getAnalysis<AssumptionCacheTracker>().getAssumptionCache(*F);
   auto &ORE = getAnalysis<OptimizationRemarkEmitterWrapperPass>().getORE();
 
-  assert(false && "died in SIRPass");
   ScopBuilder SB(R, AC, AA, DL, DT, LI, SD, SE, ORE);
   S = SB.getScop(); // take ownership of scop object
 
