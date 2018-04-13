@@ -203,7 +203,7 @@ static cl::opt<int>
 
 extern bool polly::PerfMonitoring;
 
-void writeJSONToFile(Json::Value &V, std::string FileName) {
+static void writeJSONToFile(Json::Value &V, std::string FileName) {
    Json::StyledWriter writer;
    std::string fileContent = writer.write(V);
  
@@ -249,10 +249,13 @@ void dumpKernelStats(Module &M,
         // Loop info
         {
             int nloops = 0;
+            int maxloopdepth = 0;
             for(Loop * L: LI) {
                 nloops++;
+                maxloopdepth = std::max<int>(L->getLoopDepth(), maxloopdepth);
             }
             FJSON["nloops"] = nloops;
+            FJSON["maxloopdepth"] = maxloopdepth;
         }
 
 

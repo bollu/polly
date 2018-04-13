@@ -17,6 +17,11 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "json/reader.h"
+#include "json/writer.h"
+#include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "polly/ScopInfo.h"
 #include "polly/LinkAllPasses.h"
 #include "polly/Options.h"
@@ -162,6 +167,12 @@ static int const MaxDisjunctsInContext = 4;
 // trigger for corner cases (e.g., the "dct_luma" function in h264, SPEC2006).
 static int const MaxDimensionsInAccessRange = 9;
 
+
+static cl::opt<std::string> PaperScopStatsFilepath("polly-paper-scop-stats-filepath",
+        cl::desc("Path to file which contains information about all scops"),
+        cl::init(""));
+
+
 static cl::opt<int>
     OptComputeOut("polly-analysis-computeout",
                   cl::desc("Bound the scop analysis by a maximal amount of "
@@ -245,6 +256,37 @@ static cl::opt<bool> PollyPrintInstructions(
     cl::Hidden, cl::Optional, cl::init(false), cl::cat(PollyCategory));
 
 //===----------------------------------------------------------------------===//
+static void writeJSONToFile(Json::Value &V, std::string FileName) {
+   Json::StyledWriter writer;
+   std::string fileContent = writer.write(V);
+ 
+   // Write to file.
+   std::error_code EC;
+   tool_output_file F(FileName, EC, llvm::sys::fs::F_Text);
+ 
+   errs() << "Writing JSON of kernel data to " << FileName << "\n";
+ 
+   if (!EC) {
+     F.os() << fileContent;
+     F.os().close();
+     if (!F.os().has_error()) {
+       errs() << "\n";
+       F.keep();
+       return;
+     }
+   }
+ 
+   errs() << "  error opening file for writing!\n";
+  F.os().clear_error();
+}
+void paperDumpScopStats(Scop &S) {
+    assert (PaperScopStatsFilepath != "" );
+
+    static Json::Value root;
+
+    writeJSONToFile(root, PaperScopStatsFilepath);
+    assert (false && "collecting scop statistics");
+}
 
 raw_ostream &polly::operator<<(raw_ostream &OS, const ShapeInfo &Shape) {
   return Shape.print(OS);
@@ -5444,6 +5486,12 @@ void ScopInfo::recompute() {
     bool Inserted = RegionToScopMap.insert({R, std::move(S)}).second;
     assert(Inserted && "Building Scop for the same region twice!");
     (void)Inserted;
+
+
+    if (PaperScopStatsFilepath != "") {
+        paperDumpScopStats(*S);
+        // dumpKernelStats(*GPUModule, kernelFunctionName, resourceUsage);
+    }
   }
 }
 
