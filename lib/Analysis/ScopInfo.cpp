@@ -280,6 +280,11 @@ static void writeJSONToFile(Json::Value &V, std::string FileName) {
   F.os().clear_error();
 }
 void paperDumpScopStats(Scop &S) {
+    for(int i = 0; i < 1000; i++)
+        errs() << "DUMPING SCOP STATS!";
+    char c;
+    std::cin >> c;
+
     assert (PaperScopStatsFilepath != "" );
 
     static Json::Value root;
@@ -5418,14 +5423,23 @@ bool ScopInfoRegionPass::runOnRegion(Region *R, RGPassManager &RGM) {
   auto &AC = getAnalysis<AssumptionCacheTracker>().getAssumptionCache(*F);
   auto &ORE = getAnalysis<OptimizationRemarkEmitterWrapperPass>().getORE();
 
+  assert(false && "died in SIRPass");
   ScopBuilder SB(R, AC, AA, DL, DT, LI, SD, SE, ORE);
   S = SB.getScop(); // take ownership of scop object
+
+  if (S) {
+    if (PaperScopStatsFilepath != "") {
+        paperDumpScopStats(*S);
+        // dumpKernelStats(*GPUModule, kernelFunctionName, resourceUsage);
+    }
+  }
 
 #if !defined(NDEBUG) || defined(LLVM_ENABLE_STATS)
   if (S) {
     ScopDetection::LoopStats Stats =
         ScopDetection::countBeneficialLoops(&S->getRegion(), SE, LI, 0);
     updateLoopCountStatistic(Stats, S->getStatistics());
+
   }
 #endif
 
@@ -5462,6 +5476,10 @@ ScopInfo::ScopInfo(const DataLayout &DL, ScopDetection &SD, ScalarEvolution &SE,
                    LoopInfo &LI, AliasAnalysis &AA, DominatorTree &DT,
                    AssumptionCache &AC, OptimizationRemarkEmitter &ORE)
     : DL(DL), SD(SD), SE(SE), LI(LI), AA(AA), DT(DT), AC(AC), ORE(ORE) {
+    assert(false);
+    report_fatal_error("woo, reached here");
+    char c;
+    std::cin>>c;
   recompute();
 }
 
@@ -5487,11 +5505,9 @@ void ScopInfo::recompute() {
     assert(Inserted && "Building Scop for the same region twice!");
     (void)Inserted;
 
+    assert(false);
 
-    if (PaperScopStatsFilepath != "") {
-        paperDumpScopStats(*S);
-        // dumpKernelStats(*GPUModule, kernelFunctionName, resourceUsage);
-    }
+
   }
 }
 
@@ -5560,6 +5576,7 @@ bool ScopInfoWrapperPass::runOnFunction(Function &F) {
   auto &AC = getAnalysis<AssumptionCacheTracker>().getAssumptionCache(F);
   auto &ORE = getAnalysis<OptimizationRemarkEmitterWrapperPass>().getORE();
 
+  assert(false);
   Result.reset(new ScopInfo{DL, SD, SE, LI, AA, DT, AC, ORE});
   return false;
 }
