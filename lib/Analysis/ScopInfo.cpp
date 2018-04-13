@@ -289,7 +289,9 @@ void paperDumpScopStats(Scop &S) {
     {
 
         Json::Value SJSON;
-        SJSON["name"] = S.getName().str();
+        SJSON["function"] = S.getFunction().getName().str();
+        SJSON["region"] = S.getName().str();
+        SJSON["maxloopdepth"] = S.getMaxLoopDepth();
 
         int ninsts = 0;
         int nblocks = 0;
