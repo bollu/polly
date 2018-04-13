@@ -103,6 +103,12 @@ static cl::opt<bool> HackBailPPCGCodeGenRunOnScop(
     cl::desc("HACK: bail out from runOnScop() on PPCGCodeGen"));
 
 
+static cl::opt<bool> PaperLiveRangeReordering("polly-paper-live-range-reordering",
+        cl::desc("live range reordering - enable or disable"),
+        cl::init(true));
+
+
+
 static cl::opt<std::string> PaperKernelStatsFilepath("polly-paper-kernel-stats-filepath",
         cl::desc("Path to file which contains information about all kernels"),
         cl::init(""));
@@ -3735,7 +3741,7 @@ public:
 
     Options->unroll_copy_shared = false;
     Options->unroll_gpu_tile = false;
-    Options->live_range_reordering = 1;
+    Options->live_range_reordering = PaperLiveRangeReordering;
 
     Options->hybrid = false;
     Options->opencl_compiler_options = nullptr;
@@ -3859,7 +3865,7 @@ public:
 
     PPCGScop->options = createPPCGOptions();
     // enable live range reordering
-    PPCGScop->options->live_range_reordering = 1;
+    PPCGScop->options->live_range_reordering = PaperLiveRangeReordering;
 
     PPCGScop->start = 0;
     PPCGScop->end = 0;
