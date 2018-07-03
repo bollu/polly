@@ -681,3 +681,61 @@ bool polly::hasDebugCall(ScopStmt *Stmt) {
 
   return false;
 }
+
+llvm::Optional<std::pair<CallInst *, GEPOperator *>>
+polly::getAbstractIndexingCall(MemAccInst Inst, ScalarEvolution &SE) {
+  // TODO: I can get rid of all this crap and use SCEV to drill through the bitcasts. 
+  // Alas, this was written when I was more of an LLVM noob than I currently am :)
+  // TODO: clean this up please.
+
+
+  // Case 1. (Total size of array not known)
+  // %2 = tail call i64 @_gfortran_polly_array_index_2(i64 1, i64 %1, i64
+  // %indvars.iv1, i64 %indvars.iv) #1
+  // %3 = getelementptr float, float* %0, i64
+  // %bitcast = bitcast %3 to <otherty>
+  // %2 store float 2.000000e+00, float* %3, align 4 STORE <val> (GEP <bitcast>)
+  // (CALL index_2(<strides>, <ixs>)))
+
+  // Case 2. (Total size of array statically known)
+  // %4 = tail call i64 @_gfortran_polly_array_index_2(i64 1, i64 5, i64
+  // %indvars.iv1, i64 %indvars.iv) #1 %5 = getelementptr [25 x float], [25 x
+  // float]* @__m_MOD_g_arr_const_5_5, i64 0, i64 %4 store float 4.200000e+01,
+  // float* %5, align 4
+
+  Value *MaybeBitcast = Inst.getPointerOperand();
+  if (!MaybeBitcast)
+    return Optional<std::pair<CallInst *, GEPOperator *>>(None);
+
+
+  // If we have a bitcast as the parameter to the instruction, strip off the
+  // bitcast. Otherwise, return the original instruction operand.
+  Value *MaybeGEP = [&]() -> Value * {
+    BitCastOperator *Bitcast = dyn_cast<BitCastOperator>(MaybeBitcast);
+    if (Bitcast) {
+      return Bitcast->getOperand(0);
+    }
+    return Inst.getPointerOperand();
+  }();
+
+  
+  GEPOperator *GEP = dyn_cast<GEPOperator>(MaybeGEP);
+
+  if (!GEP)
+    return Optional<std::pair<CallInst *, GEPOperator *>>(None);
+
+  
+  auto *MaybeCall = GEP->getOperand(GEP->getNumOperands() - 1);
+  assert(MaybeCall);
+  
+  CallInst *Call = dyn_cast<CallInst>(MaybeCall);
+  if (!Call)
+    return Optional<std::pair<CallInst *, GEPOperator *>>(None);
+  
+  if (!Call->getCalledFunction()->getName().count(
+          POLLY_ABSTRACT_INDEX_BASENAME))
+    return Optional<std::pair<CallInst *, GEPOperator *>>(None);
+  
+  std::pair<CallInst *, GEPOperator *> p = std::make_pair(Call, GEP);
+  return Optional<std::pair<CallInst *, GEPOperator *>>(p);
+}

@@ -186,6 +186,8 @@ class ScopBuilder {
   /// @param Stmt       The parent statement of the instruction
   void buildAccessSingleDim(MemAccInst Inst, ScopStmt *Stmt);
 
+  bool buildAccessPollyAbstractIndex(MemAccInst Inst, ScopStmt *Stmt);
+
   /// Build an instance of MemoryAccess from the Load/Store instruction.
   ///
   /// @param Inst       The Load/Store instruction that access the memory

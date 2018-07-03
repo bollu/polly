@@ -536,8 +536,46 @@ bool ScopDetection::involvesMultiplePtrs(const SCEV *S0, const SCEV *S1,
   return false;
 }
 
+/// Return if S is a call to a function that we use to denote multidimensional
+// accesses
+bool isSCEVCallToPollyAbstractIndex(const SCEV *S) {
+  if (isa<SCEVUnknown>(S)) {
+    Value *V = cast<SCEVUnknown>(S)->getValue();
+    CallInst *Call = dyn_cast<CallInst>(V);
+    if (Call && Call->getCalledFunction() &&
+        Call->getCalledFunction()->getName().count(
+            POLLY_ABSTRACT_INDEX_BASENAME))
+      return true;
+  }
+  return false;
+}
+
+/// Return if scev represents a multidim access.
+bool isSCEVMultidimArrayAccess(const SCEV *S) {
+  if (isSCEVCallToPollyAbstractIndex(S))
+    return true;
+  const SCEVMulExpr *Mul = dyn_cast<SCEVMulExpr>(S);
+  if (!Mul)
+    return false;
+
+  // TODO: I don't remember why I needed this. 
+  // When does a Mul not have two operands? Something like {*, i, *, j, *, k}?
+  if (Mul->getNumOperands() != 2)
+    return false;
+
+  // TODO: I have no memory of why I needed this.
+  return isSCEVCallToPollyAbstractIndex(Mul->getOperand(0)) ||
+         isSCEVCallToPollyAbstractIndex(Mul->getOperand(1));
+}
+
 bool ScopDetection::isAffine(const SCEV *S, Loop *Scope,
                              DetectionContext &Context) const {
+
+  if (isSCEVMultidimArrayAccess(S)) {
+    return true;
+  }
+
+
   InvariantLoadsSetTy AccessILS;
   if (!isAffineExpr(&Context.CurRegion, Scope, S, SE, &AccessILS))
     return false;
@@ -698,6 +736,11 @@ bool ScopDetection::isValidCallInst(CallInst &CI,
 
   Function *CalledFunction = CI.getCalledFunction();
 
+  // Function being called is a polly indexing function.
+  if (CalledFunction->getName().count(POLLY_ABSTRACT_INDEX_BASENAME)) {
+    return true;
+  }
+ 
   // Indirect calls are not supported.
   if (CalledFunction == nullptr)
     return false;
@@ -1192,6 +1235,13 @@ bool ScopDetection::isValidAccess(Instruction *Inst, const SCEV *AF,
 
 bool ScopDetection::isValidMemoryAccess(MemAccInst Inst,
                                         DetectionContext &Context) const {
+
+  /// If the memory access is modelling a call of
+  /// polly_abstract_array_index(...)
+  if (getAbstractIndexingCall(Inst, SE)) {
+    return true;
+  }
+
   Value *Ptr = Inst.getPointerOperand();
   Loop *L = LI.getLoopFor(Inst->getParent());
   const SCEV *AccessFunction = SE.getSCEVAtScope(Ptr, L);

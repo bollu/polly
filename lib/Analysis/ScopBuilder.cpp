@@ -558,6 +558,9 @@ bool ScopBuilder::buildAccessMemIntrinsic(MemAccInst Inst, ScopStmt *Stmt) {
 }
 
 bool ScopBuilder::buildAccessCallInst(MemAccInst Inst, ScopStmt *Stmt) {
+  if (buildAccessPollyAbstractIndex(Inst, Stmt))
+    return true;
+
   auto *CI = dyn_cast_or_null<CallInst>(Inst);
 
   if (CI == nullptr)
@@ -569,6 +572,7 @@ bool ScopBuilder::buildAccessCallInst(MemAccInst Inst, ScopStmt *Stmt) {
   bool ReadOnly = false;
   auto *AF = SE.getConstant(IntegerType::getInt64Ty(CI->getContext()), 0);
   auto *CalledFunction = CI->getCalledFunction();
+
   switch (AA.getModRefBehavior(CalledFunction)) {
   case FMRB_UnknownModRefBehavior:
     llvm_unreachable("Unknown mod ref behaviour cannot be represented.");
@@ -667,6 +671,96 @@ void ScopBuilder::buildMemoryAccess(MemAccInst Inst, ScopStmt *Stmt) {
 
   buildAccessSingleDim(Inst, Stmt);
 }
+
+
+bool ScopBuilder::buildAccessPollyAbstractIndex(MemAccInst Inst,
+                                                 ScopStmt *Stmt) {
+  auto optionalCallGEP = getAbstractIndexingCall(Inst, SE);
+  if (!optionalCallGEP)
+    return false;
+
+  CallInst *Call;
+  GEPOperator *GEP;
+  std::tie(Call, GEP) = *optionalCallGEP;
+
+  if (Call->getNumArgOperands() % 2 != 1) {
+    return false;
+  }
+
+  const int NArrayDims = Call->getNumArgOperands() / 2;
+
+  Value *BasePtr = GEP->getPointerOperand();
+
+  std::vector<const SCEV *> Subscripts;
+  std::vector<const SCEV *> Strides;
+  Loop *SurroundingLoop = Stmt->getSurroundingLoop();
+
+  InvariantLoadsSetTy AccessILS;
+
+
+  const SCEV *OffsetSCEV = [&]{
+      Value *Offset = Call->getArgOperand(0);
+      assert(Offset);
+      const SCEV *OffsetSCEV = SE.getSCEV(Offset);
+
+      if (!isAffineExpr(&scop->getRegion(), SurroundingLoop, OffsetSCEV, SE,
+                  &AccessILS)) {
+          return (const SCEV *)nullptr;
+      }
+
+      // Offsets are always loaded from the array, they will get invariant 
+      // load hoisted correctly later.
+       for (LoadInst *L : AccessILS) {
+           scop->addRequiredInvariantLoad(L);
+       }
+      AccessILS.clear();
+
+      return OffsetSCEV;
+  }();
+
+  if (!OffsetSCEV) return false;
+
+  for (int i = 0; i < NArrayDims; i++) {
+    Value *Ix = Call->getArgOperand(1 + NArrayDims + i);
+    const SCEV *IxSCEV = SE.getSCEV(Ix);
+    ensureValueRead(Ix, Stmt);
+    Subscripts.push_back(IxSCEV);
+
+    Value *Stride = Call->getArgOperand(1 + i);
+    const SCEV *StrideSCEV = SE.getSCEV(Stride);
+
+    if (!isAffineExpr(&scop->getRegion(), SurroundingLoop, StrideSCEV, SE,
+                      &AccessILS)) {
+         return false;
+    }
+
+    for (LoadInst *L : AccessILS) {
+            scop->addRequiredInvariantLoad(L);
+    }
+    AccessILS.clear();
+
+    Strides.push_back(StrideSCEV);
+  }
+
+  Value *Val = Inst.getValueOperand();
+  Type *ElementType = Val->getType();
+  assert(BasePtr);
+  assert(ElementType);
+
+  enum MemoryAccess::AccessType AccType =
+      isa<LoadInst>(Inst) ? MemoryAccess::READ : MemoryAccess::MUST_WRITE;
+      scop->invalidate(DELINEARIZATION, Inst->getDebugLoc(), Inst->getParent());
+
+  // NOTE: this should be fromStrides.
+  // NOTE: To be able to change this, we need to teach ScopArrayInfo to recieve
+  // a Shape object. So, do that first.
+  addArrayAccess(Stmt, Inst, AccType, BasePtr, ElementType, /*IsAffine=*/true, Subscripts,
+                 ShapeInfo::fromStrides(Strides, OffsetSCEV), Val);
+
+  return true;
+}
+
+
 
 void ScopBuilder::buildAccessFunctions() {
   for (auto &Stmt : *scop) {

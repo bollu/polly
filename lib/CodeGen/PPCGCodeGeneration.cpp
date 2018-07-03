@@ -2012,18 +2012,43 @@ GPUNodeBuilder::createKernelFunctionDecl(ppcg_kernel *Kernel,
     const ScopArrayInfo *SAI = ScopArrayInfo::getFromId(isl::manage_copy(Id));
     Type *EleTy = SAI->getElementType();
     Value *Val = &*Arg;
-    SmallVector<const SCEV *, 4> Sizes;
     isl_ast_build *Build =
         isl_ast_build_from_context(isl_set_copy(Prog->context));
-    Sizes.push_back(nullptr);
-    for (long j = 1, n = Kernel->array[i].array->n_index; j < n; j++) {
-      isl_ast_expr *DimSize = isl_ast_build_expr_from_pw_aff(
-          Build, isl_multi_pw_aff_get_pw_aff(Kernel->array[i].array->bound, j));
-      auto V = ExprBuilder.create(DimSize);
-      Sizes.push_back(SE.getSCEV(V));
-    }
+
+
+    
+    SmallVector<const SCEV *, 4> Sizes;
+
+    // TODO: take "correct" capture (const & or whatever of SAI)
+    // TODO: this is so fugly, find a better way to express this :(
+    ShapeInfo NewShape = [&] (SmallVector<const SCEV *, 4> &Sizes) {      
+      if (SAI->hasStrides()) {
+        // TODO: find some way to merge the code? Here, we know the outermose
+        // dimension index so we can start from 0. In the sizes code, we need
+        // to start from 1 to indicate that we do not know the shape of the outermost dim.
+        for (long j = 0, n = Kernel->array[i].array->n_index; j < n; j++) {
+          isl_ast_expr *DimSize = isl_ast_build_expr_from_pw_aff(
+              Build,
+              isl_multi_pw_aff_get_pw_aff(Kernel->array[i].array->bound, j));
+          auto V = ExprBuilder.create(DimSize);
+          Sizes.push_back(SE.getSCEV(V));
+        }
+        return SAI->getShape();
+      } else {
+        Sizes.push_back(nullptr);
+        for (long j = 1, n = Kernel->array[i].array->n_index; j < n; j++) {
+          isl_ast_expr *DimSize = isl_ast_build_expr_from_pw_aff(
+              Build,
+              isl_multi_pw_aff_get_pw_aff(Kernel->array[i].array->bound, j));
+          auto V = ExprBuilder.create(DimSize);
+          Sizes.push_back(SE.getSCEV(V));
+        }
+        return ShapeInfo::fromSizes(Sizes);
+      }
+  }(Sizes);
+
     const ScopArrayInfo *SAIRep =
-        S.getOrCreateScopArrayInfo(Val, EleTy, Sizes, MemoryKind::Array);
+        S.getOrCreateScopArrayInfo(Val, EleTy, NewShape, MemoryKind::Array);
     LocalArrays.push_back(Val);
 
     isl_ast_build_free(Build);
@@ -2242,6 +2267,7 @@ void GPUNodeBuilder::createKernelVariables(ppcg_kernel *Kernel, Function *FN) {
       isl_val_free(Val);
       ArrayTy = ArrayType::get(ArrayTy, Bound);
     }
+    const ShapeInfo NewShape = ShapeInfo::fromSizes(Sizes);
 
     const ScopArrayInfo *SAI;
     Value *Allocation;
@@ -2259,7 +2285,7 @@ void GPUNodeBuilder::createKernelVariables(ppcg_kernel *Kernel, Function *FN) {
       llvm_unreachable("unknown variable type");
     }
     SAI =
-        S.getOrCreateScopArrayInfo(Allocation, EleTy, Sizes, MemoryKind::Array);
+        S.getOrCreateScopArrayInfo(Allocation, EleTy,NewShape, MemoryKind::Array);
     Id = isl_id_alloc(S.getIslCtx().get(), Var.name, nullptr);
     IDToValue[Id] = Allocation;
     LocalArrays.push_back(Allocation);

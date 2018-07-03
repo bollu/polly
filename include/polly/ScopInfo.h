@@ -122,13 +122,10 @@ private:
   llvm::Optional<SmallVector<const SCEV *, 4>> Strides;
   llvm::Optional<const SCEV *> Offset;
 
-  llvm::Optional<GlobalValue *>HackFAD;
-
   ShapeInfo(Optional<ArrayRef<const SCEV *>> SizesRef,
             Optional<ArrayRef<const SCEV *>> StridesRef,
-            llvm::Optional<const SCEV *> Offset, 
-            llvm::Optional<GlobalValue *>HackFAD)
-      : Offset(Offset), HackFAD(HackFAD) {
+            llvm::Optional<const SCEV *> Offset)
+      : Offset(Offset){
     // Can check for XOR
     assert(bool(SizesRef) || bool(StridesRef));
     assert(!(bool(SizesRef) && bool(StridesRef)));
@@ -147,11 +144,11 @@ private:
           SCEVArrayTy(StridesRef->begin(), StridesRef->end()));
   }
 
-  ShapeInfo(NoneType) : Sizes(None), Strides(None), Offset(None), HackFAD(None) {}
+  ShapeInfo(NoneType) : Sizes(None), Strides(None), Offset(None)  {}
 
 public:
   static ShapeInfo fromSizes(ArrayRef<const SCEV *> Sizes) {
-    return ShapeInfo(OptionalSCEVArrayRefTy(Sizes), None, None, None);
+    return ShapeInfo(OptionalSCEVArrayRefTy(Sizes), None, None);
   }
 
   // We have this anti-pattern in polly which does this:
@@ -163,24 +160,20 @@ public:
     Sizes = other.Sizes;
     Strides = other.Strides;
     Offset = other.Offset;
-    HackFAD = other.HackFAD;
   }
 
   ShapeInfo &operator=(const ShapeInfo &other) {
     Sizes = other.Sizes;
     Strides = other.Strides;
     Offset = other.Offset;
-    HackFAD = other.HackFAD;
     return *this;
   }
 
   static ShapeInfo fromStrides(ArrayRef<const SCEV *> Strides,
-                               const SCEV *Offset,
-                               GlobalValue *FAD) {
+                               const SCEV *Offset) {
     assert(Offset && "offset is null");
     return ShapeInfo(None, OptionalSCEVArrayRefTy(Strides),
-                     Optional<const SCEV *>(Offset),
-                     Optional<GlobalValue *>(FAD));
+                     Optional<const SCEV *>(Offset));
   }
 
   static ShapeInfo none() { return ShapeInfo(None); }
@@ -211,7 +204,7 @@ public:
 
   /// Set the strides of the Shape. It checks the invariant
   /// That this shape does not have sizes.
-  void setStrides(ArrayRef<const SCEV *> NewStrides, const SCEV *NewOffset, GlobalValue *NewHackFAD) {
+  void setStrides(ArrayRef<const SCEV *> NewStrides, const SCEV *NewOffset) {
     Offset = NewOffset;
     assert(!bool(Sizes));
 
@@ -223,8 +216,6 @@ public:
     Strides->clear();
     Strides->insert(Strides->begin(), NewStrides.begin(), NewStrides.end());
 
-    HackFAD = NewHackFAD;
-
     assert(Offset && "offset is null");
   }
 
@@ -234,9 +225,6 @@ public:
   }
 
   const SCEV *offset() const { return Offset.getValue(); }
-
-
-  GlobalValue *hackFAD() const { return HackFAD.getValue(); }
 
   SmallVector<const SCEV *, 4> &sizes_mut() {
     assert(!bool(Strides));
@@ -499,10 +487,10 @@ public:
   ///   size based repr, and we would change our view later into the strided version.
   ///   We should probably disallow this for future clients.
   void overwriteSizeWithStrides(ArrayRef<const SCEV *> Strides,
-                                const SCEV *Offset, GlobalValue *HackFAD);
+                                const SCEV *Offset);
 
   /// Update the strides of a ScopArrayInfo object.
-  bool updateStrides(ArrayRef<const SCEV *> Strides, const SCEV *Offset, GlobalValue *HackFAD);
+  bool updateStrides(ArrayRef<const SCEV *> Strides, const SCEV *Offset);
 
 
   /// Make the ScopArrayInfo model a Fortran array.
@@ -523,6 +511,9 @@ public:
 
   // Set IsOnHeap to the value in parameter.
   void setIsOnHeap(bool value) { IsOnHeap = value; }
+
+  //get the shape of the ScopArrayInfo
+  ShapeInfo getShape() const { return Shape; }
 
   /// For indirect accesses return the origin SAI of the BP, else null.
   const ScopArrayInfo *getBasePtrOriginSAI() const { return BasePtrOriginSAI; }

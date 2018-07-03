@@ -339,7 +339,7 @@ ScopArrayInfo::ScopArrayInfo(Value *BasePtr, Type *ElementType, isl::ctx Ctx,
   if (Shape.hasSizes())
     updateSizes(Shape.sizes());
   else
-    updateStrides(Shape.strides(), Shape.offset(), Shape.hackFAD());
+    updateStrides(Shape.strides(), Shape.offset());
 
   if (!BasePtr || Kind != MemoryKind::Array) {
     BasePtrOriginSAI = nullptr;
@@ -426,18 +426,17 @@ void ScopArrayInfo::applyAndSetFAD(Value *FAD) {
 }
 
 void ScopArrayInfo::overwriteSizeWithStrides(ArrayRef<const SCEV *> Strides,
-                                             const SCEV *Offset,
-                                             GlobalValue *FAD) {
+                                             const SCEV *Offset) {
 
   // HACK: first set our shape to a stride based shape so that we don't
   // assert within updateStrides. Move this into a bool parameter of
   // updateStrides
-  Shape = ShapeInfo::fromStrides(Strides, Offset, FAD);
-  updateStrides(Strides, Offset, FAD);
+  Shape = ShapeInfo::fromStrides(Strides, Offset);
+  updateStrides(Strides, Offset);
 }
 bool ScopArrayInfo::updateStrides(ArrayRef<const SCEV *> Strides,
-                                  const SCEV *Offset, GlobalValue *FAD) {
-  Shape.setStrides(Strides, Offset, FAD);
+                                  const SCEV *Offset) {
+  Shape.setStrides(Strides, Offset);
   DimensionSizesPw.clear();
   for (size_t i = 0; i < Shape.getNumberOfDimensions(); i++) {
     isl::space Space(S.getIslCtx(), 1, 0);
@@ -1069,9 +1068,8 @@ MemoryAccess::MemoryAccess(ScopStmt *Stmt, Instruction *AccessInst,
 
 MemoryAccess::MemoryAccess(ScopStmt *Stmt, AccessType AccType, isl::map AccRel)
     : Kind(MemoryKind::Array), AccType(AccType), Statement(Stmt),
-      InvalidDomain(nullptr), AccessRelation(nullptr),
-      Shape(ShapeInfo::fromSizes({nullptr})),
-      NewAccessRelation(AccRel), FAD(nullptr) {
+      InvalidDomain(nullptr), Shape(ShapeInfo::fromSizes({nullptr})), 
+      AccessRelation(nullptr), NewAccessRelation(AccRel), FAD(nullptr) {
   isl::id ArrayInfoId = NewAccessRelation.get_tuple_id(isl::dim::out);
   auto *SAI = ScopArrayInfo::getFromId(ArrayInfoId);
   Sizes.push_back(nullptr);
@@ -4070,8 +4068,7 @@ ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
       if (Shape.hasStrides()) {
         LLVM_DEBUG(dbgs() << "Shape has strides, SAI had size. Overwriting size "
                         "with strides");
-        SAI->overwriteSizeWithStrides(Shape.strides(), Shape.offset(),
-                                      Shape.hackFAD());
+        SAI->overwriteSizeWithStrides(Shape.strides(), Shape.offset());
       } else {
     
         errs() << __PRETTY_FUNCTION__ << "\n" << "SAI has strides, Shape is size based. This should not "
@@ -4087,7 +4084,7 @@ ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
     }
 
     if (SAI->hasStrides()) {
-      SAI->updateStrides(Shape.strides(), Shape.offset(), Shape.hackFAD());
+      SAI->updateStrides(Shape.strides(), Shape.offset());
     } else {
       if (!SAI->updateSizes(Shape.sizes()))
         invalidate(DELINEARIZATION, DebugLoc());

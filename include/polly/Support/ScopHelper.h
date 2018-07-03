@@ -17,7 +17,8 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/IR/Instructions.h"
-#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/IntrinsicInst.h"  
+#include "llvm/IR/Operator.h"
 #include "llvm/IR/ValueHandle.h"
 #include <tuple>
 #include <vector>
@@ -480,5 +481,12 @@ bool isDebugCall(llvm::Instruction *Inst);
 ///
 /// Such a statement must not be removed, even if has no side-effects.
 bool hasDebugCall(ScopStmt *Stmt);
+
+/// The name of the array index "intrinsic" interpreted by polly
+static const std::string POLLY_ABSTRACT_INDEX_BASENAME = "polly_array_index";
+
+/// Check if a given MemAccInst models a polly_array_index.
+llvm::Optional<std::pair<llvm::CallInst *, llvm::GEPOperator *>>
+getAbstractIndexingCall(MemAccInst Inst, llvm::ScalarEvolution &SE);
 } // namespace polly
 #endif
