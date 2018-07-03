@@ -248,6 +248,10 @@ static cl::opt<bool> PollyPrintInstructions(
 
 //===----------------------------------------------------------------------===//
 
+raw_ostream &polly::operator<<(raw_ostream &OS, const ShapeInfo &Shape) {
+  return Shape.print(OS);
+}
+
 // Create a sequence of two schedules. Either argument may be null and is
 // interpreted as the empty schedule. Can also return null if both schedules are
 // empty.
@@ -318,10 +322,11 @@ static const ScopArrayInfo *identifyBasePtrOriginSAI(Scop *S, Value *BasePtr) {
 }
 
 ScopArrayInfo::ScopArrayInfo(Value *BasePtr, Type *ElementType, isl::ctx Ctx,
-                             ArrayRef<const SCEV *> Sizes, MemoryKind Kind,
+                             ShapeInfo Shape, MemoryKind Kind,
                              const DataLayout &DL, Scop *S,
                              const char *BaseName)
-    : BasePtr(BasePtr), ElementType(ElementType), Kind(Kind), DL(DL), S(*S) {
+    : BasePtr(BasePtr), ElementType(ElementType), Kind(Kind), DL(DL),
+    Shape(ShapeInfo::none()), S(*S) {
   std::string BasePtrName =
       BaseName ? BaseName
                : getIslCompatibleName("MemRef", BasePtr, S->getNextArrayIdx(),
@@ -329,7 +334,12 @@ ScopArrayInfo::ScopArrayInfo(Value *BasePtr, Type *ElementType, isl::ctx Ctx,
                                       UseInstructionNames);
   Id = isl::id::alloc(Ctx, BasePtrName, this);
 
-  updateSizes(Sizes);
+  // TODO: why do we need updateSizes() ? Why don't we set this up in the
+  // ctor?
+  if (Shape.hasSizes())
+    updateSizes(Shape.sizes());
+  else
+    updateStrides(Shape.strides(), Shape.offset(), Shape.hackFAD());
 
   if (!BasePtr || Kind != MemoryKind::Array) {
     BasePtrOriginSAI = nullptr;
@@ -413,6 +423,36 @@ void ScopArrayInfo::applyAndSetFAD(Value *FAD) {
       isl::aff::var_on_domain(isl::local_space(Space), isl::dim::param, 0);
 
   DimensionSizesPw[0] = PwAff;
+}
+
+void ScopArrayInfo::overwriteSizeWithStrides(ArrayRef<const SCEV *> Strides,
+                                             const SCEV *Offset,
+                                             GlobalValue *FAD) {
+
+  // HACK: first set our shape to a stride based shape so that we don't
+  // assert within updateStrides. Move this into a bool parameter of
+  // updateStrides
+  Shape = ShapeInfo::fromStrides(Strides, Offset, FAD);
+  updateStrides(Strides, Offset, FAD);
+}
+bool ScopArrayInfo::updateStrides(ArrayRef<const SCEV *> Strides,
+                                  const SCEV *Offset, GlobalValue *FAD) {
+  Shape.setStrides(Strides, Offset, FAD);
+  DimensionSizesPw.clear();
+  for (size_t i = 0; i < Shape.getNumberOfDimensions(); i++) {
+    isl::space Space(S.getIslCtx(), 1, 0);
+
+    std::string param_name = getIslCompatibleName(
+        "stride_" + std::to_string(i) + "__", getName(), "");
+    isl::id IdPwAff = isl::id::alloc(S.getIslCtx(), param_name, this);
+
+    Space = Space.set_dim_id(isl::dim::param, 0, IdPwAff);
+    isl::pw_aff PwAff =
+        isl::aff::var_on_domain(isl::local_space(Space), isl::dim::param, 0);
+
+    DimensionSizesPw.push_back(PwAff);
+  }
+  return true;
 }
 
 bool ScopArrayInfo::updateSizes(ArrayRef<const SCEV *> NewSizes,
@@ -1012,11 +1052,11 @@ MemoryAccess::MemoryAccess(ScopStmt *Stmt, Instruction *AccessInst,
                            AccessType AccType, Value *BaseAddress,
                            Type *ElementType, bool Affine,
                            ArrayRef<const SCEV *> Subscripts,
-                           ArrayRef<const SCEV *> Sizes, Value *AccessValue,
+                           ShapeInfo Shape, Value *AccessValue,
                            MemoryKind Kind)
     : Kind(Kind), AccType(AccType), Statement(Stmt), InvalidDomain(nullptr),
       BaseAddr(BaseAddress), ElementType(ElementType),
-      Sizes(Sizes.begin(), Sizes.end()), AccessInstruction(AccessInst),
+      Shape(Shape), AccessInstruction(AccessInst),
       AccessValue(AccessValue), IsAffine(Affine),
       Subscripts(Subscripts.begin(), Subscripts.end()), AccessRelation(nullptr),
       NewAccessRelation(nullptr), FAD(nullptr) {
@@ -1030,6 +1070,7 @@ MemoryAccess::MemoryAccess(ScopStmt *Stmt, Instruction *AccessInst,
 MemoryAccess::MemoryAccess(ScopStmt *Stmt, AccessType AccType, isl::map AccRel)
     : Kind(MemoryKind::Array), AccType(AccType), Statement(Stmt),
       InvalidDomain(nullptr), AccessRelation(nullptr),
+      Shape(ShapeInfo::fromSizes({nullptr})),
       NewAccessRelation(AccRel), FAD(nullptr) {
   isl::id ArrayInfoId = NewAccessRelation.get_tuple_id(isl::dim::out);
   auto *SAI = ScopArrayInfo::getFromId(ArrayInfoId);
@@ -1840,10 +1881,11 @@ MemoryAccess *ScopStmt::ensureValueRead(Value *V) {
   if (Access)
     return Access;
 
+  // TODO: again, why do we have an _empty_ list here for size?
   ScopArrayInfo *SAI =
-      Parent.getOrCreateScopArrayInfo(V, V->getType(), {}, MemoryKind::Value);
+      Parent.getOrCreateScopArrayInfo(V, V->getType(), ShapeInfo::fromSizes({}), MemoryKind::Value);
   Access = new MemoryAccess(this, nullptr, MemoryAccess::READ, V, V->getType(),
-                            true, {}, {}, V, MemoryKind::Value);
+                            true, {}, ShapeInfo::fromSizes({}), V, MemoryKind::Value);
   Parent.addAccessFunction(Access);
   Access->buildAccessRelation(SAI);
   addAccess(Access);
@@ -3964,27 +4006,94 @@ void Scop::canonicalizeDynamicBasePtrs() {
   }
 }
 
+Value *getPointerFromLoadOrStore(Value *V) {
+  if (LoadInst *LI = dyn_cast<LoadInst>(V))
+    return LI->getPointerOperand();
+
+  if (StoreInst *SI = dyn_cast<StoreInst>(V))
+    return SI->getPointerOperand();
+  return nullptr;
+}
+
+
 ScopArrayInfo *Scop::getOrCreateScopArrayInfo(Value *BasePtr, Type *ElementType,
-                                              ArrayRef<const SCEV *> Sizes,
+                                              ShapeInfo Shape,
                                               MemoryKind Kind,
                                               const char *BaseName) {
   assert((BasePtr || BaseName) &&
          "BasePtr and BaseName can not be nullptr at the same time.");
   assert(!(BasePtr && BaseName) && "BaseName is redundant.");
+
+  // We assume that arrays with the strided representation can unify.
+  // Yes this is nuts. Yes I stil want to do this.
+  auto unifyStridedArrayBasePtrs = [&]() -> Value * {
+    if (Shape.hasSizes()) return BasePtr;
+
+    const Value *CurBase = getPointerFromLoadOrStore(BasePtr);
+    if (!CurBase)
+      return BasePtr;
+
+    for (ScopArrayInfo *SAI : arrays()) {
+      Value *SAIBase = getPointerFromLoadOrStore(SAI->getBasePtr());
+      if (!SAIBase)
+        continue;
+
+      if (SAIBase == CurBase && SAI->hasStrides())
+        return SAI->getBasePtr();
+    }
+    return BasePtr;
+  };
+
+  BasePtr = unifyStridedArrayBasePtrs();
+
   auto &SAI = BasePtr ? ScopArrayInfoMap[std::make_pair(BasePtr, Kind)]
                       : ScopArrayNameMap[BaseName];
+
+  
+  // errs() << "Creating: " << (int)Kind << "\n";
+  // BasePtr->dump();
+
   if (!SAI) {
     auto &DL = getFunction().getParent()->getDataLayout();
-    SAI.reset(new ScopArrayInfo(BasePtr, ElementType, getIslCtx(), Sizes, Kind,
+    SAI.reset(new ScopArrayInfo(BasePtr, ElementType, getIslCtx(), Shape, Kind,
                                 DL, this, BaseName));
     ScopArrayInfoSet.insert(SAI.get());
   } else {
     SAI->updateElementType(ElementType);
     // In case of mismatching array sizes, we bail out by setting the run-time
     // context to false.
-    if (!SAI->updateSizes(Sizes))
-      invalidate(DELINEARIZATION, DebugLoc());
+    if (SAI->hasStrides() != Shape.hasStrides()) {
+      LLVM_DEBUG(dbgs() << "SAI and new shape do not agree:\n");
+      LLVM_DEBUG(dbgs() << "SAI: "; SAI->print(dbgs(), true); dbgs() << "\n");
+      LLVM_DEBUG(dbgs() << "Shape: " << Shape << "\n");
+
+      if (Shape.hasStrides()) {
+        LLVM_DEBUG(dbgs() << "Shape has strides, SAI had size. Overwriting size "
+                        "with strides");
+        SAI->overwriteSizeWithStrides(Shape.strides(), Shape.offset(),
+                                      Shape.hackFAD());
+      } else {
+    
+        errs() << __PRETTY_FUNCTION__ << "\n" << "SAI has strides, Shape is size based. This should not "
+                  "happen. Ignoring new data for now.";
+        errs() << " SAI:\n";
+        SAI->print(errs(), false);
+        errs() << "Shape:\n";
+        errs() << Shape << "\n";
+        errs() << "---\n";
+        // report_fatal_error("SAI was given sizes when it had strides");
+        return SAI.get();
+      }
+    }
+
+    if (SAI->hasStrides()) {
+      SAI->updateStrides(Shape.strides(), Shape.offset(), Shape.hackFAD());
+    } else {
+      if (!SAI->updateSizes(Shape.sizes()))
+        invalidate(DELINEARIZATION, DebugLoc());
+    }
   }
+
   return SAI.get();
 }
 
@@ -4000,7 +4109,7 @@ ScopArrayInfo *Scop::createScopArrayInfo(Type *ElementType,
     else
       SCEVSizes.push_back(nullptr);
 
-  auto *SAI = getOrCreateScopArrayInfo(nullptr, ElementType, SCEVSizes,
+  auto *SAI = getOrCreateScopArrayInfo(nullptr, ElementType, ShapeInfo::fromSizes(SCEVSizes),
                                        MemoryKind::Array, BaseName.c_str());
   return SAI;
 }

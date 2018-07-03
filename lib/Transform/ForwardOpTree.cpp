@@ -362,7 +362,7 @@ public:
 
     MemoryAccess *Access =
         new MemoryAccess(Stmt, LI, MemoryAccess::READ, SAI->getBasePtr(),
-                         LI->getType(), true, {}, Sizes, LI, MemoryKind::Array);
+                         LI->getType(), true, {}, ShapeInfo::fromSizes(Sizes), LI, MemoryKind::Array);
     S->addAccessFunction(Access);
     Stmt->addAccess(Access, true);
 

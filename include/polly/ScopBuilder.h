@@ -278,7 +278,7 @@ class ScopBuilder {
                                 Value *BaseAddress, Type *ElemType, bool Affine,
                                 Value *AccessValue,
                                 ArrayRef<const SCEV *> Subscripts,
-                                ArrayRef<const SCEV *> Sizes, MemoryKind Kind);
+                                ShapeInfo Shape, MemoryKind Kind);
 
   /// Create a MemoryAccess that represents either a LoadInst or
   /// StoreInst.
@@ -298,7 +298,7 @@ class ScopBuilder {
                       MemoryAccess::AccessType AccType, Value *BaseAddress,
                       Type *ElemType, bool IsAffine,
                       ArrayRef<const SCEV *> Subscripts,
-                      ArrayRef<const SCEV *> Sizes, Value *AccessValue);
+                      ShapeInfo Shape, Value *AccessValue);
 
   /// Create a MemoryAccess for writing an llvm::Instruction.
   ///
