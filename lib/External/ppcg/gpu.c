@@ -599,8 +599,24 @@ static int *read_tile_sizes(struct gpu_gen *gen, int *tile_len)
 	tile_size = isl_alloc_array(gen->ctx, int, *tile_len);
 	if (!tile_size)
 		return NULL;
-	for (n = 0; n < *tile_len; ++n)
-		tile_size[n] = gen->options->tile_size;
+	//for (n = 0; n < *tile_len; ++n)
+	//	tile_size[n] = gen->options->tile_size;
+	if (*tile_len == 1) {
+	  tile_size[0] = 256;
+	} else if (*tile_len == 2) {
+          tile_size[0] = 16;
+          tile_size[1] = 16;
+        } else {
+          tile_size[0] = 16;
+          tile_size[1] = 4;
+          tile_size[2] = 4;
+        }
+
+	if (gen->options->tile_size != 0) {
+	  for (n = 0; n < *tile_len; ++n) {
+            tile_size[n] = gen->options->tile_size;
+          }
+	}
 
 	size = extract_sizes(gen->sizes, "tile", gen->kernel_id);
 	read_sizes_from_set(size, tile_size, tile_len);
@@ -621,14 +637,14 @@ static void read_block_sizes(struct ppcg_kernel *kernel,
 		kernel->n_block = 3;
 	switch (kernel->n_block) {
 	case 1:
-		kernel->block_dim[0] = 512;
+		kernel->block_dim[0] = 256;
 		break;
 	case 2:
-		kernel->block_dim[0] = 32;
+		kernel->block_dim[0] = 16;
 		kernel->block_dim[1] = 16;
 		break;
 	default:
-		kernel->block_dim[0] = 32;
+		kernel->block_dim[0] = 16;
 		kernel->block_dim[1] = 4;
 		kernel->block_dim[2] = 4;
 		break;
@@ -3873,7 +3889,8 @@ __isl_give isl_schedule_node *gpu_create_kernel(struct gpu_gen *gen,
 	node_thread = isl_schedule_node_copy(node);
 	node_thread = gpu_tree_move_down_to_thread(node_thread, kernel->core);
 	node_thread = isl_schedule_node_child(node_thread, 0);
-	kernel->n_block = n_outer_coincidence(node_thread);
+	//kernel->n_block = n_outer_coincidence(node_thread);
+	kernel->n_block = isl_schedule_node_band_n_member(node_thread);
 	isl_schedule_node_free(node_thread);
 	kernel->id = gen->kernel_id++;
 	read_grid_and_block_sizes(kernel, gen);

@@ -201,6 +201,20 @@ static cl::opt<int>
                cl::desc("Minimal number of compute statements to run on GPU."),
                cl::Hidden, cl::init(10 * 512 * 512));
 
+static cl::opt<bool> DumpSizes("polly-acc-dump-sizes",
+			       cl::desc("Dump used sizes"), cl::Hidden,
+			       cl::init(false), cl::ZeroOrMore,
+			       cl::cat(PollyCategory));
+
+static cl::opt<std::string> InputSizes("polly-acc-sizes",
+				       cl::desc("Sizes in isl-set notation"),
+				       cl::Hidden, cl::init(""), cl::ZeroOrMore,
+				       cl::cat(PollyCategory));
+
+static cl::opt<int> TileSize("polly-acc-tilesize",
+			     cl::desc("Tile Size"), cl::Hidden,
+			     cl::init(0), cl::cat(PollyCategory));
+
 extern bool polly::PerfMonitoring;
 
 static void writeJSONToFile(Json::Value &V, std::string FileName) {
@@ -3605,10 +3619,10 @@ GPUNodeBuilder::finalizeKernelFunction(std::string kernelFunctionName) {
   PassBuilder.populateModulePassManager(OptPasses);
   OptPasses.run(*GPUModule);
 
-  Value *BlockDimX = Builder.getInt32(32);
-  Value *BlockDimY = Builder.getInt32(1);
-  Value *BlockDimZ = Builder.getInt32(1);
-  addCUDAAnnotations(GPUModule.get(), BlockDimX, BlockDimY, BlockDimZ);
+  //Value *BlockDimX = Builder.getInt32(32);
+  //Value *BlockDimY = Builder.getInt32(1);
+  //Value *BlockDimZ = Builder.getInt32(1);
+  //addCUDAAnnotations(GPUModule.get(), BlockDimX, BlockDimY, BlockDimZ);
 
   for (Function &F : *GPUModule) {
     countNumUnusedParamsInFunction(&F);
@@ -3714,7 +3728,7 @@ public:
     DebugOptions->dump_schedule_constraints = false;
     DebugOptions->dump_schedule = false;
     DebugOptions->dump_final_schedule = false;
-    DebugOptions->dump_sizes = false;
+    DebugOptions->dump_sizes = DumpSizes;
     DebugOptions->verbose = false;
 
     Options->debug = DebugOptions;
@@ -3726,10 +3740,15 @@ public:
 
     Options->non_negative_parameters = false;
     Options->ctx = nullptr;
-    Options->sizes = nullptr;
+
+    if (InputSizes.empty()) {
+      Options->sizes = nullptr;
+    } else {
+      Options->sizes = const_cast<char*>(InputSizes.c_str());
+    }
 
     Options->tile = true;
-    Options->tile_size = 32;
+    Options->tile_size = TileSize;
 
     Options->isolate_full_tiles = false;
 
@@ -4480,7 +4499,7 @@ public:
     PPCGGen->tree = nullptr;
     PPCGGen->types.n = 0;
     PPCGGen->types.name = nullptr;
-    PPCGGen->sizes = nullptr;
+    PPCGGen->sizes = isl_union_map_read_from_str(PPCGGen->ctx, PPCGGen->options->sizes);
     PPCGGen->used_sizes = nullptr;
     PPCGGen->kernel_id = 0;
 
@@ -4488,6 +4507,11 @@ public:
     isl_options_set_schedule_outer_coincidence(PPCGGen->ctx, true);
     isl_options_set_schedule_maximize_band_depth(PPCGGen->ctx, true);
     isl_options_set_schedule_whole_component(PPCGGen->ctx, false);
+
+    if (PPCGGen->options->debug->dump_sizes) {
+      isl_space *space = isl_space_params_alloc(PPCGGen->ctx, 0);
+      PPCGGen->used_sizes = isl_union_map_empty(space);
+    }
 
     isl_schedule *Schedule = get_schedule(PPCGGen);
 
@@ -4509,6 +4533,10 @@ public:
       // dbgs() << "\t-disabled map_to_device.\n";
       Schedule = map_to_device(PPCGGen, Schedule, CreateTransferToFromDevice);
       PPCGGen->tree = generate_code(PPCGGen, isl_schedule_copy(Schedule));
+    }
+
+    if (PPCGGen->options->debug->dump_sizes) {
+      isl_union_map_dump(PPCGGen->used_sizes);
     }
 
     if (DumpSchedule) {
