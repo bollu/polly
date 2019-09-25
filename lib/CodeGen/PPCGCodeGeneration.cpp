@@ -3511,8 +3511,10 @@ bool GPUNodeBuilder::requiresCUDALibDevice() {
 }
 
 void GPUNodeBuilder::addCUDALibDevice() {
-  if (Arch != GPUArch::NVPTX64)
-    return;
+  if (Arch != GPUArch::NVPTX64) {
+      report_fatal_error("incoorect GPU architecture to add cuda lib device.");
+      return;
+  }
 
   if (requiresCUDALibDevice()) {
     SMDiagnostic Error;
