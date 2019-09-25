@@ -935,7 +935,8 @@ public:
                  DominatorTree &DT, Scop &S, BasicBlock *StartBlock,
                  gpu_prog *Prog, GPURuntime Runtime, GPUArch Arch)
       : IslNodeBuilder(Builder, Annotator, DL, LI, SE, DT, S, StartBlock),
-        Prog(Prog), Runtime(Runtime), Arch(Arch) {
+        Prog(Prog), Runtime(Runtime), Arch(GPUArch::NVPTX64) {
+    errs() << "\nHACK: forcibly setting architecture to NVPTX64\n";
     getExprBuilder().setIDToSAI(&IDToSAI);
   }
 
