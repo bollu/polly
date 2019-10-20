@@ -154,6 +154,9 @@ std::map<std::string, HistogramTy> getHistogramFromProfile_() {
     report_fatal_error("unable to parse JSON for value profiler input.\n");
   }
 
+  std::cerr << "printing histogram----\n";
+  std::cerr << root << std::endl;
+
   std::map<std::string, HistogramTy> nameToHistogram;
 
   for(unsigned i = 0; i < root.size(); i++) {
