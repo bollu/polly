@@ -2409,7 +2409,6 @@ Value *GPUNodeBuilder::createLaunchParameters(ppcg_kernel *Kernel, Function *F,
                          Launch + "_param_" + std::to_string(Index),
                          EntryBlock->getTerminator());
       if (isa<SelectInst>(DevArray)) {
-        DevArray->dump();
         assert(false && "DevArray is a select inst!");
       }
       Value *DevArrayCast = Builder.CreatePointerCast(
