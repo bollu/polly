@@ -159,9 +159,10 @@ std::map<std::string, HistogramTy> getHistogramFromProfile_() {
 
   std::map<std::string, HistogramTy> nameToHistogram;
 
-  for(unsigned i = 0; i < root.size(); i++) {
+  for (Json::Value j : root) {
+  // for(unsigned i = 0; i < root.size(); i++) {
       // TODO: make this the iterator.
-      Json::Value j = root[i];
+      // Json::Value j = root[i];
 
       std::string name = j["name"].asString();
       Json::Value jsonHistogram = j["histogram"];
