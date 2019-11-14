@@ -501,7 +501,9 @@ void replaceConstantsFromValueProfile(Function *F) {
     } else if (Arg.getType()->isFloatingPointTy()) {
       New = Builder.CreateBitCast(RawInt, Arg.getType());
     } else {
-      report_fatal_error("unknown type of profiled argument.\n");
+      // report_fatal_error("unknown type of profiled argument.\n");
+        errs() << "Unknown type of profiled argument[" << Arg << "]\n";
+        continue;
     }
     assert(New && "New uninitialized");
     assert(New->getType() == Arg.getType());
