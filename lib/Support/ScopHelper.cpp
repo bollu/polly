@@ -422,6 +422,8 @@ Value *polly::expandCodeFor(Scop &S, ScalarEvolution &SE, const DataLayout &DL,
 
 bool polly::isErrorBlock(BasicBlock &BB, const Region &R, LoopInfo &LI,
                          const DominatorTree &DT) {
+  errs() << "PollyAllowErrorBlocks: (" << PollyAllowErrorBlocks << ")\n";
+
   if (!PollyAllowErrorBlocks)
     return false;
 

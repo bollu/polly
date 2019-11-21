@@ -1575,19 +1575,9 @@ bool ScopDetection::allBlocksValid(DetectionContext &Context) const {
     }
   }
 
-  assert(false && "checking if BB is error block");
-
+  
   for (BasicBlock *BB : CurRegion.blocks()) {
     bool IsErrorBlock = isErrorBlock(*BB, CurRegion, LI, DT);
-    assert(false && "checking if BB is error block");
-    errs() << "checking if BB is error block: " << IsErrorBlock << "\n";
-    
-    // Also check exception blocks (and possibly register them as non-affine
-    // regions). Even though exception blocks are not modeled, we use them
-    // to forward-propagate domain constraints during ScopInfo construction.
-    if (!isValidCFG(*BB, false, IsErrorBlock, Context) && !KeepGoing)
-      return false;
-
     if (IsErrorBlock) {
         NumErrorBlocksInScop++;
         Json::Value root;
@@ -1596,6 +1586,15 @@ bool ScopDetection::allBlocksValid(DetectionContext &Context) const {
 
         continue;
     }
+
+    errs() << "checking if BB is error block: " << IsErrorBlock << "\n";
+    
+    // Also check exception blocks (and possibly register them as non-affine
+    // regions). Even though exception blocks are not modeled, we use them
+    // to forward-propagate domain constraints during ScopInfo construction.
+    if (!isValidCFG(*BB, false, IsErrorBlock, Context) && !KeepGoing)
+      return false;
+
 
     for (BasicBlock::iterator I = BB->begin(), E = --BB->end(); I != E; ++I)
       if (!isValidInstruction(*I, Context) && !KeepGoing)
