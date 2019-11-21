@@ -109,7 +109,7 @@ using namespace polly;
 
 #define DEBUG_TYPE "polly-detect"
 
-static const std::string PaperNumErrorBlocksFilepath = "dump-num-error-blocks.json";
+static const std::string PaperNumErrorBlocksInScop = "dump-num-error-blocks-in-scop.json";
 
 // This option is set to a very high value, as analyzing such loops increases
 // compile time on several cases. For experiments that enable this option,
@@ -287,7 +287,7 @@ STATISTIC(NumProfScopsDepthLarger,
 STATISTIC(MaxNumLoopsInScop, "Maximal number of loops in scops");
 STATISTIC(MaxNumLoopsInProfScop,
           "Maximal number of loops in scops (profitable scops only)");
-STATISTIC(NumErrorBlocksSpeculated, "Number of error blocks speculated on.");
+STATISTIC(NumErrorBlocksInScop, "Number of error blocks speculated on.");
 
 static void updateLoopCountStatistic(ScopDetection::LoopStats Stats,
                                      bool OnlyProfitable);
@@ -1585,10 +1585,10 @@ bool ScopDetection::allBlocksValid(DetectionContext &Context) const {
       return false;
 
     if (IsErrorBlock) {
-        NumErrorBlocksSpeculated++;
+        NumErrorBlocksInScop++;
         Json::Value root;
-        root["num_error_blocks"] = (int)NumErrorBlocksSpeculated;
-        writeJSONToFile(root, PaperNumErrorBlocksFilepath);
+        root["num_error_blocks"] = (int)NumErrorBlocksInScop;
+        writeJSONToFile(root, PaperNumErrorBlocksInScop);
 
 
         continue;

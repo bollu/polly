@@ -24,6 +24,14 @@
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include "llvm/ADT/Statistic.h"
+#include "llvm/Support/FileSystem.h"
+
+#include "json/reader.h"
+#include "json/writer.h"
+#include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Support/raw_ostream.h"
+
 
 using namespace llvm;
 using namespace polly;
@@ -34,6 +42,38 @@ static cl::opt<bool> PollyAllowErrorBlocks(
     "polly-allow-error-blocks",
     cl::desc("Allow to speculate on the execution of 'error blocks'."),
     cl::Hidden, cl::init(true), cl::ZeroOrMore, cl::cat(PollyCategory));
+
+
+static const std::string PaperUniqErrorBlocksFilepath =
+  "dump-scop-helper-num-uniq-error-blocks.json";
+
+STATISTIC(NumUniqIsErrorBlockParams, "Total Number of error blocks on which isErrorBlock was called");
+
+
+static void writeJSONToFile(Json::Value &V, std::string FileName) {
+   Json::StyledWriter writer;
+   std::string fileContent = writer.write(V);
+ 
+   // Write to file.
+   std::error_code EC;
+   tool_output_file F(FileName, EC, llvm::sys::fs::F_Text);
+ 
+   errs() << "Writing JSON of kernel data to " << FileName << "\n";
+ 
+   if (!EC) {
+     F.os() << fileContent;
+     F.os().close();
+     if (!F.os().has_error()) {
+       errs() << "\n";
+       F.keep();
+       return;
+     }
+   }
+ 
+   errs() << "  error opening file for writing!\n";
+  F.os().clear_error();
+}
+
 
 // Ensures that there is just one predecessor to the entry node from outside the
 // region.
@@ -384,6 +424,17 @@ bool polly::isErrorBlock(BasicBlock &BB, const Region &R, LoopInfo &LI,
                          const DominatorTree &DT) {
   if (!PollyAllowErrorBlocks)
     return false;
+
+  static std::set<BasicBlock *>uniqErrorBlockBBs;
+  uniqErrorBlockBBs.insert(&BB);
+  NumUniqIsErrorBlockParams = (int) uniqErrorBlockBBs.size();
+
+  {
+        Json::Value root;
+        root["total_uniq_error_blocks"] = (int)NumUniqIsErrorBlockParams;
+        writeJSONToFile(root, PaperUniqErrorBlocksFilepath);
+  }
+
 
   if (isa<UnreachableInst>(BB.getTerminator()))
     return true;
