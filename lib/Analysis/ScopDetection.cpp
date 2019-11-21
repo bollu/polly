@@ -44,6 +44,11 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "json/reader.h"
+#include "json/writer.h"
+#include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "polly/ScopDetection.h"
 #include "polly/LinkAllPasses.h"
 #include "polly/Options.h"
@@ -103,6 +108,8 @@ using namespace llvm;
 using namespace polly;
 
 #define DEBUG_TYPE "polly-detect"
+
+static const std::string PaperNumErrorBlocksFilepath = "dump-num-error-blocks.json";
 
 // This option is set to a very high value, as analyzing such loops increases
 // compile time on several cases. For experiments that enable this option,
@@ -246,6 +253,8 @@ bool polly::PollyTrackFailures = false;
 bool polly::PollyDelinearize = false;
 StringRef polly::PollySkipFnAttr = "polly.skip.fn";
 
+
+
 //===----------------------------------------------------------------------===//
 // Statistics.
 
@@ -278,9 +287,34 @@ STATISTIC(NumProfScopsDepthLarger,
 STATISTIC(MaxNumLoopsInScop, "Maximal number of loops in scops");
 STATISTIC(MaxNumLoopsInProfScop,
           "Maximal number of loops in scops (profitable scops only)");
+STATISTIC(NumErrorBlocksSpeculated, "Number of error blocks speculated on.");
 
 static void updateLoopCountStatistic(ScopDetection::LoopStats Stats,
                                      bool OnlyProfitable);
+
+static void writeJSONToFile(Json::Value &V, std::string FileName) {
+   Json::StyledWriter writer;
+   std::string fileContent = writer.write(V);
+ 
+   // Write to file.
+   std::error_code EC;
+   tool_output_file F(FileName, EC, llvm::sys::fs::F_Text);
+ 
+   errs() << "Writing JSON of kernel data to " << FileName << "\n";
+ 
+   if (!EC) {
+     F.os() << fileContent;
+     F.os().close();
+     if (!F.os().has_error()) {
+       errs() << "\n";
+       F.keep();
+       return;
+     }
+   }
+ 
+   errs() << "  error opening file for writing!\n";
+  F.os().clear_error();
+}
 
 namespace {
 
@@ -1550,8 +1584,15 @@ bool ScopDetection::allBlocksValid(DetectionContext &Context) const {
     if (!isValidCFG(*BB, false, IsErrorBlock, Context) && !KeepGoing)
       return false;
 
-    if (IsErrorBlock)
-      continue;
+    if (IsErrorBlock) {
+        NumErrorBlocksSpeculated++;
+        Json::Value root;
+        root["num_error_blocks"] = (int)NumErrorBlocksSpeculated;
+        writeJSONToFile(root, PaperNumErrorBlocksFilepath);
+
+
+        continue;
+    }
 
     for (BasicBlock::iterator I = BB->begin(), E = --BB->end(); I != E; ++I)
       if (!isValidInstruction(*I, Context) && !KeepGoing)
