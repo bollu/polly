@@ -433,6 +433,7 @@ bool polly::isErrorBlock(BasicBlock &BB, const Region &R, LoopInfo &LI,
         Json::Value root;
         root["total_uniq_error_blocks"] = (int)NumUniqIsErrorBlockParams;
         writeJSONToFile(root, PaperUniqErrorBlocksFilepath);
+        dbgs() << "dumping total uniq error blocks: " << NumUniqIsErrorBlockParams << "\n";
   }
 
 
