@@ -1580,7 +1580,7 @@ bool ScopDetection::allBlocksValid(DetectionContext &Context) const {
   for (BasicBlock *BB : CurRegion.blocks()) {
     bool IsErrorBlock = isErrorBlock(*BB, CurRegion, LI, DT);
     assert(false && "checking if BB is error block");
-    dbgs() << "checking if BB is error block: " << IsErrorBlock << "\n";
+    errs() << "checking if BB is error block: " << IsErrorBlock << "\n";
     
     // Also check exception blocks (and possibly register them as non-affine
     // regions). Even though exception blocks are not modeled, we use them
