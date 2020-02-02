@@ -4824,9 +4824,9 @@ public:
     }
 
     if (!NodeBuilder.BuildSuccessful) {
-      dbgs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << "\n";
+      dbgs() << __PRETTY_FUNCTION__ << ":" << __LINE__ << ": !NodeBuilder.BuildSuccessful\n";
       CondBr->setOperand(0, Builder.getFalse());
-      report_fatal_error("!NodeBuilder.BuildSuccessful");
+      // report_fatal_error("!NodeBuilder.BuildSuccessful");
     }
   }
 
